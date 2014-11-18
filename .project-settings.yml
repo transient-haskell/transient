@@ -7,6 +7,4 @@ cabal-file: project.cabal
 version: 1
 ghc-args: []
 excluded-modules:
-- Base.hs
-- Base2.hs
 - Setup.hs

@@ -11,14 +11,13 @@
 -- |
 --
 -----------------------------------------------------------------------------
-{-# LANGUAGE ExistentialQuantification, FlexibleContexts,
+{-# LANGUAGE ExistentialQuantification,FlexibleContexts,
              FlexibleInstances, UndecidableInstances, MultiParamTypeClasses #-}
 
 module Base where
 
 
-import Control.Monad.State
-import Data.IORef
+import Control.Monad.State.Strict
 import Unsafe.Coerce
 import System.IO.Unsafe
 import Control.Applicative
@@ -26,70 +25,65 @@ import qualified Data.Map as M
 import Data.Dynamic
 import Debug.Trace
 
-(!>) = flip trace
+(!>) = const . id -- flip trace
 
-data UDynamic= forall a.UDynamic a
-
-cast1 (UDynamic x)= Just $ unsafeCoerce x
-
-toUDyn= UDynamic
 
 data Transient m x= Transient  (m (Maybe x))
 
-data EventF  = EventF  (IO(Maybe UDynamic))  (UDynamic -> IO (Maybe UDynamic))
 
-globalState= unsafePerformIO $ newIORef eventf0
+data EventF  = forall a b . EventF{eventHandlers:: (M.Map String EventF )
+                                  ,currentEvent :: Maybe Event
+                                  ,eventValues :: M.Map String Dynamic
+                                  ,xcomp :: (TransientIO a)
+                                  ,fcomp :: [a -> TransientIO b]}
 
-instance MonadState EventF TransientIO where
---  type StateType (Transient m)= EventF
+
+eventf0= EventF M.empty Nothing M.empty (empty) [const $ empty]
+
+
+instance MonadState EventF  TransientIO where
   get=  Transient $ get >>= return . Just
   put x= Transient $ put x >> return (Just ())
 
-
-type StateIO= StateT EventF IO
+type StateIO= StateT EventF  IO
 
 type TransientIO= Transient StateIO
 
-runTrans ::  TransientIO x -> StateT EventF IO (Maybe x)
+runTrans ::  TransientIO x -> StateT EventF  IO (Maybe x)
 runTrans (Transient mx) = mx
 
 setEventCont ::   (TransientIO a) -> (a -> TransientIO b) -> StateIO EventF
-setEventCont x f = do
-   env@(EventF _ fs) <- get
-   put $ EventF  (dynamize1  x)  $  dynamize f `addto` fs
-   return env
+setEventCont x f  = do
+   st@(EventF es c vs x' fs)  <- get
+   put $ EventF es c vs  x ( f: unsafeCoerce fs) -- st{xcomp=  x, fcomp=  f: unsafeCoerce fs}
+   return st
 
-dynamize1 x= runTrans' x >>= return . fmap toUDyn
+resetEventCont cont=do
+      st <- get
+      put cont {eventHandlers=eventHandlers st, eventValues=eventValues st, currentEvent= currentEvent st}
 
-dynamize ::  (a -> TransientIO b) => UDynamic -> IO(Maybe UDynamic)
-dynamize   f= \d -> do
-      case cast1 d of
-       Nothing -> return Nothing
-       Just x -> do
-         my <- runTrans' $ f x
-         return $ fmap toUDyn my
+getCont ::(MonadState EventF  m) => m EventF
+getCont = get
 
-addto :: (UDynamic -> IO (Maybe UDynamic))   -> (UDynamic -> IO (Maybe UDynamic)) -> (UDynamic -> IO (Maybe UDynamic))
-addto f f'= \x -> do
-         mr <-  f x
-         case mr of
-           Nothing -> return Nothing
-           Just x' -> (f' x')
+runCont :: EventF -> StateIO ()
+runCont (EventF _ _ _ x fs)= do runIt x (unsafeCoerce fs); return ()
+   where
+      runIt x fs= runTrans $  x >>= compose fs
 
-resetEventCont cont= put cont
 
-currentEvent :: IORef  (Maybe Event)
-currentEvent= unsafePerformIO $ newIORef Nothing
 
-eventLoop :: [Event] ->  IO ()
+      compose []= const empty
+      compose (f: fs)= \x -> f x >>= compose fs
+
+
+eventLoop :: [Event] ->  StateIO ()
 eventLoop []= return()
 eventLoop (ev@(Event name _):evs)= do
-   writeIORef  currentEvent $ Just ev   !> ("eventLoop:" ++ name)
-   ths <- readIORef eventHandlers    !> "readMVar eventHandlers"
+   (modify $ \st -> st{currentEvent= Just ev ,eventValues= M.delete name $ eventValues st})  !> ("inject event:" ++ name)
+   ths <- gets eventHandlers
    case M.lookup name ths of
-      Just (EventF x fs) -> ((const x) `addto` fs) (error "eventLoop: undefined") >> return ()
-             !> "event Handler"
-      Nothing -> return () !> ("eventLoop: Nothing")
+      Just st -> runCont st  !> ("execute event handler for: "++ name) 
+      Nothing -> return ()   !> "no handler for the event"
    eventLoop evs
 
 instance   Functor TransientIO where
@@ -98,7 +92,7 @@ instance   Functor TransientIO where
 
 instance Applicative TransientIO where
   pure a  = Transient  .  return $ Just a
-  Transient f <*> Transient g= Transient $
+  Transient f <*> Transient g= Transient $ 
        f >>= \ k ->
        g >>= \ x ->
        return $  k <*> x
@@ -118,7 +112,7 @@ instance Monad TransientIO where
         mk <- runTrans x
         resetEventCont cont
         case mk of
-           Just k  ->  runTrans $ f k
+           Just k  -> runTrans $ f k
            Nothing -> return Nothing
 
 instance MonadTrans (Transient ) where
@@ -129,25 +123,43 @@ instance MonadIO TransientIO where
 
 
 
-eventHandlers :: IORef (M.Map String EventF )
-eventHandlers= unsafePerformIO $ newIORef M.empty
-
 type EvType = String
 data Event = Event EvType Dynamic
 
 
 
-runTrans' :: TransientIO x -> IO (Maybe x)
-runTrans' tmx= do -- evalState (runTrans tmx) eventf0
---   st <- readIORef globalState
-   (x,st') <- runStateT (runTrans tmx)   eventf0 -- st
---   writeIORef globalState st'
-   return x
+currentEventValue :: Typeable a => String -> TransientIO a
+currentEventValue name =  do
+  st <- get !> "currValue"
+  let vals= eventValues st
+  case M.lookup name vals of
+      Nothing -> waitEvent name
+      Just v  -> return $ fromDyn v (error "currentEventValue: type error") 
+      
+  
+waitEvent :: Typeable a => String -> TransientIO a
+waitEvent name = Transient $ do
+  st <- get !> "waitEvent"
+  let evs = eventHandlers  st 
 
-eventf0= EventF (return Nothing) (const $ return Nothing)
+  case  M.lookup name evs of
+    Nothing ->  do
+       put st{ eventHandlers=  M.insert name st  evs} !> ("created event handler for: "++ name)
+       return Nothing 
+    Just _ ->  do
+       put st{ eventHandlers=  M.insert name st evs} !> ("upadated event handler for: "++ name)
+       eventValue name
 
-
-runTrans'' ::  TransientIO a -> IO ()
-runTrans'' tmx= runTrans' tmx >> return ()
-
-
+eventValue name =  do
+   st <- get
+   let me= currentEvent st 
+   case me of
+     Nothing -> return Nothing   !> "NO current EVENT"
+     Just (Event name' r) -> do
+      if name /= name' then return Nothing  else do
+        case fromDynamic r of
+          Nothing -> return Nothing 
+          Just x -> do 
+            liftIO $ putStrLn $ "read event: " ++ name
+            put st{eventValues= M.insert name (toDyn x) $ eventValues st}
+            return $ Just x
