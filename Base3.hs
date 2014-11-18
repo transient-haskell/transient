@@ -17,7 +17,7 @@
 module Base3 where
 
 
-import Control.Monad.State
+import Control.Monad.State.Strict
 import Unsafe.Coerce
 import System.IO.Unsafe
 import Control.Applicative
@@ -45,13 +45,10 @@ data EventF  = forall a b . EventF{eventHandlers:: (M.Map String EventF )
 eventf0= EventF M.empty Nothing (empty) [const $ empty]
 
 
-
-
 instance MonadState EventF  TransientIO where
 --  type StateType (Transient m)= EventF
   get=  Transient $ get >>= return . Just
   put x= Transient $ put x >> return (Just ())
-
 
 type StateIO= StateT EventF  IO
 
@@ -66,11 +63,9 @@ setEventCont x f  = do
    put $ EventF es c x ( f: unsafeCoerce fs) -- st{xcomp=  x, fcomp=  f: unsafeCoerce fs}
    return st
 
-
-
-
-resetEventCont cont= put cont
-
+resetEventCont cont=do
+      st <- get
+      put cont {eventHandlers=eventHandlers st, currentEvent= currentEvent st}
 
 getCont ::(MonadState EventF  m) => m EventF
 getCont = get
@@ -89,11 +84,11 @@ runCont (EventF _ _ x fs)= do runIt x (unsafeCoerce fs); return ()
 eventLoop :: [Event] ->  StateIO ()
 eventLoop []= return()
 eventLoop (ev@(Event name _):evs)= do
-   (modify $ \st -> st{currentEvent=Just ev })  !> ("eventLoop:" ++ name)
+   (modify $ \st -> st{currentEvent= Just ev })  !> ("eventLoop:" ++ name)
    ths <- gets eventHandlers    !> "readMVar eventHandlers"
    case M.lookup name ths of
-      Just st -> runCont st  !> "event Handler"
-      Nothing -> return () !> ("eventLoop: Nothing")
+      Just st -> runCont st  !> "event Handler" 
+      Nothing -> return ()   !> ("eventLoop: Nothing "++ show (M.size ths))
    eventLoop evs
 
 instance   Functor TransientIO where
@@ -138,15 +133,15 @@ data Event = Event EvType Dynamic
 
 
 
-runTrans' :: TransientIO x -> IO (Maybe x)
-runTrans' tmx= do -- evalState (runTrans tmx) eventf0
+--runTrans' :: TransientIO x -> IO (Maybe x)
+--runTrans' tmx= do -- evalState (runTrans tmx) eventf0
 --   st <- readIORef globalState
-   (x,st') <- runStateT (runTrans tmx)   eventf0 -- st
+--   (x,st') <- runStateT (runTrans tmx)   eventf0 -- st
 --   writeIORef globalState st'
-   return x
+--   return x
 
 
-runTrans'' ::  TransientIO a -> IO ()
-runTrans'' tmx= runTrans' tmx >> return ()
+--runTrans'' ::  TransientIO a -> IO ()
+--runTrans'' tmx= runTrans' tmx >> return ()
 
 
