@@ -10,8 +10,7 @@ author: Alberto G. Corona
 data-dir: ""
 
 executable Transient
-    build-depends: base, mtl -any,
-                   containers -any
+    build-depends: base, mtl -any, random,containers -any, stm, HTTP, network
     main-is: Main.hs
     buildable: True
     default-language: Haskell2010

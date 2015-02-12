@@ -1,0 +1,339 @@
+18c18
+< module Base where
+---
+> module Base7 where
+38c38
+< (!>) =    flip trace
+---
+> (!>) =   flip trace
+46c46
+< data EventF  = forall a b . EventF{xcomp :: (EventId,P Elem,TransientIO a)
+---
+> data EventF  = forall a b . EventF{xcomp :: (EventId,P RowElem,TransientIO a)
+50,51c50,51
+<                                   ,nodeInfo :: Maybe (P Elem)
+<                                   ,row :: P Elem
+---
+>                                   ,nodeInfo :: Maybe (P RowElem)
+>                                   ,row :: P RowElem
+61c61
+< type Buffer= Maybe Dynamic
+---
+> type Buffer= Maybe ()
+63,64d62
+< type Row = [P Elem]
+< type Children=  Maybe  (P Elem)
+66c64
+< data Elem=   Node NodeTuple |  List Row Children
+---
+> type Children=  Maybe (P RowElem)
+67a66
+> data RowElem=   Node NodeTuple |  RowList Row Children
+69,70c68
+< 
+< instance Show Elem where
+---
+> instance Show RowElem where
+72,79c70
+<   show (List r t )= "<" ++ show1 ( reverse r) ++ ":"++
+<    case t of
+<      Nothing -> ""
+<      Just ch -> show ch
+<    ++">"
+< 
+< show1 xs=  concatMap ((++ " "). show) xs
+< 
+---
+>   show (RowList r ch)= show ( reverse r)  ++ "->" ++ show ch
+81,83c72
+< 
+< newRow :: MonadIO m => m (P Elem)
+< newRow= liftIO $ newMVar $ List [] Nothing
+---
+> type Row = [P RowElem]
+90c79
+<   show  x =  show (unsafePerformIO $ readMVar x)
+---
+>   show  x = show (unsafePerformIO $ readMVar x)
+92,94c81,82
+< eventf0= EventF  (-1,unsafePerformIO $ newMVar $ List [] Nothing,empty)
+<                  [const $ empty] M.empty 0
+<          Nothing  rootRef False
+---
+> eventf0= EventF  (-1,rootRef,empty) [const $ empty] M.empty 0
+>          Nothing rootRef False
+97,100c85,88
+< --topNode= (-1 :: Int,unsafePerformIO $ myThreadId,False,Nothing)
+< --
+< rootRef :: MVar Elem
+< rootRef=  unsafePerformIO $ newMVar $ List [] Nothing                      
+---
+> topNode= (-1 :: Int,unsafePerformIO $ myThreadId,False,Nothing)
+> 
+> rootRef :: MVar RowElem
+> rootRef=  unsafePerformIO $ newMVar $ RowList []  Nothing                      
+118c106
+<    st@(EventF   (_,_,_) fs d _ es ro r)  <- get
+---
+>    st@(EventF   _ fs d _ es ro r)  <- get
+120,123c108,109
+<      else  liftIO $ readMVar refSequence
+<    ro' <- newRow
+<    ro `eat` ro'
+<    put $ EventF   (n,ro,x) (f: unsafeCoerce fs) d n es ro'  r !> ("stored " ++ show n)
+---
+>      else  liftIO $ readMVar refSequence
+>    put $ EventF   (n,ro,x) ( f: unsafeCoerce fs) d n es ro r !> ("stored " ++ show n)
+125,129c111
+< 
+< eat ro ro'= liftIO $
+<  modifyMVar_  ro $ \(List es t) -> return $ List (ro':es) t
+< 
+<               
+---
+> 
+131c113
+<    st@(EventF   _ _ d  n es ro  r )  <- get
+---
+>    st@(EventF   _ _ d  n es ro r )  <- get
+140c122
+<    where 
+---
+>    where
+143c125
+<          put st{mfSequence=i}
+---
+>          put st{mfSequence=i,row=r}
+147c129
+< --         where
+---
+> 
+187c169
+<            Just k  ->  runTrans $ f k
+---
+>            Just k  -> do addRow' !> "ADDROW" ; runTrans $ f k
+189a172
+> 
+191,194c174,177
+< --        addRow'= do
+< --            r <- gets row
+< --            n <- addRow r
+< --            modify $ \s -> s{row= n}
+---
+>         addRow'= do
+>             r <- gets row
+>             n <- addRow r
+>             modify $ \s -> s{row= n}
+197,198c180,184
+<               n <- newMVar $ List [] Nothing
+<               modifyMVar_ r $ \(List ns _) ->   return $ List  ns $ Just n
+---
+>               n <- newMVar $ RowList [] Nothing
+>               modifyMVar_ r $ \(RowList ns ch) -> do
+>                 case ch of
+>                   Just x -> error $ "children not empty: "++ show x
+>                   Nothing ->  return $ RowList  ns $ Just n
+200a187
+> 
+264c251
+< data Loop= Once | Loop | Multithread deriving Eq
+---
+> data Loop= Once | Loop | Multithread
+266c253
+< waitEvents ::  Typeable b => IO b -> TransientIO b
+---
+> waitEvents ::  IO b -> TransientIO b
+270c257
+< async  :: Typeable b => IO b -> TransientIO b
+---
+> async  :: IO b -> TransientIO b
+273c260
+< parallel  :: Typeable b => Loop ->  IO b -> TransientIO b
+---
+> parallel  ::  Loop ->  IO b -> TransientIO b
+279,280c266,267
+< --      let  mnode=  nodeInfo cont
+<       started  <-   liftIO $ lookTree id currentRow !> ("idToLook="++ show id++ " in: "++ show currentRow)
+---
+>           mnode=  nodeInfo cont
+> --      mnode  <-   liftIO $ lookTree id currentRow !> ("idToLook="++ show id++ " in: "++ show currentRow)
+282c269
+<       case started of
+---
+>       case mnode of
+287,288c274
+< 
+<                    modifyMVar_ (row cont) $ \(List ns t) -> return $  List (ref : ns) t
+---
+> 
+295d280
+< 
+297,298c282,283
+<                       modifyMVar_  ref $ \(Node(i,_,_,_)) -> return
+<                                        $ Node(i,th,False,Just $ toDyn r)
+---
+>                       modifyMVar_  ref $ \(Node(i,_,ins,_)) -> return
+>                                        $ Node(i,th,False,Just $ unsafeCoerce r)
+300c285
+<                         EventF  (i,_,x) fs _ _ _ _ _-> do
+---
+>                         EventF  (i,row1,x) f _ _ _ _ _-> do
+302c287
+<                                 cont{replay= True,mfSequence=i,nodeInfo=Just ref}
+---
+>                                 cont{replay= True,mfSequence=i,nodeInfo=Just ref,row =row1}
+305,307c290,292
+<                             (Nothing,_) -> return ()
+< --                               modifyMVar_ ref $ \(Node(i,th,ins,rec)) -> return
+< --                                               $ Node(i,th,True,rec)
+---
+>                             (Nothing,_) ->
+>                                trace "NOTHING" $ modifyMVar_ ref $ \(Node(i,th,ins,rec)) -> return
+>                                                $ Node(i,th,True,rec)
+310,315c295,297
+<                             (Just r,cont') -> do
+<                                modifyMVar_ ref $ \(Node(i,th,ins,mrec)) -> return
+<                                                $ Node (i,th,False,Nothing) !> ("WAS STORED"++(show th))
+<                                let row1 = row cont'
+<                                List r t <- readMVar row1
+<                                delEvents  t       !> ("delEvents    "++ show t)
+---
+>                             (Just r,cont') ->do
+>                                modifyMVar_ ref $ \(Node(i,th,ins,_)) -> return
+>                                                $Node (i,th,False,Nothing)
+316a299
+>                                delEvents  row1        !> ("delEvents, activated    "++ show row1)
+318c301,305
+<                                nrow <- if hasloop==Multithread then return row1 else addRow row1
+---
+>                                n <- addRow $ row cont'
+>                                runStateT (runTrans $ ( compose $ unsafeCoerce f) r)
+>                                        cont'{row=n,replay= False,mfSequence=id } !> ("SEQ=" ++ show(mfSequence cont'))
+>                                return ()
+> --                      delEvents children []
+320,322d306
+<                                runStateT (runTrans $ ( compose $ unsafeCoerce fs) r)
+<                                        cont'{replay= False,mfSequence=id, row= nrow }
+<                                return () !> ("ROOT1=" ++ show rootRef) !> ("ROW"++ show row1)
+323a308,310
+>                    modifyMVar_ (row cont) $ \(RowList ns ch) -> return $  RowList (ref : ns) ch
+> 
+>                  return Nothing 
+325a313,315
+>         Just ref -> do
+>           modify $ \cont -> cont{nodeInfo=Nothing}
+>           Node (node@(id',th',inspectedValue, mrec)) <- liftIO $ readMVar ref
+327,328c317
+< 
+<                  return Nothing 
+---
+>           th <- liftIO myThreadId
+329a319
+>           return () !>  "FOUND" !> show th !> show th' !> show inspectedValue !> show mrec
+331,346c321,327
+<         Just  (node@(id',th',inspectedValue, mrec))  -> do
+<           modify $ \cont -> cont{nodeInfo=Nothing} 
+< --          Node (node@(id',th',inspectedValue, mrec)) <- liftIO $ readMVar ref
+<           return () !>  "FOUND"  !> show node
+<           if isJust mrec then return $  fromDynamic$ fromJust mrec else return Nothing
+< --          th <- liftIO myThreadId
+< --
+< --          return () !>  "FOUND" !> show th !> show th' !> show inspectedValue !> show node
+< --
+< --          if inspectedValue== False && th== th' && isJust mrec then do
+< --               return $  fromDynamic$ fromJust mrec !> ("ROOT2=" ++ show rootRef)  !> ("ROW="++ show (row cont))
+< --
+< --          else if inspectedValue == True && isJust mrec then
+< --               return $  fromDynamic $ fromJust mrec !> ("ROOT3=" ++ show rootRef)  !> ("ROW="++ show (row cont))
+< --
+< --          else return Nothing
+---
+>           if inspectedValue== False && th== th' && isJust mrec then do
+>                return $ Just $ unsafeCoerce $ fromJust mrec
+> 
+>           else if inspectedValue == True && isJust mrec then
+>                return $ Just $ unsafeCoerce $ fromJust mrec
+> 
+>           else return Nothing
+363,376c344,377
+<         taill Nothing= return Nothing
+<         taill(Just l)= readMVar l >>= \(List h t) -> return t
+< 
+<         delEvents Nothing = return ()
+< 
+< 
+< 
+<         delEvents (Just r)= do
+<               List h t <- readMVar r
+<               delList h
+< 
+<               delEvents t
+< 
+< 
+---
+> --        lookTree :: EventId -> P RowElem -> IO (Maybe NodeTuple)
+> --        lookTree id ref=  do
+> --            RowList ns <- readMVar ref
+> --            lookList id ns
+> --
+> --
+> --
+> --        lookList id mn= case mn of
+> --              [] -> return Nothing
+> --              (p:nodes) -> do
+> --                  me <- readMVar p
+> --                  case me of
+> --                    Node(node@((id',_,_,_))) ->
+> --                      if id== id'
+> --                         then return $ Just node
+> --                         else lookList id nodes
+> --                    RowList row -> do
+> --                         mx <- lookList id nodes
+> --                         case mx of
+> --                           Nothing -> lookList id row
+> --                           Just x -> return $ Just x
+> 
+>         delEvents :: P RowElem  -> IO()
+>         delEvents ref = do
+>             RowList mevs mch <- takeMVar ref
+>             maybeDel mch
+>             putMVar ref $ RowList mevs Nothing
+> 
+>         maybeDel mch=  case mch of
+>               Nothing -> return ()
+>               Just p -> do
+>                   RowList es mch' <- readMVar p
+>                   delList es !> ("toDelete="++ show es)
+>                   maybeDel mch'
+381,389c382,383
+<           del' (Node(node@(_,th,_,_)))= killThread th !> ("DELETING " ++ show node ++ " "++show (length es))
+<           del' (List h t)= delList h>> delEvents t !> "rowkist="
+< 
+<         lookTree :: EventId -> P Elem -> IO (Maybe NodeTuple)
+<         lookTree id ref=  do
+<             List ns _<- readMVar ref
+<             lookList id ns
+< 
+< 
+---
+>           del' (Node(node@(_,th,_,_)))= killThread th !> ("DELETING " ++ show node)
+>           del' (RowList l mch)= delList l >> maybeDel mch
+391,404d384
+<         lookList id mn= case mn of
+<               [] -> return Nothing
+<               (p:nodes) -> do
+<                   me <- readMVar p
+<                   case me of
+<                     Node(node@((id',_,_,_))) ->
+<                       if id== id'
+<                          then return $ Just node
+<                          else lookList id nodes
+<                     List row _ -> do
+<                          mx <- lookList id nodes
+<                          case mx of
+<                            Nothing -> lookList id row
+<                            Just x -> return $ Just x
+457c437
+<     liftIO $ putStrLn $"Enter ("++show ret++")for:\t" ++ message
+---
+>     liftIO $ putStrLn $"Enter ("++show ret++")" ++ message
