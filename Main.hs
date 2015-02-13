@@ -2,7 +2,7 @@
 
 module Main where
 
-import Base8
+import Base
 import Control.Monad.State
 import System.IO.Unsafe
 import Control.Applicative
@@ -25,19 +25,17 @@ instance Monoid Int where
 
 
 
-main= withSocketsDo $ do
+main= do
+    print "hi"
     runTransient $ do
-       liftIO $ putStrLn "MAIN MENU"
-       r <- async inputLoop  <|> return False
+       async inputLoop  <|> return ()
        option "main" "to return to the main menu" <|> return ""
-       case r of
-         True -> do liftIO $ print "BYE" ; return ()
-         False->   colors <|> app  <|> sum1 <|> sum2 <|> server <|> menu
-
+       liftIO $ putStrLn "MAIN MENU"
+       colors <|> app  <|> sum1 <|> sum2 <|> server <|> menu
+       
     stay
 
 
-stay=  takeMVar $ unsafePerformIO $ (newEmptyMVar :: IO (MVar()))
 
 colors= do
        option "colors" "choose between three colors"

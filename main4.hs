@@ -2,7 +2,7 @@
 
 module Main where
 
-import Base
+import Basefail
 import Control.Monad.State
 import Unsafe.Coerce
 import System.IO.Unsafe

@@ -7,4 +7,7 @@ cabal-file: project.cabal
 version: 1
 ghc-args: []
 excluded-modules:
+- Base7.hs
+- Base8-fail.hs
 - Setup.hs
+- dist/build/autogen/Paths_Transient.hs
