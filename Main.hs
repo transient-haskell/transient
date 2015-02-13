@@ -1,4 +1,4 @@
-{-# LANGUAGE DeriveDataTypeable, StandaloneDeriving #-}
+{-# LANGUAGE DeriveDataTypeable, StandaloneDeriving, ScopedTypeVariables #-}
 
 module Main where
 
@@ -7,6 +7,7 @@ import Control.Monad.State
 import System.IO.Unsafe
 import Control.Applicative
 import Control.Concurrent
+import Control.Exception
 import Data.Monoid
 
 import Network.HTTP
@@ -90,6 +91,7 @@ sum2= do
 
 server=  do
        option "server" "A web server in the port 8080"
+       liftIO $ print "Server Stated"
        sock <-  liftIO $  listenOn $ PortNumber 8080
        (h,_,_) <- parallel Loop $ accept sock
        liftIO $ do
@@ -97,7 +99,7 @@ server=  do
            putStrLn "new request"
            hFlush h
            hClose h
-
+         `catch` (\(e::SomeException) -> sClose sock)
 msg = "HTTP/1.0 200 OK\r\nContent-Length: 5\r\n\r\nPong!\r\n"
 
 
