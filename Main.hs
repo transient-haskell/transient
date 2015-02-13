@@ -25,14 +25,12 @@ instance Monoid Int where
 
 
 
-main= do
-    print "hi"
+main= withSocketsDo $ do
     runTransient $ do
-       async inputLoop  <|> return ()
-       option "main" "to return to the main menu" <|> return ""
        liftIO $ putStrLn "MAIN MENU"
+       async inputLoop  <|> return ()
        colors <|> app  <|> sum1 <|> sum2 <|> server <|> menu
-       
+
     stay
 
 
@@ -103,11 +101,11 @@ msg = "HTTP/1.0 200 OK\r\nContent-Length: 5\r\n\r\nPong!\r\n"
 
 menu=  do
      option "menu"  "a menu with two options"
-     r <- option "colors" "colors" <|> option "sum" "sum"
-     case r of
-        "choose" -> colors
-        "sum" -> sum1
-
+     r <- (colors >> return True) <|> (sum1  >> return False)
+     liftIO $ putStrLn $ case r of
+        True -> "the first option was chosen"
+        False -> "the second option was chosen"
+     return ()
 -- / show
 
 
