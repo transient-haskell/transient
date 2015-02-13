@@ -1,8 +1,9 @@
 {-# LANGUAGE ScopedTypeVariables #-}
 
-module Main where
+module Main where 
 
 import           Base
+import           Backtrack
 import           Control.Applicative
 import           Control.Concurrent
 import           Control.Exception
@@ -18,18 +19,31 @@ import           System.IO
 -- show
 
 
-instance Monoid Int where
-      mappend= (+)
-      mempty= 0
 
 main= do
     runTransient $ do
-       async inputLoop  <|> return ()
-       option "main" "to return to the main menu" <|> return ""
-       liftIO $ putStrLn "MAIN MENU"
-       colors <|> app  <|> sum1 <|> sum2 <|> server <|> menu
+      async inputLoop  <|> return ()
+      option "main" "to return to the main menu"  <|> return ""
+      liftIO $ putStrLn "MAIN MENU"
+
+      transaction <|> colors <|> app  <|> sum1 <|> sum2 <|> server <|> menu
 
     stay
+
+transaction=   do
+       option "back" "backtracking test"  
+       liftIO $ putStrLn "product navigation" 
+       backCut
+       liftIO (putStrLn "product reserved,added to cart") `onBacktrack` liftIO (putStrLn "product un-reserved")    
+       r <- pay
+       if  r then  liftIO $ print "done!"
+             else undo
+       where
+       undo= goBack
+       pay= do
+           liftIO $ putStrLn "Payment failed"
+           return False
+
 
 colors :: TransientIO ()
 colors= do
@@ -80,6 +94,10 @@ sum2= do
                   , "http://www.google.com/"]
 
        liftIO $ putStrLn $ "result="  ++ show rs
+
+instance Monoid Int where
+      mappend= (+)
+      mempty= 0
 
 server :: TransientIO ()
 server=  do

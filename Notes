@@ -1,0 +1,37 @@
+como quitar los Eventf del EVar?
+
+type EVarId= Int
+
+newtype EVars= EVars (M.Map EVarId [(TransactId,EventF)]) deriving Typeable
+
+newtype STMVars= STMVars [(EVarId, TransactId)]
+
+newtype Trans= Trans TransId [EVarId]
+
+newMVar :: a -> TransientIO (EVar a)
+newMVar a = Transient $ do
+   id <- genNewId
+   ref <- liftIO $ newIORef a
+   return . Just $ EVar id ref
+
+readMVar (EVar id _)= do
+   cont <- getCont
+   STMVars map <- getSessionData `onNothing` return (STMVars M.empty)
+   Trans transid varids <- getSessionData `onNothing` error "MVar not inside a atomic block"
+   setSData $ STMVars $ M.insert id transid map
+   setSData $ Trans transid $ id:varids
+   readEvar
+
+writeMVar = writeEVar 
+
+atomic trans= Transient $ do
+   transid <- genNewId
+   setSData $ Trans transid []
+   r <- trans
+   EVars vars   <- getSessionData `onNothing` return (EVars M.empty)
+   Trans _ ids <- getSessionData `onNothing` return (Trans 0 []) 
+   setSData Evars $ map delete   evars ids
+   where
+   delete evars id= 
+      let  Just (EVar _ conts) = M.lookup id evars <|> error(TVar not found at end of atomic block)
+      M.insert id (filter ((/= id) . fst) conts)
