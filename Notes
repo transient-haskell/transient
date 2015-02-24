@@ -1,4 +1,15 @@
-como quitar los Eventf del EVar?
+simular la navegación de MFlow
+ primitiva para lanzar un proceso que escucha
+
+  deberia hacer un bucle por cada cookie, pero fork cuando es distinto
+  como se 
+  
+cambiar rowlist para que haya menos
+TVars test EVars
+emit source
+acabar tutorial backtracking mas ejemplos
+    
+
 
 type EVarId= Int
 

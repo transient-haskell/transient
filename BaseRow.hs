@@ -11,31 +11,33 @@
 -- |
 --
 -----------------------------------------------------------------------------
-{-# LANGUAGE ExistentialQuantification,FlexibleContexts,
-             FlexibleInstances, MultiParamTypeClasses #-}
+{-# LANGUAGE ExistentialQuantification #-}
+{-# LANGUAGE FlexibleContexts          #-}
+{-# LANGUAGE FlexibleInstances         #-}
+{-# LANGUAGE MultiParamTypeClasses     #-}
 
 -- show
-module Base  where 
+module BaseRow  where
 -- /show
 
-import Control.Monad.State
-import Unsafe.Coerce
-import System.IO.Unsafe
-import Control.Applicative
-import qualified Data.Map as M
-import Data.Dynamic
-import Debug.Trace
-import Data.Monoid
+import           Control.Applicative
+import           Control.Monad.State
+import           Data.Dynamic
+import qualified Data.Map               as M
+import           Data.Monoid
+import           Debug.Trace
+import           System.IO.Unsafe
+import           Unsafe.Coerce
 
 --import Data.IORef
-import Control.Concurrent
-import Control.Concurrent.STM
-import GHC.Conc
-import Data.Maybe
-import System.Mem.StableName
-import Data.List
+import           Control.Concurrent
+import           Control.Concurrent.STM
+import           Data.List
+import           Data.Maybe
+import           GHC.Conc
+import           System.Mem.StableName
 
-(!>) =  const . id -- flip trace
+(!>) =    flip trace
 infixr 0 !>
 
 data Transient m x= Transient  {runTrans :: m (Maybe x)}
@@ -45,28 +47,31 @@ type EventId= Int
 
 
 
-data EventF  = forall a b . EventF{xcomp :: TransientIO a
-                                  ,fcomp :: a -> TransientIO b
-                                  ,mfData :: M.Map TypeRep SData
+data EventF  = forall a b . EventF{xcomp      :: TransientIO a
+                                  ,fcomp      :: a -> TransientIO b
+                                  ,mfData     :: M.Map TypeRep SData
                                   ,mfSequence :: Int
-                                  ,row :: P RowElem
-                                  ,replay :: Bool
+                                  ,row        :: P RowElem
+                                  ,replay     :: Bool
+                                  ,newRow     :: Bool
                                   }
 
 type P= MVar
 
+(=:) :: P a  -> a -> IO()
+(=:) n v= modifyMVar_ n $ const $ return v
+
 type Buffer= Maybe ()
 type NodeTuple= (EventId, ThreadId, Buffer)
 
-type Children=  Maybe (P RowElem)
+type Children=   (P [P RowElem])
 
-data RowElem=   Node NodeTuple |  RowList Row Children
+data RowElem=   Node NodeTuple  Children
 
 instance Show RowElem where
-  show (Node (e,_,_))= show e
-  show (RowList r ch)= show ( reverse r)  ++ "->" ++ show ch
+     show (Node (e,_,_) ch)= show e ++ "->" ++ show ch
 
-type Row = [P RowElem]
+-- type Row = [P RowElem]
 
 instance Eq NodeTuple where
      (i,_,_) ==  (i',_,_)= i == i'
@@ -76,14 +81,14 @@ instance Show x => Show (MVar x) where
   show  x = show (unsafePerformIO $ readMVar x)
 
 eventf0= EventF  empty (const  empty) M.empty 0
-          rootRef False
+          rootRef False False
 
--- {-# NOINLINE topNode #-}
--- topNode= (-1 :: Int,unsafePerformIO $ myThreadId,False,Nothing)
 
-{-# NOINLINE rootRef #-}
+topNode= (-1 :: Int,unsafePerformIO $ myThreadId,Nothing)
+
+{-#NOINLINE rootRef#-}
 rootRef :: MVar RowElem
-rootRef=  unsafePerformIO $ newMVar $ RowList []  Nothing                      
+rootRef=  unsafePerformIO $ newMVar $ Node topNode $ unsafePerformIO $ newMVar []
 
 instance MonadState EventF  TransientIO where
   get=  Transient $ get >>= return . Just
@@ -100,49 +105,42 @@ runTransient :: TransientIO x -> IO (Maybe x, EventF)
 runTransient t= runStateT (runTrans t) eventf0
 
 
-newRow :: MonadIO m => m (P RowElem)
-newRow= liftIO $ newMVar $ RowList [] Nothing
-
 setEventCont ::   TransientIO a -> (a -> TransientIO b) -> StateIO EventF
 setEventCont x f  = do
-   st@(EventF   _ fs d _  ro r)  <- get
+   st@(EventF   _ fs d _  ro r nr)  <- get
    n <- if replay st then return $ mfSequence st
      else  liftIO $ readMVar refSequence
-   ro' <- newRow
-   ro `eat` ro'
-   put $ EventF   x ( \x -> f x >>= unsafeCoerce fs) d n  ro' r !> ("stored " ++ show n)
+
+   put $ EventF   x ( \x -> f x >>= unsafeCoerce fs) d n  ro r nr !> ("stored " ++ show n)
    return st
 
-eat ro ro'= liftIO $
- modifyMVar_  ro $ \(RowList es t) -> return $ RowList (ro':es) t
 
-resetEventCont (EventF x fs _ _  _ _)=do
-   st@(EventF   _ _ d  n  ro r )  <- get
-   put $ EventF  x fs d n  ro r
+resetEventCont (EventF x fs _ _  _ _ _)=do
+   st@(EventF   _ _ d  n  ro r nr)  <- get
+   put $ EventF  x fs d n  ro r nr
 
 
 getCont ::(MonadState EventF  m) => m EventF
 getCont = get
 
 runCont :: EventF -> StateIO ()
-runCont (EventF  x fs _ _  _ _)= do runIt  x (unsafeCoerce fs); return ()
+runCont (EventF  x fs _ _  _ _ _)= do runIt  x (unsafeCoerce fs); return ()
    where
    runIt  x fs= runTrans $ do
          st <- get
-         --put st{mfSequence=i}
          r <- x
          put st
          fs r
 
 
 runClosure :: EventF -> StateIO (Maybe a)
-runClosure (EventF x _ _ _ _ _) =  unsafeCoerce $ runTrans x
+runClosure (EventF x _ _ _ _ _ _) =  unsafeCoerce $ runTrans x
 
 runContinuation ::  EventF -> a -> StateIO (Maybe b)
-runContinuation (EventF _ fs _ _ _ _ ) x= runTrans $  (unsafeCoerce fs) x 
+runContinuation (EventF _ fs _ _ _ _ _) x= runTrans $  (unsafeCoerce fs) x
 
 instance   Functor TransientIO where
-  fmap f x=   Transient $ fmap (fmap f) $ runTrans x -- 
+  fmap f x=   Transient $ fmap (fmap f) $ runTrans x --
 
 
 instance Applicative TransientIO where
@@ -166,7 +164,7 @@ stop :: TransientIO a
 stop= Control.Applicative.empty
 
 instance Monoid a => Monoid (TransientIO a) where
-  mappend x y = mappend <$> x <*> y  
+  mappend x y = mappend <$> x <*> y
   mempty= return mempty
 
 instance Monad TransientIO where
@@ -176,26 +174,19 @@ instance Monad TransientIO where
         mk <- runTrans x
         resetEventCont cont
         case mk of
-           Just k  -> do addDescent' !> "ADDROW" ; runTrans $ f k
+           Just k  -> runTrans $ f k
 
            Nothing -> return Nothing
 
-        where
-        addDescent'= do
-            r <- gets row
-            n <- addDescent r
-            modify $ \s -> s{row= n}
-addDescent r=
-            liftIO $ do
-              n <- newMVar $ RowList [] Nothing
-              modifyMVar_ r $ \(RowList ns ch) ->  return $ RowList  ns $ Just n
-             --   case ch of
-             --     Just x -> error $ "children not empty: "++ show x
-             --     Nothing ->  return $ RowList  ns $ Just n
+
+addChild  r e= liftIO $ do
+              ch <- newMVar []
+              n <- newMVar $ Node e $ ch
+              Node e' ch <- readMVar r
+              modifyMVar_ ch (\h -> return (n:h))
               return n
 
-addChild row ref= modifyMVar_  row $ \(RowList ns t) -> return $  RowList (ref : ns) t
-   
+
 instance MonadTrans (Transient ) where
   lift mx = Transient $ mx >>= return . Just
 
@@ -214,9 +205,9 @@ getSessionData =  resp where
  typeResp :: m (Maybe x) -> x
  typeResp= undefined
 
--- | getSessionData specialized for the View monad. if Nothing, the monadic computation
--- does not continue. getSData is a widget that does not validate when there is no data
---  of that type in the session.
+-- | getSessionData specialized for the View monad. if Nothing, the
+-- monadic computation does not continue. getSData is a widget that does
+-- not validate when there is no data of that type in the session.
 getSData :: MonadState EventF m => Typeable a =>Transient m  a
 getSData= Transient getSessionData
 
@@ -243,7 +234,7 @@ withSData f= modify $ \st -> st{mfData=
         fx=  f mx'
         typeofx= typeOf $ typeoff f
     in  M.insert typeofx  (unsafeCoerce fx) dat}
-    where 
+    where
     typeoff :: (Maybe a -> a) -> a
     typeoff = undefined
 ----
@@ -259,15 +250,10 @@ genNewId=  do
         False -> liftIO $
           modifyMVar refSequence $ \n -> return (n+1,n)
 
-{-# NOINLINE refSequence #-}
 refSequence :: MVar Int
 refSequence= unsafePerformIO $ newMVar 0
 
 
---- IO events
-
---buffers :: IORef [(EventId,Dynamic)]
---buffers= unsafePerformIO $ newIORef []
 
 data Loop= Once | Loop | Multithread deriving Eq
 
@@ -289,46 +275,48 @@ parallel hasloop receive =  Transient $ do
 forkCont::  EventId -> Loop -> IO a -> EventF -> IO (Maybe a)
 forkCont id hasloop receive cont= do
       let currentRow= row cont
-      mnode  <-   liftIO $ lookTree id currentRow !> ("idToLook="++ show id++ " in: "++ show currentRow)
-      
-      case mnode of
+      return() !> ("idToLook="++ show id++ " in: "++ show currentRow)
+      found <- lookupThread id currentRow
+      case found of
         Nothing ->do
                  return () !> "NOT FOUND"
                  forkCont' id cont hasloop receive
                  return Nothing
-        
-        Just (node@(id',th', mrec)) -> do
-         -- modify $ \cont -> cont{nodeInfo=Nothing}
-          return $ if isJust mrec then Just $ unsafeCoerce $ fromJust mrec else Nothing
+
+        Just (id',th', mrec) ->  return $ if isJust mrec then Just $ unsafeCoerce $ fromJust mrec else Nothing !> "FOUND"
 
         where
-        forkCont' id cont hasloop receive= liftIO $ forkIO $ do
+        forkCont' id  cont' hasloop receive= liftIO $ forkIO $ do
                      th <- myThreadId
-                     ref <-newMVar  $  Node (id,th,Nothing)
-                     addChild (row cont) ref
-
+                     ref <- addChild (row cont') (id,th,Nothing)
+                     let cont = case newRow cont' of
+                                 True -> cont'  {row=ref,newRow= False}
+                                 False -> cont'
                      loop hasloop  receive $ \r -> do
-                       modifyMVar_  ref $ \(Node(i,th,_)) -> return
-                                       $ Node(i,th,Just $ unsafeCoerce r)
+                       
+                       modifyMVar_  ref $ \(Node(i,th,_) ch) -> return
+                                       $ Node(i,th,Just $ unsafeCoerce r) ch !> "LOOP"
                        (flip runStateT) cont $ do
-                           cont@(EventF  x fs _  _ _ _) <- get
-                           
-                           put cont{replay= True{-,-mfSequence=i,-}{-nodeInfo=Just ref-}}
-                           
-                           mr <- runClosure cont 
+                           cont@(EventF  x fs _  _ _ _ _) <- get
+
+                           put cont{replay= True}
+
+                           mr <- runClosure cont
                            case mr  of
                              Nothing ->return Nothing
                              Just r ->do
-                               row1 <- gets row 
+                               row1 <- gets row   !> "JUST"
                                liftIO $ delEvents  row1              !> ("delEvents: "++ show row1)
                                id <- liftIO $ readMVar refSequence
-                               n <-  addDescent  row1
-                               modify $ \cont -> cont{row=n,replay= False,mfSequence=id } !> ("SEQ=" ++ show(mfSequence cont))
+                               modify $ \cont -> cont{replay= False,mfSequence=id,newRow=True } !> ("SEQ=" ++ show(mfSequence cont))
                                runContinuation cont r
                        return ()
 
 
-
+        assignThread ref= do
+              th <- myThreadId
+              modifyMVar_  ref $ \(Node(i,_,buf) ch) -> return $ Node (i,th,buf) ch
+              
         loop Once rec x  = rec >>= x
         loop Loop rec f = do
             r <- rec
@@ -340,46 +328,32 @@ forkCont id hasloop receive cont= do
             forkIO $ f r
             loop Multithread rec f
 
-        lookTree :: EventId -> P RowElem -> IO (Maybe NodeTuple)
-        lookTree id ref=  do
-            RowList ns _<- readMVar ref
-            lookList id ns
-
-
-
-        lookList id mn= case mn of
-              [] -> return Nothing
-              (p:nodes) -> do
-                  me <- readMVar p
-                  case me of
-                    Node(node@((id',_,_))) ->
-                      if id== id'
-                         then return $ Just node
-                         else lookList id nodes
-                    RowList row _ -> do
-                         mx <- lookList id nodes
-                         case mx of
-                           Nothing -> lookList id row
-                           Just x -> return $ Just x
+        lookupThread id row= do
+            Node _ r <- readMVar row
+            chs <- readMVar r
+            f chs
+            where
+            f []= return Nothing
+            f (ch:chs)= do
+                Node (nod@(id',_,_)) _ <- readMVar ch
+                if id == id' then return $ Just nod else f chs
+        
         delEvents :: P RowElem  -> IO()
         delEvents ref = do
-            RowList mevs mch <- takeMVar ref
+            Node _ mch <-  readMVar ref
             maybeDel mch
-            putMVar ref $ RowList mevs Nothing
+            modifyMVar_ mch $ const $ return []
+            
 
-        maybeDel mch=  case mch of
-              Nothing -> return ()
-              Just p -> do
-                  RowList es mch' <- readMVar p
-                  delList es !> ("toDelete="++ show es)
-                  maybeDel mch'
+        maybeDel p=  do
+                  es <- readMVar p
+                  mapM_ delEvents' es  !> ("toDelete="++ show es)
 
-
-        delList es=  mapM_ del es where
-          del p = readMVar p >>= del'
-          del' (Node(node@(_,th,_)))= killThread th !> ("DELETING " ++ show node)
-          del' (RowList l mch)= delList l >> maybeDel mch
-
+        delEvents' :: P RowElem  -> IO()
+        delEvents' ref = do
+            Node (_,th,_) mch <- readMVar ref
+            killThread th
+            maybeDel mch
 
 type EventSetter eventdata response= (eventdata ->  IO response) -> IO ()
 type ToReturn  response=  IO response
@@ -401,8 +375,12 @@ react setHandler iob= Transient $ do
             return Nothing
           Just dat -> delSessionData dat >> return (Just  dat)
 
+--hash f= liftIO $ do
+--          st <- makeStableName $! f `seq` f
+--          return $hashStableName st
 
-{-# NOINLINE getLineRef #-}        
+--uhash= unsafePerformIO .hash
+
 getLineRef= unsafePerformIO $ newTVarIO Nothing
 
 
@@ -433,7 +411,7 @@ option ret message= do
     waitEvents  $ getLine' (==ret)
     liftIO $do putStrLn $ show ret ++ " chosen"
     return ret
-    
+
 getLine' cond=   inputLoop `seq` do
      atomically $ do
        mr <- readTVar getLineRef
@@ -459,7 +437,7 @@ inputLoop=  do
     print "Press end to exit"
     inputLoop'
     where
-        inputLoop'= do 
+        inputLoop'= do
            r<- getLine                      !> "started inputLoop"
            if r=="end" then putMVar rexit () else do
               atomically . writeTVar  getLineRef $ Just r
@@ -472,6 +450,6 @@ stay=  takeMVar rexit
 
 onNothing iox iox'= do
        mx <- iox
-       case mx of 
+       case mx of
            Just x -> return x
            Nothing -> iox'

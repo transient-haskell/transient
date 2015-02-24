@@ -1,6 +1,6 @@
 {-# LANGUAGE DeriveDataTypeable #-}
 {-# LANGUAGE ExistentialQuantification #-}
-module Backtrack (backRegister, onBacktrack, goBack, goForward, backCut) where
+module Backtrack (registerUndo, onUndo, undo, retry, undoCut) where
 
 import Base
 import Data.Typeable
@@ -13,57 +13,59 @@ data Backtrack= forall a b.Backtrack{backtracking :: Bool
                                     deriving Typeable
 
 -- | assures that backtracking will not go further
-backCut :: TransientIO ()
-backCut= Transient $ do
+undoCut :: TransientIO ()
+undoCut= Transient $ do
      delSessionData $ Backtrack False []
      return $ Just ()
 
--- | the secod parameter will be executed when when backtracking 
-onBacktrack ac bac= backRegister $ do 
-    Backtrack back _ <- getSData <|> return (Backtrack False [])
-    if back then bac else ac
-
+-- | the secod parameter will be executed when backtracking 
+{-# NOINLINE onUndo #-}
+onUndo :: TransientIO a -> TransientIO a -> TransientIO a
+onUndo ac bac= do
+   r<-registerUndo $ Transient $ do 
+     Backtrack back _ <- getSessionData `onNothing` return (Backtrack False [])
+     runTrans $ if back then bac  else ac 
+   return r
+   
 -- | register an actions that will be executed when backtracking
-backRegister :: TransientIO a -> TransientIO a
-backRegister f  = Transient $ do
-   st@(EventF   (i,x) fs d _  ro r)  <- get   !> "backregister"
+{-# NOINLINE registerUndo #-}
+registerUndo :: TransientIO a -> TransientIO a
+registerUndo f  = Transient $ do
+   cont@(EventF _ _ _ i _ _ )  <- get   !> "backregister"
    md  <- getSessionData
    setSessionData $   case md of
-        Just (bss@(Backtrack b (bs@((EventF (i',_) _ _ _ _ _):_)))) -> if i== i' then bss else  Backtrack b $ unsafeCoerce(i,x,ro, fs):bs
-        Nothing ->  Backtrack False [st]
+        Just (bss@(Backtrack b (bs@((EventF _ _ _ i' _ _ ):_)))) -> if False then bss else  Backtrack b $ cont:bs
+        Nothing ->  Backtrack False [cont]
    runTrans f
 
 -- | restart the flow forward from this point on
-goForward :: TransientIO ()
-goForward= setSData $ Backtrack False []
+retry :: TransientIO ()
+retry= do
+    Backtrack _ stack <- getSessionData `onNothing` return (Backtrack False [])
+    setSData $ Backtrack False stack
 
 -- | execute backtracking. It execute the registered actions in reverse order. 
 --
 -- If the backtracking flag is changed the flow proceed  forward from that point on. 
 --
---If the backtrack stack is finished or backCut executed, `goBack` will stop.
-goBack :: TransientIO ()
-goBack= Transient $ do
-  mv <- getSessionData                  !>"GOBACK"
-  case mv of
-    Just bs -> goBackt  bs
-    Nothing -> return Nothing
+--If the backtrack stack is finished or undoCut executed, `undo` will stop.
+undo :: TransientIO a
+undo= Transient $ do
+  bs <- getSessionData  `onNothing` return nullBack            !>"GOBACK"
+  goBackt  bs
+
   where
+  nullBack= Backtrack False []
   goBackt (Backtrack _ [])= return Nothing                     !> "END"
-  goBackt (Backtrack b (stack@((EventF(i,x) fs _ _ _ _): bs)))= do
-        modify $ \cont -> cont{replay= True,mfSequence=i}
+  goBackt (Backtrack b (stack@(first@(EventF x fs _ _ _  _ ): bs)))= do
+        put first{replay=True} 
         setSData $ Backtrack True stack
-        mr <-  runTrans x
-        mb <- getSessionData
-        case mb of
-          Nothing -> return Nothing
-          Just (Backtrack back _) -> do
-             
-             case back of
-               True ->  goBackt $ Backtrack True bs            !> "BACK AGAIN"
-               False -> case mr of
+        mr <-  runClosure first                                !> "RUNCLOSURE"
+        Backtrack back _ <- getSessionData `onNothing` return nullBack 
+                                                               !>"END RUNCLOSURE"
+        case back of
+           True ->  goBackt $ Backtrack True bs                !> "BACK AGAIN"
+           False -> case mr of
                    Nothing -> return empty                     !> "FORWARD END"
-                   Just x -> do
-                       runTrans $ compose (unsafeCoerce fs) x  !> "FORWARD EXEC"
-                   
-             return Nothing             
+                   Just x ->  runContinuation first x          !> "FORWARD EXEC"
+

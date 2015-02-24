@@ -15,11 +15,7 @@ newtype EVars= EVars (M.Map Int [EventF]) deriving Typeable
 
 data EVar a= EVar Int (IORef a)
 
-onNothing iox iox'= do
-       mx <- iox
-       case mx of 
-           Just x -> return x
-           Nothing -> iox'
+
 
 newEVar :: a -> TransientIO (EVar a)
 newEVar a = Transient $ do

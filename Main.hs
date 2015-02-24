@@ -20,30 +20,49 @@ import           System.IO
 
 
 
-main= do
-    runTransient $ do
+
+main=  do
+    runTransient $ do   
       async inputLoop  <|> return ()
+      
       option "main" "to return to the main menu"  <|> return ""
       liftIO $ putStrLn "MAIN MENU"
 
-      transaction <|> colors <|> app  <|> sum1 <|> sum2 <|> server <|> menu
+      transaction <|> transaction2 <|> colors <|> 
+        app  <|> sum1 <|> sum2 <|> server <|> menu
 
     stay
 
 transaction=   do
-       option "back" "backtracking test"  
-       liftIO $ putStrLn "product navigation" 
-       backCut
-       liftIO (putStrLn "product reserved,added to cart") `onBacktrack` liftIO (putStrLn "product un-reserved")    
-       r <- pay
-       if  r then  liftIO $ print "done!"
-             else undo
-       where
-       undo= goBack
-       pay= do
-           liftIO $ putStrLn "Payment failed"
-           return False
+       option "back" "backtracking test"
+       productNavigation
+       reserve
+       payment
+       
+transaction2= do
+       option "back2" "backtracking test 2"
+       productNavigation
+       reserveAndSendMsg
+       payment
 
+
+       liftIO $ print "done!"
+
+       
+productNavigation = liftIO $ putStrLn "product navigation" 
+
+reserve= liftIO (putStrLn "product reserved,added to cart") 
+                 `onUndo` liftIO (putStrLn "product un-reserved") 
+
+payment = do
+           liftIO $ putStrLn "Payment failed"
+           undo
+
+reserveAndSendMsg= do
+            reserve
+            liftIO $ print "MIDDLE"
+            liftIO  (putStrLn "update other database necesary for the reservation")
+                 `onUndo` liftIO (putStrLn "database update undone")
 
 colors :: TransientIO ()
 colors= do
@@ -59,7 +78,6 @@ app= do
        option "app" "applicative expression that return a counter in 2-tuples every second"
        r <-  (,) <$>  number  <*> number
        liftIO $ putStrLn $ "result=" ++ show r
-
        where
        number= waitEvents $ do
           threadDelay 1000000
