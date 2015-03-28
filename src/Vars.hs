@@ -4,7 +4,7 @@ module Vars where
 import Base
 import Data.Map as M
 import Data.Typeable
-import Data.Maybe
+
 import Control.Concurrent
 import Control.Applicative
 import Data.IORef
@@ -15,7 +15,15 @@ newtype EVars= EVars (M.Map Int [EventF]) deriving Typeable
 
 data EVar a= EVar Int (IORef a)
 
-
+-- * concurrency effect 
+-- Evars are event vars. `readEVar` trigger the continuation (the code that is after them) when the var is updated wih writeEVar
+-- It is like the publish-suscribe pattern but without inversion of control, since a readEVar can be inserted at any place in the
+-- Transient flow.
+-- EVars are created upstream and can be used to communicate two subbranches of the monad. Followin the Transient philosophy they 
+-- do not block unlike MVars or TVar's `retry`. They have a semantic similar to TVars when combined with `parallel`, so they are 
+-- experimental, expecting some advantage of this model over TVar.
+-- advantages 
+-- (not tested yet)
 
 newEVar :: a -> TransientIO (EVar a)
 newEVar a = Transient $ do

@@ -7,6 +7,7 @@ import Data.Typeable
 import Control.Applicative
 import Control.Monad.State
 import Unsafe.Coerce
+import System.Mem.StableName
 
 data Backtrack= forall a b.Backtrack{backtracking :: Bool
                                     ,backStack :: [EventF]}
@@ -31,12 +32,18 @@ onUndo ac bac= do
 {-# NOINLINE registerUndo #-}
 registerUndo :: TransientIO a -> TransientIO a
 registerUndo f  = Transient $ do
-   cont@(EventF _ _ _ i _ _ )  <- get   !> "backregister"
-   md  <- getSessionData
-   setSessionData $   case md of
-        Just (bss@(Backtrack b (bs@((EventF _ _ _ i' _ _ ):_)))) -> if False then bss else  Backtrack b $ cont:bs
-        Nothing ->  Backtrack False [cont]
+   cont@(EventF x _ _ _ _ _)  <- get   !> "backregister"
+   md  <- getSessionData 
+   ss <- case md of
+        Just (bss@(Backtrack b (bs@((EventF x'  _ _ _ _  _):_)))) -> do
+            addrx  <- addr x
+            addrx' <- addr x'         -- to avoid duplicate backtracking points
+            return $ if addrx == addrx' then bss else  Backtrack b $ cont:bs
+        Nothing ->  return $ Backtrack False [cont]
+   setSessionData ss
    runTrans f
+   where
+   addr x = liftIO $ return . hashStableName =<< (makeStableName $! x)
 
 -- | restart the flow forward from this point on
 retry :: TransientIO ()
@@ -57,7 +64,7 @@ undo= Transient $ do
   where
   nullBack= Backtrack False []
   goBackt (Backtrack _ [])= return Nothing                     !> "END"
-  goBackt (Backtrack b (stack@(first@(EventF x fs _ _ _  _ ): bs)))= do
+  goBackt (Backtrack b (stack@(first@(EventF x fs _ _  _ _): bs)))= do
         put first{replay=True} 
         setSData $ Backtrack True stack
         mr <-  runClosure first                                !> "RUNCLOSURE"

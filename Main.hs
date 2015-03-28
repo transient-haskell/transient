@@ -1,3 +1,5 @@
+{-# LANGUAGE FlexibleInstances #-}
+{-# LANGUAGE TypeSynonymInstances #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 
 module Main where 
@@ -7,7 +9,7 @@ import           Backtrack
 import           Control.Applicative
 import           Control.Concurrent
 import           Control.Exception
-import           Control.Monad.State
+import           Control.Monad.IO.Class
 import           Data.Monoid
 import           System.IO.Unsafe
 
@@ -15,30 +17,72 @@ import           Network.HTTP
 
 import           Network
 import           System.IO
+import           Data.IORef
+import           Control.Monad
+-- show1
 
--- show
+
+
+events :: Loop -> [a] -> TransientIO a
+events typ xs = do
+    evs <- liftIO  $ newIORef xs
+    r <- parallel typ $ do
+           threadDelay 10
+           atomicModifyIORef evs $ \es -> 
+              if not $ null es 
+                then  (tail es, Just $ head es)
+                else (es,Nothing)
+    case r of
+        Nothing -> stop
+        Just r -> return r
+
+
+        
 
 
 
 
-main=  do
-    runTransient $ do   
+
+choose= events  Loop 
+
+pythags = do
+  x <- choose[1..3]
+  y <- choose[1..3]
+  z <- choose[1..3]
+  -- guard (x+y==4)
+  liftIO $ print (x, y,z)
+
+test= do
+    r <- parallel Once (return 1)  <|> parallel Once (return 2)
+    liftIO $ print r
+
+solve=do
+     option "solve" "indeterminism example"
+     pythags 
+     
+main= do
+    runTransient $ do
       async inputLoop  <|> return ()
+      r <-(,) <$> option1 "1" "1" <*> option1 "2" "2"
+      liftIO $ print "END"
+      liftIO $ print r
+      stop
       
       option "main" "to return to the main menu"  <|> return ""
       liftIO $ putStrLn "MAIN MENU"
 
-      transaction <|> transaction2 <|> colors <|> 
-        app  <|> sum1 <|> sum2 <|> server <|> menu
+      transaction <|> transaction2 <|> 
+       colors <|>  app  <|> sum1 <|> sum2 <|> server <|> menu <|> solve
 
     stay
+
 
 transaction=   do
        option "back" "backtracking test"
        productNavigation
        reserve
        payment
-       
+
 transaction2= do
        option "back2" "backtracking test 2"
        productNavigation
@@ -48,7 +92,7 @@ transaction2= do
 
        liftIO $ print "done!"
 
-       
+     
 productNavigation = liftIO $ putStrLn "product navigation" 
 
 reserve= liftIO (putStrLn "product reserved,added to cart") 

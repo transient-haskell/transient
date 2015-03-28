@@ -6,9 +6,7 @@
 --
 -- Maintainer  :  agocorona@gmail.com
 -- Stability   :
--- Portability :
---
--- |
+-- Portability : |
 --
 -----------------------------------------------------------------------------
 {-# LANGUAGE ExistentialQuantification,FlexibleContexts,
@@ -24,7 +22,7 @@ import System.IO.Unsafe
 import Control.Applicative
 import qualified Data.Map as M
 import Data.Dynamic
-import Debug.Trace
+
 import Data.Monoid
 
 --import Data.IORef
@@ -32,10 +30,10 @@ import Control.Concurrent
 import Control.Concurrent.STM
 import GHC.Conc
 import Data.Maybe
-import System.Mem.StableName
-import Data.List
+import Debug.Trace
 
-(!>) =  const . id -- flip trace
+
+(!>) =  flip trace
 infixr 0 !>
 
 data Transient m x= Transient  {runTrans :: m (Maybe x)}
@@ -45,8 +43,8 @@ type EventId= Int
 
 
 
-data EventF  = forall a b . EventF{xcomp :: TransientIO a
-                                  ,fcomp :: a -> TransientIO b
+data EventF  = forall a b . EventF{closure :: TransientIO a
+                                  ,continuation :: a -> TransientIO b
                                   ,mfData :: M.Map TypeRep SData
                                   ,mfSequence :: Int
                                   ,row :: P RowElem
@@ -159,6 +157,13 @@ instance  Alternative TransientIO where
        x <- g
        return $  k <|> x
 
+instance MonadPlus TransientIO where
+    mzero= stop
+    mplus (Transient x) (Transient y)=  Transient $ do
+         mx <- x
+         case mx of
+             Nothing -> y
+             justx -> return justx
 
 -- | a sinonym of empty that can be used in a monadic expression. it stop the
 -- computation
@@ -266,8 +271,6 @@ refSequence= unsafePerformIO $ newMVar 0
 
 --- IO events
 
---buffers :: IORef [(EventId,Dynamic)]
---buffers= unsafePerformIO $ newIORef []
 
 data Loop= Once | Loop | Multithread deriving Eq
 
@@ -317,8 +320,8 @@ forkCont id hasloop receive cont= do
                            
                            mr <- runClosure cont 
                            case mr  of
-                             Nothing ->return Nothing
-                             Just r ->do
+                             Nothing -> return Nothing
+                             Just r  -> do
                                row1 <- gets row 
                                liftIO $ delEvents  row1              !> ("delEvents: "++ show row1)
                                id <- liftIO $ readMVar refSequence
@@ -328,7 +331,7 @@ forkCont id hasloop receive cont= do
                        return ()
 
 
-
+        
         loop Once rec x  = rec >>= x
         loop Loop rec f = do
             r <- rec
@@ -475,3 +478,5 @@ onNothing iox iox'= do
        case mx of 
            Just x -> return x
            Nothing -> iox'
+
+           

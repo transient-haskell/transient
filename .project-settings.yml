@@ -1,10 +1,15 @@
+binary-ghc-args:
+- -O
+- -threaded
 module-template: ! 'module MODULE_NAME where
 
 '
 extensions: {}
-environment: default
+environment: ghc-7.8-stable-14.09
+auto-hidden: []
 cabal-file: project.cabal
 version: 1
+extra-packages: ''
 ghc-args: []
 excluded-modules:
 - Base9.hs

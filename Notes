@@ -1,3 +1,73 @@
+react setHandler iob= Transient $ do
+        cont    <- getCont
+        mEvData <- getSessionData
+        case mEvData of
+          Nothing -> do
+            liftIO $ setHandler $ \dat ->do
+--              let cont'= cont{mfData = M.insert (typeOf dat)(unsafeCoerce dat) (mfData cont)}
+              runStateT (setSData dat >> runCont cont) cont
+              iob
+            return Nothing
+          Just dat -> delSessionData dat >> return (Just  dat)
+
+se necesita gestionar varios eventos
+
+react setHandler iob= Transient $ do
+        ident <- genNewId
+        cont    <- getCont
+        mEvData <- getSessionData ident
+        case mEvData of
+          Nothing -> do
+            liftIO $ setHandler $ \dat ->do
+              runStateT (setSData ind dat >> runCont cont) cont
+              iob
+            return Nothing
+          Just dat -> delSessionData dat >> return (Just  dat)
+
+parallel looptype ioaction= do
+        ident <- genNewId
+        cont    <- getCont
+        mEvData <- getSessionData ident
+        case mEvData of
+          Nothing -> loop looptype ioaction $ \r -> do
+              runStateT (setSData ind dat >> runCont cont) cont
+              return Nothing
+          Just dat -> delSessionData dat >> return (Just  dat)
+  
+    where
+    loop Once rec x  = rec >>= x
+    loop Loop rec f = do
+            r <- rec
+            f r
+            loop Loop rec f
+
+    loop Multithread rec f = do
+            r <- rec
+            forkIO $ f r
+            loop Multithread rec f
+
+
+----------
+
+emit source
+  con putSource
+  necesita source
+
+como extraer source de un f sin ejecutarlo.
+con una signature especifica y haciendo una instancia:
+
+instance Source (Int -> TransientIO Char) were
+   ....
+  no tiene suficiente definicion
+
+hay que ejecutarlo. 
+   usar un flag source= True
+   mirarlo al principio de cada ejecución
+
+Usar interpretes:
+  interpret
+  
+
 simular la navegación de MFlow
  primitiva para lanzar un proceso que escucha
 
@@ -8,7 +78,8 @@ cambiar rowlist para que haya menos
 TVars test EVars
 emit source
 acabar tutorial backtracking mas ejemplos
-    
+
+state persistence
 
 
 type EVarId= Int

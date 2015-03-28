@@ -156,7 +156,7 @@ instance   Functor TransientIO where
 
 
 instance Applicative TransientIO where
-  pure a  = do putSource "pure" ; Transient  .  return $ Just a
+  pure a  = do putSource "\pure" ; Transient  .  return $ Just a
   Transient f <*> Transient g= Transient $ do
        k <- f
        putSource "<*>"
@@ -201,7 +201,7 @@ instance Monad TransientIO where
            Just k  -> do addRow' !> "ADDROW" 
                          runTrans $ f k
 
-           Nothing -> do putSource "return Nothing" 
+           Nothing -> do source f 
                          return Nothing
         putSource ")"
         return r
