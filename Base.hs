@@ -30,10 +30,10 @@ import Control.Concurrent
 import Control.Concurrent.STM
 import GHC.Conc
 import Data.Maybe
-import Debug.Trace
+-- import Debug.Trace
 
 
-(!>) =  flip trace
+(!>) =  const . id -- flip trace
 infixr 0 !>
 
 data Transient m x= Transient  {runTrans :: m (Maybe x)}
