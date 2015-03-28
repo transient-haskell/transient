@@ -254,9 +254,10 @@ parallel looptype ioaction=  do
         mEvData <- liftIO $ readMVar buffer !> "READ"
         case mEvData of
           Nothing ->do
+              liftIO $ print "NOTHING"
               liftIO $ forkIO $ loop looptype  ioaction $ \dat -> do
                  liftIO $ modifyMVar_ buffer $ const $ return $ Just dat
-                 (flip runStateT) cont $ runCont cont 
+                 (flip runStateT) cont $ runCont cont !> "RUNCONT"
                  return ()
               stop
           Just dat -> return dat

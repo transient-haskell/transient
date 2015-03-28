@@ -63,10 +63,7 @@ solve=do
 main= do
     runTransient $ do
       async inputLoop  <|> return ()
-      r <-(,) <$> option1 "1" "1" <*> option1 "2" "2"
-      liftIO $ print "END"
-      liftIO $ print r
-      stop
+     
       
       option "main" "to return to the main menu"  <|> return ""
       liftIO $ putStrLn "MAIN MENU"
