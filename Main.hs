@@ -19,27 +19,21 @@ import           Network
 import           System.IO
 import           Data.IORef
 import           Control.Monad
+
 -- show1
-
-
 
 events :: Loop -> [a] -> TransientIO a
 events typ xs = do
     evs <- liftIO  $ newIORef xs
     r <- parallel typ $ do
-           threadDelay 10
-           atomicModifyIORef evs $ \es -> 
+           atomicModifyIORef evs $ \es -> do
               if not $ null es 
                 then  (tail es, Just $ head es)
                 else (es,Nothing)
+
     case r of
         Nothing -> stop
         Just r -> return r
-
-
-        
-
-
 
 
 
@@ -52,28 +46,30 @@ pythags = do
   -- guard (x+y==4)
   liftIO $ print (x, y,z)
 
-test= do
-    r <- parallel Once (return 1)  <|> parallel Once (return 2)
-    liftIO $ print r
 
 solve=do
-     option "solve" "indeterminism example"
-     pythags 
-     
+    option "solve" "indeterminism example"
+    pythags 
+
 main= do
     runTransient $ do
-      async inputLoop  <|> return ()
-     
-      
+  --    r <- (,) <$> parallel Loop (return 1) <*> parallel Loop (return 2)
+  --    liftIO $ print r
+  --    stop
+
+  
+
+ 
+
       option "main" "to return to the main menu"  <|> return ""
       liftIO $ putStrLn "MAIN MENU"
 
-      transaction <|> transaction2 <|> 
-       colors <|>  app  <|> sum1 <|> sum2 <|> server <|> menu <|> solve
+      --transaction <|> transaction2 <|> 
+      colors <|>  app  <|> sum1 <|> sum2 <|> server <|> menu <|> solve
 
     stay
 
-
+{-
 transaction=   do
        option "back" "backtracking test"
        productNavigation
@@ -89,7 +85,7 @@ transaction2= do
 
        liftIO $ print "done!"
 
-     
+  
 productNavigation = liftIO $ putStrLn "product navigation" 
 
 reserve= liftIO (putStrLn "product reserved,added to cart") 
@@ -104,6 +100,8 @@ reserveAndSendMsg= do
             liftIO $ print "MIDDLE"
             liftIO  (putStrLn "update other database necesary for the reservation")
                  `onUndo` liftIO (putStrLn "database update undone")
+
+-}
 
 colors :: TransientIO ()
 colors= do

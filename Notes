@@ -1,50 +1,33 @@
-react setHandler iob= Transient $ do
-        cont    <- getCont
-        mEvData <- getSessionData
-        case mEvData of
-          Nothing -> do
-            liftIO $ setHandler $ \dat ->do
---              let cont'= cont{mfData = M.insert (typeOf dat)(unsafeCoerce dat) (mfData cont)}
-              runStateT (setSData dat >> runCont cont) cont
-              iob
-            return Nothing
-          Just dat -> delSessionData dat >> return (Just  dat)
+como hacer que un closure conozca los closures de su vecino cuando en aplicative mode?
+   hay que ir por filas
+   runclosure
+   clear children
+   runcontinuation  hay varios parallel, en cada uno se añade a children
+   
+que pasa en flow normal?
+    async inputLoop  <|> return ()      -- se añade thread
+      r <- (,) <$> option1 "1" "1"  <*> option1 "2" "2"   -- se añaden 2 threads
+      liftIO $ print "END"
 
-se necesita gestionar varios eventos
+ pero la segunda linea son hijos de return (), no de imputLoop
+   por tanto la dependencia debería ser solo en event mode.
+     no dependency by monadic statement in flow
+       but dependency by event in closure-> continuation.
 
-react setHandler iob= Transient $ do
-        ident <- genNewId
-        cont    <- getCont
-        mEvData <- getSessionData ident
-        case mEvData of
-          Nothing -> do
-            liftIO $ setHandler $ \dat ->do
-              runStateT (setSData ind dat >> runCont cont) cont
-              iob
-            return Nothing
-          Just dat -> delSessionData dat >> return (Just  dat)
+       but what happens with <|> return ()?
+         create a new children list is necessary in resetEventConf
+       
+if update only when in event mode
+it is necessary to make clear dependencies between monadic statements
+  and what layer correspond to what thread.
+    so
+       each closure has a p[ThreadId] that start empty
+         the continuation add thread to the lit
+       if the execution is in flow mode
+         add a new p [threadId] en resetEventCont
+       
 
-parallel looptype ioaction= do
-        ident <- genNewId
-        cont    <- getCont
-        mEvData <- getSessionData ident
-        case mEvData of
-          Nothing -> loop looptype ioaction $ \r -> do
-              runStateT (setSData ind dat >> runCont cont) cont
-              return Nothing
-          Just dat -> delSessionData dat >> return (Just  dat)
-  
-    where
-    loop Once rec x  = rec >>= x
-    loop Loop rec f = do
-            r <- rec
-            f r
-            loop Loop rec f
-
-    loop Multithread rec f = do
-            r <- rec
-            forkIO $ f r
-            loop Multithread rec f
+loop Wait Once IO  $ \.
 
 
 ----------

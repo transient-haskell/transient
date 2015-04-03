@@ -1,3 +1,4 @@
+{-# LANGUAGE ScopedTypeVariables #-}
 -----------------------------------------------------------------------------
 --
 -- Module      :  Base
@@ -28,8 +29,7 @@ import           Data.Monoid
 import           Debug.Trace
 import           System.IO.Unsafe
 import           Unsafe.Coerce
-
---import Data.IORef
+import           Control.Exception
 import           Control.Concurrent
 import           Control.Concurrent.STM
 
@@ -37,7 +37,7 @@ import           Data.Maybe
 import           GHC.Conc
 import           Data.List
 
-(!>) =    flip trace
+(!>) =   flip trace
 infixr 0 !>
 
 data Transient m x= Transient  {runTrans :: m (Maybe x)}
@@ -54,6 +54,7 @@ data EventF  = forall a b . EventF{xcomp      :: TransientIO a
                                   ,replay     :: Bool
                                   ,newRow     :: Bool
                                   ,children   :: P [ThreadId]
+                                  ,rowChildren ::P [ThreadId]
                                   }
 
 type P= MVar 
@@ -69,7 +70,7 @@ instance Show x => Show (MVar x) where
   show  x = show (unsafePerformIO $ readMVar x)
 
 eventf0=  EventF  empty (const  empty) M.empty 0
-          False False (unsafePerformIO $ newMVar []) 
+          False False (unsafePerformIO $ newMVar [])  (unsafePerformIO $ newMVar [])
 
 
 topNode= (-1 :: Int,unsafePerformIO $ myThreadId,Nothing)
@@ -95,34 +96,35 @@ runTransient t= runStateT (runTrans t) eventf0
 
 setEventCont ::   TransientIO a -> (a -> TransientIO b) -> StateIO EventF
 setEventCont x f  = do
-   st@(EventF   _ fs d n  r nr  ch)  <- get
-   put $ EventF   x ( f >=> unsafeCoerce fs) d n  r nr  ch
+   st@(EventF   _ fs d n  r nr  ch rc)  <- get
+   put $ EventF   x ( f >=> unsafeCoerce fs) d n  r nr  ch rc
    return st
 
 
-resetEventCont (EventF x fs _ _   _ _ _)=do
-   EventF   _ _ d  n   r nr  ch <- get
-   put $ EventF  x fs d n   r nr  ch
+resetEventCont (EventF x fs _ _   _ _ _ _)=do
+   EventF   _ _ d  n   r nr  ch rc <- get
+   put $ EventF  x fs d n   r True   ch rc 
 
 
 getCont ::(MonadState EventF  m) => m EventF
 getCont = get
 
-runCont :: EventF -> StateIO ()
-runCont (EventF  x fs _ _  _ _  _)= do runIt  x (unsafeCoerce fs); return ()
-   where
-   runIt  x fs= runTrans $ do
-         st <- get
-         r <- x
-         put st
-         fs r
+runCont :: EventF -> StateIO (Maybe b)
+runCont (EventF  x f _ _  _ _  _ _)= runTrans $ x' >>=  unsafeCoerce f
+    where 
+    x'= do
+       modify $ \s -> s{replay=True}
+       x
+       modify $ \s -> s{replay=False,newRow=True}
+       
+  
 
 
 runClosure :: EventF -> StateIO (Maybe a)
-runClosure (EventF x _ _ _ _ _ _) =  unsafeCoerce $ runTrans x
+runClosure (EventF x _ _ _ _ _ _ _) =  unsafeCoerce $ runTrans x
 
 runContinuation ::  EventF -> a -> StateIO (Maybe b)
-runContinuation (EventF _ fs _ _ _ _  _) x= runTrans $  (unsafeCoerce fs) x
+runContinuation (EventF _ fs _ _ _ _  _ _) x= runTrans $  (unsafeCoerce fs) x
 
 instance   Functor TransientIO where
   fmap f x=   Transient $ fmap (fmap f) $ runTrans x --
@@ -142,6 +144,13 @@ instance  Alternative TransientIO where
        x <- g
        return $  k <|> x
 
+instance MonadPlus TransientIO where
+    mzero= stop
+    mplus (Transient x) (Transient y)=  Transient $ do
+         mx <- x
+         case mx of
+             Nothing -> y
+             justx -> return justx
 
 -- | a sinonym of empty that can be used in a monadic expression. it stop the
 -- computation
@@ -248,27 +257,61 @@ spawn= parallel Multithread
 
 
 parallel  ::  Loop ->  IO b -> TransientIO b
-parallel looptype ioaction=  do
-        buffer <- liftIO $ newMVar Nothing !> "NewMVar"
-        cont    <- getCont
-        mEvData <- liftIO $ readMVar buffer !> "READ"
+parallel looptype ioaction= Transient $ do
+        let buffer = unsafePerformIO $  newMVar Nothing 
+        mEvData <- liftIO $ readMVar buffer
         case mEvData of
           Nothing ->do
-              liftIO $ print "NOTHING"
-              liftIO $ forkIO $ loop looptype  ioaction $ \dat -> do
-                 liftIO $ modifyMVar_ buffer $ const $ return $ Just dat
-                 (flip runStateT) cont $ runCont cont !> "RUNCONT"
-                 return ()
-              stop
-          Just dat -> return dat
-  
+              return () !> "NOTHING " ++ (show $ unsafePerformIO myThreadId)
+              cont    <- getCont
+
+              let    newr = newRow cont
+              when (not newr) $ liftIO $ modifyMVar_ buffer . const . return $ Just Nothing
+
+              npchildren <-  do
+                    if newr then do
+                          np <- liftIO $ newMVar []
+                          put cont{rowChildren= np,newRow=False}
+                          return np
+                    else return $ rowChildren cont 
+
+              return () !> "NEWROW="++ show newr
+
+              let cont'=  cont{children= npchildren,newRow=False}
+              th <- liftIO $ forkIO $ loop npchildren looptype  ioaction $ \dat -> do
+                      modifyMVar_ buffer . const . return $ Just (Just dat)
+                      (flip runStateT) cont' $ do
+                                 pchildren <- gets children
+                                 ts <- liftIO $ readMVar npchildren
+                                 liftIO $ mapM_ killThread ts !>  ("KILL" ++ show ts)
+                                 runCont cont'
+                      return ()
+                      
+              liftIO $ modifyMVar_ (children cont) $ \ths -> return $ th:ths
+              return Nothing
+              
+          Just Nothing  -> return Nothing   !> "NODATA " ++ (show $ unsafePerformIO myThreadId)
+          
+          Just (Just dat) -> do
+              return $ Just dat !> "JUST " ++ (show $ unsafePerformIO myThreadId)
+
     where
-    loop Once rec f =  rec >>= f
-    loop Loop rec f = do
+    killChildren pch= do
+        ths <- readMVar pch 
+        mapM_ killThread ths !> "KILLEVENT "++ show ths
+
+    loop pch t rec f = handle (\(e::SomeException) -> killChildren pch) $ loop' t rec f  !> "FORK"
+    loop' Once rec f = rec >>= f
+    
+    loop' Loop rec f = do
             r <-  rec  
             f r
-            loop Loop rec f   
-
+            loop' Loop rec f  
+            
+    loop' Multithread rec f = do
+            r <- rec
+            forkIO $ f r
+            loop' Multithread rec f
 
 
 type EventSetter eventdata response= (eventdata ->  IO response) -> IO ()
@@ -304,7 +347,7 @@ option1 x  message= waitEvents  $ do
      liftIO $ putStrLn $ message++"("++show x++")"
      atomically $ do
        mr <- readTVar getLineRef  
-       th <- unsafeIOToSTM myThreadId   !> "getline"
+       th <- unsafeIOToSTM myThreadId  
        case mr of
          Nothing -> retry
          Just r ->
