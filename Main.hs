@@ -53,14 +53,11 @@ solve=do
 
 main= do
     runTransient $ do
-  --    r <- (,) <$> parallel Loop (return 1) <*> parallel Loop (return 2)
-  --    liftIO $ print r
-  --    stop
+    --  r <- (,) <$> parallel Loop (return 1) <*> parallel Loop (return 2)
+    --  liftIO $ print r
+    --  stop 
 
-  
-
- 
-
+      async inputLoop <|> return ()
       option "main" "to return to the main menu"  <|> return ""
       liftIO $ putStrLn "MAIN MENU"
 
@@ -69,7 +66,7 @@ main= do
 
     stay
 
-{-
+
 transaction=   do
        option "back" "backtracking test"
        productNavigation
@@ -101,7 +98,7 @@ reserveAndSendMsg= do
             liftIO  (putStrLn "update other database necesary for the reservation")
                  `onUndo` liftIO (putStrLn "database update undone")
 
--}
+
 
 colors :: TransientIO ()
 colors= do

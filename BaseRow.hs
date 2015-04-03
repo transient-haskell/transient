@@ -37,7 +37,7 @@ import           Data.Maybe
 import           GHC.Conc
 import           Data.List
 
-(!>) =   flip trace
+(!>) = const . id --  flip trace
 infixr 0 !>
 
 data Transient m x= Transient  {runTrans :: m (Maybe x)}
