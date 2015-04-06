@@ -37,7 +37,7 @@ import           Data.Maybe
 import           GHC.Conc
 import           Data.List
 
-(!>) = const . id --  flip trace
+(!>) =   flip trace
 infixr 0 !>
 
 data Transient m x= Transient  {runTrans :: m (Maybe x)}
@@ -55,7 +55,7 @@ data EventF  = forall a b . EventF{xcomp      :: TransientIO a
                                   ,newRow     :: Bool
                                   ,children   :: P [ThreadId]
                                   ,rowChildren ::P [ThreadId]
-                                  }
+                                  } 
 
 type P= MVar 
 
@@ -109,14 +109,24 @@ resetEventCont (EventF x fs _ _   _ _ _ _)=do
 getCont ::(MonadState EventF  m) => m EventF
 getCont = get
 
-runCont :: EventF -> StateIO (Maybe b)
-runCont (EventF  x f _ _  _ _  _ _)= runTrans $ x' >>=  unsafeCoerce f
+{-
+runCont :: EventF -> StateIO ()
+runCont (EventF  x f _ _  _ _  _ _)= runTrans (x' >>=   f) >> return ()
     where 
     x'= do
        modify $ \s -> s{replay=True}
-       x
+       r <- x
        modify $ \s -> s{replay=False,newRow=True}
-       
+       return r
+-}
+
+runCont cont= do
+     mr <- runClosure cont
+     case mr of
+         Nothing -> return Nothing
+         Just r -> runContinuation cont r
+
+
   
 
 
@@ -257,11 +267,20 @@ spawn= parallel Multithread
 
 
 parallel  ::  Loop ->  IO b -> TransientIO b
-parallel looptype ioaction= Transient $ do
-        let buffer = unsafePerformIO $  newMVar Nothing 
-        mEvData <- liftIO $ readMVar buffer
+parallel looptype ioaction=  do
+    buffer <- liftIO $ newMVar Nothing 
+    r <- parallel' buffer !> "HI"
+    return r !> "HO"
+    where
+    typeb :: TransientIO b -> Maybe(Maybe b)
+    typeb = undefined
+    
+    -- parallel' :: MVar(Maybe(Maybe b)) -> TransientIO b
+    parallel' buffer= Transient $ do
+        mEvData <- liftIO $ readMVar buffer !> "READbuFFER"
         case mEvData of
-          Nothing ->do
+
+          Nothing -> do
               return () !> "NOTHING " ++ (show $ unsafePerformIO myThreadId)
               cont    <- getCont
 
@@ -277,31 +296,31 @@ parallel looptype ioaction= Transient $ do
 
               return () !> "NEWROW="++ show newr
 
-              let cont'=  cont{children= npchildren,newRow=False}
+              let cont'=  cont{children= npchildren, newRow = False}
               th <- liftIO $ forkIO $ loop npchildren looptype  ioaction $ \dat -> do
-                      modifyMVar_ buffer . const . return $ Just (Just dat)
+                      (modifyMVar_ buffer . const . return $ Just (Just dat)) !> "WRITEEEEEEEEE"
                       (flip runStateT) cont' $ do
-                                 pchildren <- gets children
-                                 ts <- liftIO $ readMVar npchildren
-                                 liftIO $ mapM_ killThread ts !>  ("KILL" ++ show ts)
-                                 runCont cont'
+                            pchildren <- gets children
+                            ts <- liftIO $ readMVar npchildren
+                            liftIO $ mapM_ killThread ts !>  ("KILL" ++ show ts)
+                            runCont cont'
                       return ()
                       
               liftIO $ modifyMVar_ (children cont) $ \ths -> return $ th:ths
               return Nothing
               
           Just Nothing  -> return Nothing   !> "NODATA " ++ (show $ unsafePerformIO myThreadId)
+          Just (justdat) ->  return justdat 
           
-          Just (Just dat) -> do
-              return $ Just dat !> "JUST " ++ (show $ unsafePerformIO myThreadId)
 
-    where
+    
     killChildren pch= do
         ths <- readMVar pch 
         mapM_ killThread ths !> "KILLEVENT "++ show ths
 
     loop pch t rec f = handle (\(e::SomeException) -> killChildren pch) $ loop' t rec f  !> "FORK"
-    loop' Once rec f = rec >>= f
+    loop' :: Loop -> (IO a) -> (a -> IO ()) -> IO ()
+    loop' Once rec f = rec >>= \x -> f x
     
     loop' Loop rec f = do
             r <-  rec  

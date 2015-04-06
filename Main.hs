@@ -37,7 +37,7 @@ events typ xs = do
 
 
 
-choose= events  Loop 
+choose= events  Multithread 
 
 pythags = do
   x <- choose[1..3]
@@ -51,18 +51,33 @@ solve=do
     option "solve" "indeterminism example"
     pythags 
 
+main2= do
+    runTransient pythags
+    stay
+
+main3= do
+   runTransient $ do
+     async  inputLoop <|> return ()
+     r <- (,) <$> option1 "1" "1" <*> option1 "2" "2"
+     liftIO $ print r
+   stay
+
+data Pr x= Pr x deriving Show
+
+main1= do
+   runTransient $ do
+      r <- Just <$> async ( return "1") -- <*> async ( return "2")
+      liftIO $ print r
+   stay
+   
 main= do
     runTransient $ do
-    --  r <- (,) <$> parallel Loop (return 1) <*> parallel Loop (return 2)
-    --  liftIO $ print r
-    --  stop 
-
       async inputLoop <|> return ()
       option "main" "to return to the main menu"  <|> return ""
       liftIO $ putStrLn "MAIN MENU"
 
-      --transaction <|> transaction2 <|> 
-      colors <|>  app  <|> sum1 <|> sum2 <|> server <|> menu <|> solve
+      transaction <|> transaction2 <|> 
+       colors <|>  app  <|> sum1 <|> sum2 <|> server <|> menu <|> solve
 
     stay
 
@@ -119,7 +134,8 @@ app= do
           threadDelay 1000000
           n <- takeMVar counter
           putMVar counter (n+1)
-          return  n
+          return n
+       
 
        counter=unsafePerformIO $ newMVar (0 :: Int)
 
