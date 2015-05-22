@@ -1,15 +1,16 @@
-{-# LANGUAGE FlexibleInstances #-}
-{-# LANGUAGE TypeSynonymInstances #-}
+
+
 {-# LANGUAGE ScopedTypeVariables #-}
 
-module Main where 
+module Main where
 
-import           Base
-import           Backtrack
+import           Transient.Base
+import           Transient.Backtrack
+import           Transient.Indeterminism
 import           Control.Applicative
 import           Control.Concurrent
 import           Control.Exception
-import           Control.Monad.IO.Class
+import           Control.Monad.State
 import           Data.Monoid
 import           System.IO.Unsafe
 
@@ -17,70 +18,78 @@ import           Network.HTTP
 
 import           Network
 import           System.IO
-import           Data.IORef
-import           Control.Monad
 
--- show1
+-- show
 
-events :: Loop -> [a] -> TransientIO a
-events typ xs = do
-    evs <- liftIO  $ newIORef xs
-    r <- parallel typ $ do
-           atomicModifyIORef evs $ \es -> do
-              if not $ null es 
-                then  (tail es, Just $ head es)
-                else (es,Nothing)
+solveConstraint=  do
+      x <- choose  [1,2,3]
+      y <- choose  [4,5,6]
 
-    case r of
-        Nothing -> stop
-        Just r -> return r
+      guard $ x * y == 8
 
-
-
-choose= events  Multithread 
+      return (x,y)
 
 pythags = do
-  x <- choose[1..3]
-  y <- choose[1..3]
-  z <- choose[1..3]
-  -- guard (x+y==4)
-  liftIO $ print (x, y,z)
+  x <- choose [1..50]
+  y <- choose([1..x] :: [Int])
+  z <- choose[1..round $ sqrt(fromIntegral $ 2*x*x)]
+
+  guard (x*x+y*y==z*z)
+
+  return (x, y,z)
+
+example1= do
+    option "ex1" "example 1"
+    r <- threads 4 solveConstraint
+    liftIO $ print r
+
+example2= do
+    option "pyt" "pythagoras"
+    r<- threads 4 pythags
+    liftIO $ print r
+
+collectSample= threads 4 $ do
+    option "coll" "collect sample: return results in a list"
+    r <- collect 9 $ do
+      x <- choose  [1,2,3]
+      y <- choose  [4,5,6]
+      return (x,y)
+
+    liftIO $ print r
+
+threadSample= do
+     option "th" "threads sample"
+     liftIO $ print "number of threads? (< 10)"
+
+     n <- input  ( < 10)
+
+     threads n $ do
+        x <- choose  [1,2,3]
+        y <- choose  [4,5,6]
+        th <- liftIO $ myThreadId
+        liftIO $ print (x,y,th)
+
+nonDeterminsm= do
+      option "nondet" "Non determinism exaples"
+      example1 <|> example2
+               <|> collectSample
+               <|> threadSample
 
 
-solve=do
-    option "solve" "indeterminism example"
-    pythags 
-
-main2= do
-    runTransient pythags
-    stay
-
-main3= do
-   runTransient $ do
-     async  inputLoop <|> return ()
-     r <- (,) <$> option1 "1" "1" <*> option1 "2" "2"
-     liftIO $ print r
-   stay
-
-data Pr x= Pr x deriving Show
-
-main1= do
-   runTransient $ do
-      r <- Just <$> async ( return "1") -- <*> async ( return "2")
-      liftIO $ print r
-   stay
-   
-main= do
-    runTransient $ do
-      async inputLoop <|> return ()
-      option "main" "to return to the main menu"  <|> return ""
+main= keep $ do
+      oneThread $ option "main" "to return to the main menu"   <|> return ""
       liftIO $ putStrLn "MAIN MENU"
 
-      transaction <|> transaction2 <|> 
-       colors <|>  app  <|> sum1 <|> sum2 <|> server <|> menu <|> solve
 
-    stay
+      nonDeterminsm <|> trans <|>
+            colors  <|>  app  <|>
+            futures <|>  server
 
+-- / show
+
+trans= do
+       option "trans" "transaction examples with backtracking for undoing actions"
+       transaction <|> transaction2
 
 transaction=   do
        option "back" "backtracking test"
@@ -97,11 +106,11 @@ transaction2= do
 
        liftIO $ print "done!"
 
-  
-productNavigation = liftIO $ putStrLn "product navigation" 
 
-reserve= liftIO (putStrLn "product reserved,added to cart") 
-                 `onUndo` liftIO (putStrLn "product un-reserved") 
+productNavigation = liftIO $ putStrLn "product navigation"
+
+reserve= liftIO (putStrLn "product reserved,added to cart")
+                 `onUndo` liftIO (putStrLn "product un-reserved")
 
 payment = do
            liftIO $ putStrLn "Payment failed"
@@ -109,7 +118,6 @@ payment = do
 
 reserveAndSendMsg= do
             reserve
-            liftIO $ print "MIDDLE"
             liftIO  (putStrLn "update other database necesary for the reservation")
                  `onUndo` liftIO (putStrLn "database update undone")
 
@@ -127,25 +135,32 @@ colors= do
 app :: TransientIO ()
 app= do
        option "app" "applicative expression that return a counter in 2-tuples every second"
-       r <-  (,) <$>  number  <*> number
+       liftIO $ putStrLn "to stop the sequence, write main(enter)"
+       counter <- liftIO $ newMVar 0
+
+       r <-  (,) <$>  number  counter 1 <*> number counter 1
+
+
        liftIO $ putStrLn $ "result=" ++ show r
        where
-       number= waitEvents $ do
-          threadDelay 1000000
+       number counter n= waitEvents $ do
+          threadDelay $ n * 1000000
           n <- takeMVar counter
           putMVar counter (n+1)
           return n
-       
 
-       counter=unsafePerformIO $ newMVar (0 :: Int)
+futures= do
+       option "async" "for parallelization of IO actions with applicative and monioidal combinators"
+       sum1 <|> sum2
 
 sum1 :: TransientIO ()
 sum1= do
        option "sum1" "access to two web pages concurrently and sum the number of words using Applicative"
+       liftIO $ print " downloading data..."
        (r,r') <- (,) <$> async  (worker "http://www.haskell.org/")
                      <*> async  (worker "http://www.google.com/")
 
-       liftIO $ putStrLn $ "result="  ++ show (r + r')
+       liftIO $ putStrLn $ "result="  ++ show  (r + r')
 
 getURL= simpleHTTP . getRequest
 
@@ -158,12 +173,13 @@ worker url=do
 
 sum2 :: TransientIO ()
 sum2= do
-       option "sum2" "access to N web pages concurrenty and sum the number of words using map-fold"
-       rs <- foldl (<>) (return 0) $ map (async . worker)
+      option "sum2" "access to N web pages concurrenty and sum the number of words using map-fold"
+      liftIO $ print " downloading data..."
+      rs <- foldl (<>) (return 0) $ map (async . worker)
                   [ "http://www.haskell.org/"
                   , "http://www.google.com/"]
 
-       liftIO $ putStrLn $ "result="  ++ show rs
+      liftIO $ putStrLn $ "result="  ++ show rs
 
 instance Monoid Int where
       mappend= (+)
@@ -183,15 +199,5 @@ server=  do
          `catch` (\(e::SomeException) -> sClose sock)
 
 msg = "HTTP/1.0 200 OK\r\nContent-Length: 5\r\n\r\nPong!\r\n"
-
-
-menu :: TransientIO ()
-menu=  do
-     option "menu"  "a submenu with two options"
-     colors  <|> sum2 
-
--- / show
-
-
 
 
