@@ -15,7 +15,7 @@ library
         exposed: True
         buildable: True
 
-    exposed-modules: Transient.Base Transient.Indeterminism Transient.Backtrack Transient.Vars
+    exposed-modules: Transient.Base Transient.Indeterminism Transient.Backtrack 
     exposed: True
     buildable: True
     hs-source-dirs: src .
@@ -26,5 +26,5 @@ executable transient
     main-is: Main.hs
     buildable: True
     default-language: Haskell2010
-    other-modules: Transient.Indeterminism Base
+    other-modules: Transient.Indeterminism Transient.Base Transient.Backtrack
     hs-source-dirs: src .

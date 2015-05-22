@@ -1,7 +1,7 @@
 {-# LANGUAGE DeriveDataTypeable #-}
 module Transient.Vars where
 
-import Base
+import Transient.Base
 import Data.Map as M
 import Data.Typeable
 
@@ -42,7 +42,7 @@ writeEVar (EVar id ref) x= Transient $ do
    EVars map <- getSessionData `onNothing` return (EVars M.empty)
    liftIO $ writeIORef ref x
    let Just conts=   M.lookup  id map <|> Just []
-   liftIO $ mapM_ (forkCont id Once (return())) conts
+   liftIO $ mapM_ (parallel $ Left (return())) conts
    return $ Just ()
  
 

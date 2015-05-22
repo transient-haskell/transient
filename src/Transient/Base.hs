@@ -545,7 +545,7 @@ option ret message= do
 
 -- | validates an input entered in the keyboard in non blocking mode. non blocking means that
 -- the user can enter also anything else to activate other option
--- unlike `option`, input only wait for one response
+-- unlike `option`, input only wait for one valid response
 input :: (Typeable a, Read a) => (a -> Bool) -> TransientIO a
 input cond= Transient . liftIO . atomically $ do
        mr <- readTVar getLineRef
