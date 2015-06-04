@@ -9,20 +9,20 @@ category: Control
 author: Alberto G. Corona
 data-dir: ""
 
-library
-        build-depends: base -any, mtl -any, random -any, containers -any,
-                   stm -any, HTTP -any, network -any, transformers -any
-        exposed: True
-        buildable: True
-
-    exposed-modules: Transient.Base Transient.Indeterminism Transient.Backtrack 
-    exposed: True
-    buildable: True
-    hs-source-dirs: src .
+--library
+--        build-depends: base -any, mtl -any, random -any, containers -any,
+--                   stm -any, HTTP -any, network -any, transformers -any
+--        exposed: True
+--        buildable: True
+--
+--    exposed-modules: Transient.Base Transient.Indeterminism Transient.Backtrack 
+--    exposed: True
+--    buildable: True
+--    hs-source-dirs: src .
 
 executable transient
-    build-depends: base -any, mtl -any, random -any, containers -any,
-                   stm -any, HTTP -any, network -any, transformers -any
+    build-depends: base , mtl , random , containers , directory, filepath,
+                   stm , HTTP , network , transformers , parsec >= 3.1.9
     main-is: Main.hs
     buildable: True
     default-language: Haskell2010

@@ -2,8 +2,10 @@
 
 {-# LANGUAGE ScopedTypeVariables #-}
 
+{-# LANGUAGE DeriveDataTypeable #-}
 module Main where
 
+import           Data.Typeable
 import           Transient.Base
 import           Transient.Backtrack
 import           Transient.Indeterminism
@@ -13,12 +15,18 @@ import           Control.Exception
 import           Control.Monad.State
 import           Data.Monoid
 import           System.IO.Unsafe
-
+import           System.Directory
+import           System.FilePath
 import           Network.HTTP
-
+import           qualified Data.Map as M
 import           Network
 import           System.IO
-
+import           Data.IORef
+import Text.Parsec hiding (option, (<|>))
+import Text.Parsec.Token
+import Data.List hiding (find,map, group)
+import Control.Concurrent.STM as STM
+import GHC.Conc
 -- show
 
 solveConstraint=  do
@@ -31,8 +39,8 @@ solveConstraint=  do
 
 pythags = do
   x <- choose [1..50]
-  y <- choose([1..x] :: [Int])
-  z <- choose[1..round $ sqrt(fromIntegral $ 2*x*x)]
+  y <- choose ([1..x] :: [Int])
+  z <- choose [1..round $ sqrt(fromIntegral $ 2*x*x)]
 
   guard (x*x+y*y==z*z)
 
@@ -45,12 +53,12 @@ example1= do
 
 example2= do
     option "pyt" "pythagoras"
-    r<- threads 4 pythags
+    r<- threads 1 pythags
     liftIO $ print r
 
-collectSample= threads 4 $ do
-    option "coll" "collect sample: return results in a list"
-    r <- collect 9 $ do
+groupSample= threads 4 $ do
+    option "coll" "group sample: return results in a list"
+    r <- group 9 $ do
       x <- choose  [1,2,3]
       y <- choose  [4,5,6]
       return (x,y)
@@ -72,18 +80,75 @@ threadSample= do
 nonDeterminsm= do
       option "nondet" "Non determinism exaples"
       example1 <|> example2
-               <|> collectSample
+               <|> groupSample
                <|> threadSample
 
+find :: String -> FilePath -> IO (Maybe FilePath)
+find s d = do
+  fs <- getDirectoryContents d
+       `catch` \(e:: SomeException) -> return []        --1
+  let fs' = sort $ filter (`notElem` [".",".."]) fs    -- 2
+  if any (== s) fs'                                    -- 3
+     then return (Just (d </> s))
+     else loop fs'                                     -- 4
+ where
+  loop [] = return Nothing                             -- 5
+  loop (f:fs)  = do
+    let d' = d </> f                                   -- 6
+    isdir <- doesDirectoryExist d'                     -- 7
+    if isdir
+       then do r <- find s d'                          -- 8
+               case r of
+                 Just _  -> return r                   -- 9
+                 Nothing -> loop fs                    -- 10
+       else loop fs                                    -- 11
+       
+find' :: String -> FilePath -> TransientIO FilePath
+find' s d = do
+  fs <- liftIO $ getDirectoryContents d
+       `catch` \(e:: SomeException) -> return []       -- 1
+  let fs' = sort $ filter (`notElem` [".",".."]) fs    -- 2
+  if any (== s) fs'                                    -- 3
+     then do
+       liftIO $ print $ d </> s
+       return $ d</> s
+--       found (d </> s :: FilePath)
+--       return ()
+     else do
+       f <- choose fs'                                 -- 4  
+       let d' = d </> f                                -- 6
+       isdir <- liftIO $ doesDirectoryExist d'         -- 7
+       if isdir then find' s d'                        -- 8
+                else stop
 
-main= keep $ do
+
+------------------  
+
+main= keep $  do
+    r<-  collect 3 100000 $ threads 1 $  do -- find' "HPPU.log"  "c:\\"
+            s <- choose['a'..'c']
+            r <- choose[1..4::Int]
+            guard  $ s== 'c'
+            return (s,r)
+
+    liftIO $ putStrLn $ "SOLUTION= "++ show  r 
+--    exit
+
+
+------------------------
+
+main1 = keep $ do
+         r <- group 24 $ threads 10 $ pythags
+         liftIO $ print r
+         exit
+
+main2= keep $ do
       oneThread $ option "main" "to return to the main menu"   <|> return ""
-      liftIO $ putStrLn "MAIN MENU"
-
+      liftIO $ putStrLn "MAIN MENU" 
 
       nonDeterminsm <|> trans <|>
-            colors  <|>  app  <|>
-            futures <|>  server
+             colors <|> app   <|>
+            futures <|> server
 
 -- / show
 
@@ -130,7 +195,10 @@ colors= do
        liftIO $ print r
        where
        color :: Int -> String -> TransientIO String
-       color n str= option (show n) str >> return  str
+       color n str= do
+         option (show n) str
+         liftIO . print $ str ++ " color"
+         return  str
 
 app :: TransientIO ()
 app= do
@@ -201,3 +269,21 @@ server=  do
 msg = "HTTP/1.0 200 OK\r\nContent-Length: 5\r\n\r\nPong!\r\n"
 
 
+--main=do
+--      r <- getURL "https://www.w3.org/services/html2txt?url=http%3A%2F%2Fwww.searchquotes.com%2Fsearch%2Ftransient%2F"
+--      body <- getResponseBody r
+--      print $ parse  quote' "" body
+--      where
+--      quote'= do
+--          q <-  between(brackets natural) (brackets natural) string
+--
+--          if "http" `isPrefixOf` q
+--            then quote'
+--            else  return q
+--
+
+--main    = case (parse numbers "" "11, 2, 43") of
+--            Left err  -> print err
+--            Right xs  -> print (sum xs)
+--
+--numbers = commaSep integer

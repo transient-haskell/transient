@@ -38,7 +38,7 @@ import           GHC.Conc
 import           Data.List
 import           Data.IORef
 
-(!>) =  const . id -- flip trace
+(!>) =   const . id -- flip trace
 infixr 0 !>
 
 data Transient m x= Transient  {runTrans :: m (Maybe x)}
@@ -54,31 +54,31 @@ data EventF  = forall a b . EventF{xcomp       :: TransientIO a
                                   ,mfSequence  :: Int
                                   ,replay      :: Bool
                                   ,freeTh      :: Bool
-                                  ,unused2       :: ()
+                                  ,parent      :: EventF
                                   ,children    :: P[ThreadId]
                                   ,maxThread     :: Maybe (P Int)
                                   }
                                   deriving Typeable
 
-type P= MVar
-newp= newMVar
+type P= IORef
+newp= newIORef
 
 
 --(=:) :: P a  -> (a -> a) -> IO()
-(=:) n f= liftIO $ modifyMVar_ n $  \v -> return (f v)
+(=:) n f= liftIO $ atomicModifyIORef' n $  \v ->  ((f v),())
 
 addr x= show $ unsafePerformIO $ do
        st <- makeStableName $! x
        return $ hashStableName st
 
-waitQSemB sem= modifyMVar sem $ \n -> return  $ if n>0 then(n-1,True) else (n,False)
-signalQSemB sem= modifyMVar_ sem  $ \n -> return $ n+1
+waitQSemB sem= atomicModifyIORef' sem $ \n -> if n > 0 then(n-1,True) else (n,False)
+signalQSemB sem= atomicModifyIORef' sem  $ \n ->  (n + 1,())
 
 -- | set the maximun number of threads for a procedure. It is useful for the
 threads :: Int -> TransientIO a -> TransientIO a
 threads n proc= Transient $do
    msem <- gets maxThread
-   sem <- liftIO $ newp n
+   sem <- liftIO $ newIORef n
    modify $ \s -> s{maxThread= Just sem}
    r <- runTrans proc
    modify $ \s -> s{maxThread = msem} -- restore it
@@ -98,12 +98,9 @@ type TransientIO= Transient StateIO
 
 runTransient :: TransientIO x -> IO (Maybe x, EventF)
 runTransient t= do
-  rths    <- newp []
-
   childs  <- newp []
-  buffers <- newp M.empty
   let eventf0=  EventF  empty [] M.empty 0
-          False False ()  childs Nothing
+          False False  eventf0  childs Nothing
 
   runStateT (runTrans t) eventf0
 
@@ -178,77 +175,48 @@ instance Applicative TransientIO where
   f <*> g = Transient $ do
 
          rf <- liftIO $ newIORef Nothing
-         rg <- liftIO $ newIORef Nothing   !> "NEWIOREF"
+         rg <- liftIO $ newIORef Nothing   -- !> "NEWIOREF"
 
-         cont@(EventF _ fs a b c d peers children g1) <- get   !> "APLICATIVE DOIT"
---         children1 <- liftIO $ newp []
---         children2 <- liftIO $ newp []
---         children3 <- liftIO $ newp []
---         children =: \ths -> ths ++ [children1,children2]
+         cont@(EventF _ fs a b c d peers children g1) <- get   -- !> "APLICATIVE DOIT"
+
          let
              appg x = Transient $  do
                    liftIO $ writeIORef rg $ Just x :: StateIO ()
                    k <- liftIO $ readIORef rf
---                   modify $ \s -> s{children=children3}
+
                    return $ k <*> Just x  -- !> "RETURNED: " ++ show(isJust k)++ show(isJust x)
 
 
              appf k = Transient $  do
                    liftIO $ writeIORef rf  $ Just k :: StateIO ()
                    x<- liftIO $ readIORef rg
---                   modify $ \s -> s{children= children3}
+
                    return $ Just k <*> x  --  !> "RETURNED: " ++ show(isJust k)++ show(isJust x)
 
 
 
-         put $ EventF f ((unsafeCoerce appf !> "APPF"):  fs)
+         put $ EventF f (unsafeCoerce appf:  fs)
                                           a b c d peers children g1
          k <- runTrans f
          liftIO $ writeIORef rf  k -- :: StateIO ()
 
-         put $ EventF g ((unsafeCoerce appg !> "APPG"):  fs)
+         put $ EventF g (unsafeCoerce appg :  fs)
                                           a b c d peers  children g1
          x <- runTrans g
          liftIO $ writeIORef rg  x
---         modify $ \s -> s{children=children3}
+
          return $ k <*> x
 
 
 instance  Alternative TransientIO where
   empty= Transient $ return  Nothing
   Transient f <|> Transient g= Transient $ do
-
-         cont@(EventF _ fs a b c d peers childrenn g1) <- get   !> "ALTERNATIVE"
-
-
---         liftIO $ putStrLn $ "clidren: " ++ show (addr childrenn)
-
---         children1 <- liftIO $ newp []
---         liftIO $ putStrLn $ "clidren1: " ++ show (addr children1)
---         children2 <- liftIO $ newp []
---         liftIO $ putStrLn $ "clidren2: " ++ show (addr children2)
---         children3 <- liftIO $ newp []
---         liftIO $ putStrLn $ "clidren3: " ++ show (addr children3)
---         childrenn =: \ths -> ths ++ [children1,children2]
---         xs <- liftIO $ readMVar childrenn
---         liftIO $ putStrLn $ "LENGTH CHILDREN=" ++ show (length xs)
-         let alt x= do
---               modify $ \s -> s{children=children3}
-               return x
-
-         put $ EventF (Transient f) fs
-                                          a b c d peers childrenn g1
          k <-   f
-
-         put $ EventF (Transient g)  fs
-                                          a b c d peers childrenn g1
          x <-   g
---         modify $ \s -> s{children=children3}
-
          return $ k <|> x
 
--- | delete all the previous childs generated bt the expressions and continue execution
--- in the current thread. Only the thread created with `freeThreads` are not killed.
+-- | delete all the previous childs generated by the expressions and continue execution
+-- of the current thread.
 oneThread :: TransientIO a -> TransientIO a
 oneThread comp=  do
    chs <- liftIO $ newp []
@@ -373,7 +341,7 @@ genNewId=  do
           put $ st{mfSequence= n+1}
           return n
 
-refSequence :: MVar Int
+refSequence :: IORef Int
 refSequence= unsafePerformIO $ newp 0
 
 
@@ -403,62 +371,66 @@ data EventValue= EventValue SData deriving Typeable
 parallel  ::    IO (Either b b) -> TransientIO b
 parallel  ioaction= Transient$   do
 
-        cont <- getCont !> "PARALLEL"
+        cont <- getCont                    -- !> "PARALLEL"
         mv <- getSessionData
         case mv  of
          Just (EventValue v)  -> do
-            delSessionData $ EventValue () !> "ISJUST "
+            delSessionData $ EventValue () -- !> "ISJUST "
             return  $ Just $ unsafeCoerce v
          Nothing -> do
-
-              return () !> ("REPLAY=" ++ show (replay cont))
-
-              liftIO  $ loop cont    ioaction
+            liftIO  $ loop cont    ioaction
+            return Nothing
 
 
-              return Nothing
 
 
 loop (cont'@(EventF x fs a b c d peers childs g))  rec  =  do
---  liftIO $ putStrLn $ "LOOP= "++ show (addr $ children cont')
   chs <- newp []
---  liftIO $ print $ "CHS " ++ show (addr chs)
-  let cont = EventF x fs a b c d peers chs g
-
-  let loop'= do
+  let cont = EventF x fs a b c d cont' chs g
+      iocont dat=
+          runStateT ( do
+             setSessionData . EventValue $ unsafeCoerce dat
+             runCont cont
+             ) cont
+             >> return ()
+      loop'= do
         mdat <- rec
         case mdat of
-         Left dat -> do
-              let  iocont= ( runStateT) ( setSessionData (EventValue$ unsafeCoerce dat) >> runCont cont) cont  >> return () !> "RUNCONT"
-              iocont
+         Left dat -> iocont dat
+
          Right dat -> do
-              let  iocont= ( runStateT) ( setSessionData (EventValue$ unsafeCoerce dat) >> runCont cont) cont  >> return () !> "RUNCONT"
-              forkMaybe  iocont
+              forkMaybe  $ iocont dat
               loop'
 
       forkMaybe  proc = do
         case maxThread cont of
          Nothing ->  do
             th <- forkFinally proc $ \me -> do
-                   case me of
-                    Left e -> killChildren  cont
-                              !> "KILL RECEIVED" ++ (show $ unsafePerformIO myThreadId)
+                   case me !> "THREAD ENDED" of
+                    Left  e -> do
+--                       when (fromException e /= Just ThreadKilled)$ liftIO $
+                       print e  -- !> "KILL RECEIVED" ++ (show $ unsafePerformIO myThreadId)
+                       killChildren  cont
+
                     Right _ -> return ()
-            addThread cont' th
+            addThread cont' th !>  "thread created: "++ show th
          Just sem -> do
           dofork <- waitQSemB sem
           if dofork
             then  do
                  th <- forkFinally proc $ \me -> do
-                         signalQSemB sem       !> "THREAD ENDED"
-                         case me of
-                          Left e -> killChildren  cont
-                               !> "KILL RECEIVED" ++ (show $ unsafePerformIO myThreadId)
-                          Right _ -> return ()
-                 addThread cont' th
+                         signalQSemB sem
+                         case me !> "THREAD ENDED" of
+                          Left  e -> do
+--                           when (fromException e /= Just ThreadKilled)$ liftIO $
+                           print e   -- !> "KILL RECEIVED" ++ (show $ unsafePerformIO myThreadId)
+                           killChildren  cont
 
-            else (proc !> "NO THREAD")
-        where
+                          Right _ -> return ()
+                 addThread cont' th  !>  "thread created: "++ show th
+
+            else proc  -- !> "NO THREAD"
+
 
   forkMaybe  loop'
 
@@ -468,12 +440,11 @@ addThread cont' th= when(not$ freeTh cont') $ do
    (headpths) =:  \ths -> th:ths
 
 killChildren  cont=do
-     th <- myThreadId !> "KILLCHILDREN"
+--     th <- myThreadId -- !> "KILLCHILDREN"
      forkIO $ do
-        let childs= children cont  !> "killChildren list= "++ addr (children cont)
-        ths <- takeMVar childs
-        putMVar childs []
-        mapM_ killThread  ths !> "KILLEVENT " ++ show ths ++ show th
+        let childs= children cont --  !> "killChildren list= "++ addr (children cont)
+        ths <- liftIO $ atomicModifyIORef' childs $ \ths ->([],ths)
+        mapM_ killThread  ths  !> "KILLEVENT " ++ show ths
      return ()
 
 
@@ -513,10 +484,10 @@ option1 x  message= do
        case mr of
          Nothing -> retry
          Just r ->
-            case reads1 r !> ("received " ++  show r ++  show th) of
-            (s,_):_ -> if  s == x  !> ("waiting" ++ show x)
+            case reads1 r of  -- !> ("received " ++  show r ++  show th) of
+            (s,_):_ -> if  s == x  -- !> ("waiting" ++ show x)
                      then do
-                       writeTVar  getLineRef Nothing !>"match"
+                       writeTVar  getLineRef Nothing -- !>"match"
                        return s
 
                      else retry
@@ -553,9 +524,9 @@ input cond= Transient . liftIO . atomically $ do
          Nothing -> retry
          Just r ->
             case reads1 r  of
-            (s,_):_ -> if cond s  !> show (cond s)
+            (s,_):_ -> if cond s  --  !> show (cond s)
                      then do
-                       writeTVar  getLineRef Nothing !>"match"
+                       writeTVar  getLineRef Nothing -- !>"match"
                        return $ Just s
 
                      else return Nothing
@@ -568,10 +539,10 @@ getLine' cond=    do
        case mr of
          Nothing -> retry
          Just r ->
-            case reads1 r !> ("received " ++  show r ++ show (unsafePerformIO myThreadId)) of
-            (s,_):_ -> if cond s  !> show (cond s)
+            case reads1 r of --  !> ("received " ++  show r ++ show (unsafePerformIO myThreadId)) of
+            (s,_):_ -> if cond s -- !> show (cond s)
                      then do
-                       writeTVar  getLineRef Nothing !>"match"
+                       writeTVar  getLineRef Nothing -- !>"match"
                        return s
 
                      else retry
@@ -584,7 +555,7 @@ reads1 s=x where
 
 inputLoop=  do
     putStrLn "Press end to exit"
-    inputLoop'   !> "started inputLoop"
+    inputLoop'  -- !> "started inputLoop"
     where
         inputLoop'= do
            r<- getLine
@@ -599,10 +570,12 @@ stay=  takeMVar rexit
 
 keep mx = do
    forkIO $ inputLoop
-   runTransient mx >> stay
+   forkIO $ runTransient mx  >> return ()
+   stay
 
 exit :: TransientIO a
 exit= do
+  liftIO $ putStrLn "Tempus fugit: exit"
   liftIO $ putMVar rexit   True
   return undefined
 
