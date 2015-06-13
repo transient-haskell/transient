@@ -38,7 +38,7 @@ import           GHC.Conc
 import           Data.List
 import           Data.IORef
 
-(!>) =   const . id -- flip trace
+(!>) =const . id -- flip trace
 infixr 0 !>
 
 data Transient m x= Transient  {runTrans :: m (Maybe x)}
@@ -52,10 +52,10 @@ data EventF  = forall a b . EventF{xcomp       :: TransientIO a
                                   ,fcomp       :: [b -> TransientIO b]
                                   ,mfData      :: M.Map TypeRep SData
                                   ,mfSequence  :: Int
-                                  ,replay      :: Bool
+                                  ,threadId    :: ThreadId
                                   ,freeTh      :: Bool
-                                  ,parent      :: EventF
-                                  ,children    :: P[ThreadId]
+                                  ,parent      :: Maybe EventF
+                                  ,children    :: TVar[EventF]
                                   ,maxThread     :: Maybe (P Int)
                                   }
                                   deriving Typeable
@@ -96,13 +96,16 @@ type TransientIO= Transient StateIO
 --runTrans ::  TransientIO x -> StateT EventF  IO (Maybe x)
 --runTrans (Transient mx) = mx
 
+
 runTransient :: TransientIO x -> IO (Maybe x, EventF)
 runTransient t= do
-  childs  <- newp []
-  let eventf0=  EventF  empty [] M.empty 0
-          False False  eventf0  childs Nothing
 
-  runStateT (runTrans t) eventf0
+  th <- myThreadId
+  let eventf0=  EventF  empty [] M.empty 0
+          th False  Nothing  (unsafePerformIO $ newTVarIO []) Nothing
+
+
+  runStateT (runTrans t) eventf0{threadId=th} !> "MAIN="++show th
 
 
 setEventCont ::   TransientIO a -> (a -> TransientIO b) -> StateIO ()
@@ -138,9 +141,9 @@ runCont :: EventF -> StateIO ()
 runCont (EventF  x fs _ _  _ _  _ _ _)= runTrans ((unsafeCoerce x') >>= compose ( fs)) >> return ()
     where
     x'=  do
-           modify $ \s -> s{replay=True}
+--           modify $ \s -> s{replay=True}
            r<- x
-           modify $ \s -> s{replay=False}
+--           modify $ \s -> s{replay=False}
            return r
 
 {-
@@ -219,13 +222,13 @@ instance  Alternative TransientIO where
 -- of the current thread.
 oneThread :: TransientIO a -> TransientIO a
 oneThread comp=  do
-   chs <- liftIO $ newp []
+   chs <- liftIO $ newTVarIO []
    r <- comp
    modify $ \ s -> s{children= chs}
    killchilds
    return r
 
--- | internal. use `oneThread`
+-- | kill all the child processes
 killchilds :: TransientIO()
 killchilds= Transient $  do
    cont <- get
@@ -370,7 +373,6 @@ data EventValue= EventValue SData deriving Typeable
 
 parallel  ::    IO (Either b b) -> TransientIO b
 parallel  ioaction= Transient$   do
-
         cont <- getCont                    -- !> "PARALLEL"
         mv <- getSessionData
         case mv  of
@@ -385,8 +387,8 @@ parallel  ioaction= Transient$   do
 
 
 loop (cont'@(EventF x fs a b c d peers childs g))  rec  =  do
-  chs <- newp []
-  let cont = EventF x fs a b c d cont' chs g
+  chs <- liftIO $ newTVarIO []
+  let cont = EventF x fs a b c d (Just cont') chs g
       iocont dat=
           runStateT ( do
              setSessionData . EventValue $ unsafeCoerce dat
@@ -403,48 +405,85 @@ loop (cont'@(EventF x fs a b c d peers childs g))  rec  =  do
               loop'
 
       forkMaybe  proc = do
-        case maxThread cont of
-         Nothing ->  do
-            th <- forkFinally proc $ \me -> do
-                   case me !> "THREAD ENDED" of
-                    Left  e -> do
---                       when (fromException e /= Just ThreadKilled)$ liftIO $
-                       print e  -- !> "KILL RECEIVED" ++ (show $ unsafePerformIO myThreadId)
-                       killChildren  cont
+         dofork <- case maxThread cont of
+                  Nothing -> return True
+                  Just sem -> do
+                    dofork <- waitQSemB sem
+                    if dofork then  return True else return False
 
-                    Right _ -> return ()
-            addThread cont' th !>  "thread created: "++ show th
-         Just sem -> do
-          dofork <- waitQSemB sem
-          if dofork
+         if dofork
             then  do
                  th <- forkFinally proc $ \me -> do
-                         signalQSemB sem
-                         case me !> "THREAD ENDED" of
+                         case me of -- !> "THREAD ENDED" of
                           Left  e -> do
---                           when (fromException e /= Just ThreadKilled)$ liftIO $
-                           print e   -- !> "KILL RECEIVED" ++ (show $ unsafePerformIO myThreadId)
-                           killChildren  cont
+                           when (fromException e /= Just ThreadKilled)$ liftIO $ print e
+                           killChildren  cont  !> "KILL RECEIVED" ++ (show $ unsafePerformIO myThreadId)
 
-                          Right _ -> return ()
-                 addThread cont' th  !>  "thread created: "++ show th
+                          Right _ -> do
+                             --  if parent is alive
+                             --  then remove himself from the list (with free)
+                             --  and pass his active children to his parent
+                             return ()
+                             th <- myThreadId
+                             mparent <- free th cont
+                             case mparent of
+                              Nothing  ->  return()
+                              Just parent -> atomically $ do
+                                     chs' <- readTVar $ children cont
+                                     chs  <- (readTVar $ children parent)
+                                     writeTVar (children parent)$ chs ++ chs'
+                                     return ()
+
+                         case maxThread cont of
+                           Just sem -> signalQSemB sem
+                           Nothing -> return ()
+
+
+                 addThread cont' cont{threadId=th}  -- !>  "thread created: "++ show th
 
             else proc  -- !> "NO THREAD"
 
-
   forkMaybe  loop'
 
-addThread cont' th= when(not$ freeTh cont') $ do
---   liftIO $ print $ "ADDTHREAD  to" ++ addr (children cont')
-   let headpths= children cont'
-   (headpths) =:  \ths -> th:ths
 
-killChildren  cont=do
---     th <- myThreadId -- !> "KILLCHILDREN"
+free th env= do
+  if isNothing $ parent env
+   then  return Nothing  !>  show th ++ " orphan"
+   else do
+    let msibling= fmap children $ parent env
+
+    case msibling of
+     Nothing -> return Nothing
+     Just sibling  -> do
+       found <- atomically $ do
+                sbs <- readTVar sibling
+                let (sbs', found) = drop [] th  sbs !> "search "++show th ++ " in " ++ show (map threadId sbs)
+                when found $ writeTVar sibling sbs'
+                return found
+       if (not found && isJust (parent env))
+         then free th $ fromJust $ parent env !> "toparent"
+         else return $ Just env
+
+   where
+   drop processed th []= (processed,False)
+   drop processed th (ev:evts)| th == threadId ev= (processed ++ evts, True)
+                    | otherwise= drop (ev:processed) th evts
+
+
+addThread parent child = when(not $ freeTh parent) $ do
+   let headpths= children parent
+   atomically $ do
+       ths <- readTVar headpths
+       writeTVar headpths $  child:ths
+
+killChildren  cont = do
      forkIO $ do
         let childs= children cont --  !> "killChildren list= "++ addr (children cont)
-        ths <- liftIO $ atomicModifyIORef' childs $ \ths ->([],ths)
-        mapM_ killThread  ths  !> "KILLEVENT " ++ show ths
+        ths <- atomically $ do
+           ths <- readTVar childs
+           writeTVar childs []
+           return ths
+        mapM_ (killThread . threadId) ths  !> "KILLEVENT " ++ show (map threadId ths)
      return ()
 
 

@@ -65,7 +65,7 @@ undo= Transient $ do
   nullBack= Backtrack False []
   goBackt (Backtrack _ [])= return Nothing                     !> "END"
   goBackt (Backtrack b (stack@(first@(EventF x fs _ _  _ _ _ _ _): bs)))= do
-        put first{replay=True} 
+--        put first{replay=True} 
         setSData $ Backtrack True stack
         mr <-  runClosure first                                !> "RUNCLOSURE"
         Backtrack back _ <- getSessionData `onNothing` return nullBack 

@@ -21,12 +21,12 @@ import           Network.HTTP
 import           qualified Data.Map as M
 import           Network
 import           System.IO
-import           Data.IORef
-import Text.Parsec hiding (option, (<|>))
-import Text.Parsec.Token
+--import           Data.IORef
+--import Text.Parsec hiding (option, (<|>))
+--import Text.Parsec.Token
 import Data.List hiding (find,map, group)
-import Control.Concurrent.STM as STM
-import GHC.Conc
+--import Control.Concurrent.STM as STM
+--import GHC.Conc
 -- show
 
 solveConstraint=  do
@@ -82,27 +82,10 @@ nonDeterminsm= do
       example1 <|> example2
                <|> groupSample
                <|> threadSample
+               <|> fileSearch
 
-find :: String -> FilePath -> IO (Maybe FilePath)
-find s d = do
-  fs <- getDirectoryContents d
-       `catch` \(e:: SomeException) -> return []        --1
-  let fs' = sort $ filter (`notElem` [".",".."]) fs    -- 2
-  if any (== s) fs'                                    -- 3
-     then return (Just (d </> s))
-     else loop fs'                                     -- 4
- where
-  loop [] = return Nothing                             -- 5
-  loop (f:fs)  = do
-    let d' = d </> f                                   -- 6
-    isdir <- doesDirectoryExist d'                     -- 7
-    if isdir
-       then do r <- find s d'                          -- 8
-               case r of
-                 Just _  -> return r                   -- 9
-                 Nothing -> loop fs                    -- 10
-       else loop fs                                    -- 11
-       
+
+
 find' :: String -> FilePath -> TransientIO FilePath
 find' s d = do
   fs <- liftIO $ getDirectoryContents d
@@ -112,39 +95,27 @@ find' s d = do
      then do
        liftIO $ print $ d </> s
        return $ d</> s
---       found (d </> s :: FilePath)
---       return ()
      else do
-       f <- choose fs'                                 -- 4  
+       f <- choose fs'                                 -- 4
        let d' = d </> f                                -- 6
        isdir <- liftIO $ doesDirectoryExist d'         -- 7
        if isdir then find' s d'                        -- 8
                 else stop
 
 
-------------------  
+------------------
 
-main= keep $  do
-    r<-  collect 3 100000 $ threads 1 $  do -- find' "HPPU.log"  "c:\\"
-            s <- choose['a'..'c']
-            r <- choose[1..4::Int]
-            guard  $ s== 'c'
-            return (s,r)
-
-    liftIO $ putStrLn $ "SOLUTION= "++ show  r 
+fileSearch=   do
+    option "file" "example of file search"
+    r<- threads 3 $ collect 10 $ find' "Main.hs"  "."
+    liftIO $ putStrLn $ "SOLUTION= "++ show  r
 --    exit
 
 
-------------------------
 
-main1 = keep $ do
-         r <- group 24 $ threads 10 $ pythags
-         liftIO $ print r
-         exit
-
-main2= keep $ do
+main= keep $ do
       oneThread $ option "main" "to return to the main menu"   <|> return ""
-      liftIO $ putStrLn "MAIN MENU" 
+      liftIO $ putStrLn "MAIN MENU"
 
       nonDeterminsm <|> trans <|>
              colors <|> app   <|>

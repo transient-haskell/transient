@@ -33,17 +33,17 @@ import GHC.Conc
 choose  ::  [a] -> TransientIO a
 choose []= empty
 choose   xs = do
-    evs <- liftIO  $ newIORef xs  
+    evs <- liftIO  $ newIORef xs
     parallel   $ do
            es <- atomicModifyIORef' evs $ \es -> let !tes= tail es in (tes,es)
            case es of
             [x]  -> return $ Left $ head es
-            x:_  -> return $ Right x  
+            x:_  -> return $ Right x
 
 -- | group the output of a possible mmultithreaded process in groups of n elements.
 group :: Int -> TransientIO a -> TransientIO [a]
 group num proc =  do
-    v <- liftIO $ newIORef (0,[]) 
+    v <- liftIO $ newIORef (0,[])
     x <- proc
     n <- liftIO $ atomicModifyIORef' v $ \(n,xs) -> let !n'=n +1 in ((n', x:xs),n')
     if n < num
@@ -51,7 +51,7 @@ group num proc =  do
       else do
        liftIO $ atomicModifyIORef v $ \(n,xs) ->  ((0,[]),xs)
 
-choose' :: [a] -> TransientIO a 
+choose' :: [a] -> TransientIO a
 choose'  xs = foldl (<|>) empty $ map (parallel . return . Left) xs
 
 
@@ -62,81 +62,49 @@ choose'  xs = foldl (<|>) empty $ map (parallel . return . Left) xs
 --
 --
 
-(**>) x y=   do
-       Transient $ runTrans x
-       Transient $ runTrans y
+(**>) x y=   Transient $do
+       runTrans x
+       runTrans y
 
-(<**) x y= do
-       r <- Transient $ runTrans x
-       Transient $ runTrans y
+(<**) x y= Transient $ do
+       r <- runTrans x
+       runTrans y
        return r
 
-collect :: Typeable a => Int -> Int -> TransientIO a -> TransientIO [a]
-collect n time any=  do
+-- execute a process and get the first n solutions.
+-- if the process end without finding the number of solutions requested, it return the fond ones
+-- if he find the number of solutions requested, it kill the threads of the process and return
+-- It works monitoring the solutions found and the number of active threads.
+collect :: Typeable a => Int -> TransientIO a -> TransientIO [a]
+collect n search=  do
   rv <- liftIO $ atomically $ newTVar (0,[]) !> "NEWMVAR"
   endflag <- liftIO $ newTVarIO False
   st <- get
   let any1 = do
-        r <- any   !> "ANY"
+        r <- search   !> "ANY"
         liftIO $ atomically $ do
             (n1,rs) <- readTVar rv
             writeTVar  rv (n1+1,r:rs) !> "MODIFY"
---        liftIO $ atomically $ writeTVar endflag True   !> "ENDFLAG"
+        stop
 
-      detect=  do
+      detect= do
         stnow <- get
-        Transient $ liftIO $ do
+        freeThreads $ async $ do
+             threadDelay 1000 -- to allow the spawning of worker threads
+             xs <- atomically $ do
+                (n',xs) <- (readTVar rv ) !> "read"
+                ns <- readTVar $ children st
+--                unsafeIOToSTM $ putStrLn $ "LEN="++show (length ns)++ " "++ show n'++ " "++ show n
 
+                if (n' >= n) || (length ns == 1)
+                  then return xs
+                  else retry
 
-         mxs <- atomically $ do
-            (n',xs) <- readTVar rv  !> "TAKE"
-            if n' < n
-             then do
-                writeTVar rv (n',xs)
-                return Nothing
-             else do
-                writeTVar rv (0,[])
-                return $ Just xs
-         case mxs of
-            Nothing -> return Nothing
-            Just xs -> do
-                th <- myThreadId
-                free th stnow
-                killChildren st
-                return $ Just xs
+             th <- myThreadId !> "KILL"
+             free th stnow
+             killChildren st
+             addThread st stnow
+             return  xs
 
-
-      timeout = do
-        stnow <- get
-        async $ do
-
-          (n',xs) <- atomically $ do
-                (n',xs) <-  readTVar rv !> "READTVAR"
-                when (n'== 0) STM.retry
-                unsafeIOToSTM $  threadDelay time
-                return (n',xs)
-
-          th <- liftIO $ myThreadId
-          free th stnow    !> "FREE"
-          killChildren st  !> "KILL"
-          return xs
-
-  any1 **> detect   <|> timeout
-
-free th env= do
-       let sibling= children $ parent env
-       sbs <- readIORef sibling
-       if th `elem` sbs
-         then
-            sibling =: \sb ->  filter (/= th) sb  -- remove this thread from the list
-         else
-            free th $ parent env
-
---found ::  Typeable a => a -> TransientIO ()
---found x= do
---     mcv <- getSessionData
---     case mcv of
---         Nothing ->  error "found: out of collect block"
---         Just (Collect tv) ->  liftIO $  do
---           modifyMVar_ tv $ \(n,xs) ->  return (n+1, x:xs)
+  any1  **> detect
 
