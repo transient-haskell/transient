@@ -75,7 +75,7 @@ choose'  xs = foldl (<|>) empty $ map (parallel . return . Left) xs
 -- if the process end without finding the number of solutions requested, it return the fond ones
 -- if he find the number of solutions requested, it kill the threads of the process and return
 -- It works monitoring the solutions found and the number of active threads.
-collect :: Typeable a => Int -> TransientIO a -> TransientIO [a]
+collect ::  Int -> TransientIO a -> TransientIO [a]
 collect n search=  do
   rv <- liftIO $ atomically $ newTVar (0,[]) !> "NEWMVAR"
   endflag <- liftIO $ newTVarIO False
@@ -96,7 +96,7 @@ collect n search=  do
                 ns <- readTVar $ children st
 --                unsafeIOToSTM $ putStrLn $ "LEN="++show (length ns)++ " "++ show n'++ " "++ show n
 
-                if (n' >= n) || (length ns == 1)
+                if (n' >= n) || (length ns == 0)
                   then return xs
                   else retry
 

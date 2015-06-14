@@ -58,7 +58,7 @@ example2= do
 
 groupSample= threads 4 $ do
     option "coll" "group sample: return results in a list"
-    r <- group 9 $ do
+    r <- collect 3 $ do
       x <- choose  [1,2,3]
       y <- choose  [4,5,6]
       return (x,y)
