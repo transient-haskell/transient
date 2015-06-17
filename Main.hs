@@ -37,14 +37,14 @@ solveConstraint=  do
 
       return (x,y)
 
-pythags = do
+pythags = freeThreads $ do
   x <- choose [1..50]
   y <- choose ([1..x] :: [Int])
   z <- choose [1..round $ sqrt(fromIntegral $ 2*x*x)]
 
   guard (x*x+y*y==z*z)
-
-  return (x, y,z)
+  th <- liftIO $  myThreadId
+  return (x, y, z, th)
 
 example1= do
     option "ex1" "example 1"
@@ -53,15 +53,17 @@ example1= do
 
 example2= do
     option "pyt" "pythagoras"
-    r<- threads 1 pythags
+    r<- threads 2 pythags
     liftIO $ print r
 
-groupSample= threads 4 $ do
+collectSample= threads 4 $ do
     option "coll" "group sample: return results in a list"
-    r <- collect 3 $ do
+    r <- collect 0 $ do
       x <- choose  [1,2,3]
       y <- choose  [4,5,6]
-      return (x,y)
+      th <- liftIO $ threadDelay 1000 >> myThreadId
+
+      return (x,y,th)
 
     liftIO $ print r
 
@@ -80,7 +82,7 @@ threadSample= do
 nonDeterminsm= do
       option "nondet" "Non determinism exaples"
       example1 <|> example2
-               <|> groupSample
+               <|> collectSample
                <|> threadSample
                <|> fileSearch
 
@@ -189,7 +191,7 @@ app= do
           return n
 
 futures= do
-       option "async" "for parallelization of IO actions with applicative and monioidal combinators"
+       option "async" "for parallelization of IO actions with applicative and monoidal combinators"
        sum1 <|> sum2
 
 sum1 :: TransientIO ()

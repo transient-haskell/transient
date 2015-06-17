@@ -62,19 +62,12 @@ choose'  xs = foldl (<|>) empty $ map (parallel . return . Left) xs
 --
 --
 
-(**>) x y=   Transient $do
-       runTrans x
-       runTrans y
-
-(<**) x y= Transient $ do
-       r <- runTrans x
-       runTrans y
-       return r
 
 -- execute a process and get the first n solutions.
 -- if the process end without finding the number of solutions requested, it return the fond ones
 -- if he find the number of solutions requested, it kill the threads of the process and return
 -- It works monitoring the solutions found and the number of active threads.
+-- If the first parameter is 0, collect will return all the results
 collect ::  Int -> TransientIO a -> TransientIO [a]
 collect n search=  do
   rv <- liftIO $ atomically $ newTVar (0,[]) !> "NEWMVAR"
@@ -88,23 +81,23 @@ collect n search=  do
         stop
 
       detect= do
-        stnow <- get
-        freeThreads $ async $ do
-             threadDelay 1000 -- to allow the spawning of worker threads
-             xs <- atomically $ do
-                (n',xs) <- (readTVar rv ) !> "read"
-                ns <- readTVar $ children st
---                unsafeIOToSTM $ putStrLn $ "LEN="++show (length ns)++ " "++ show n'++ " "++ show n
 
-                if (n' >= n) || (length ns == 0)
+        freeThreads $ do
+          xs <- async $ do
+             threadDelay 1000 -- to allow some activity before monitoring it
+             atomically $ do
+                (n',xs) <- readTVar rv
+                ns <- readTVar $ children st
+
+                if (n > 0 && n' >= n) ||  null ns  !> show (n,n') !> (show $ length ns)
                   then return xs
                   else retry
 
-             th <- myThreadId !> "KILL"
-             free th stnow
-             killChildren st
-             addThread st stnow
-             return  xs
+          th <- liftIO $ myThreadId !> "KILL"
+          stnow <- get
+          liftIO $ killChildren st
+          liftIO $ addThread st stnow
+          return  xs
 
-  any1  **> detect
+  (any1 >> stop)  <|> detect
 
