@@ -39,10 +39,10 @@ import           Data.List
 import           Data.IORef
 
 {-# INLINE (!>) #-}
-(!>) =  const . id -- flip trace
+(!>) = const . id -- flip trace
 infixr 0 !>
 
-data Transient m x= Transient  {runTrans :: m (Maybe x)}
+data Transient m x = Transient  {runTrans :: m (Maybe x)}
 type SData= ()
 
 type EventId= Int

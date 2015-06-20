@@ -2,13 +2,14 @@
 
 {-# LANGUAGE ScopedTypeVariables #-}
 
-{-# LANGUAGE DeriveDataTypeable #-}
+{-# LANGUAGE DeriveDataTypeable  #-}
 module Main where
 
 import           Data.Typeable
 import           Transient.Base
 import           Transient.Backtrack
 import           Transient.Indeterminism
+import           Transient.Move
 import           Control.Applicative
 import           Control.Concurrent
 import           Control.Exception
@@ -21,6 +22,7 @@ import           Network.HTTP
 import           qualified Data.Map as M
 import           Network
 import           System.IO
+import           System.Environment
 --import           Data.IORef
 --import Text.Parsec hiding (option, (<|>))
 --import Text.Parsec.Token
@@ -28,6 +30,7 @@ import Data.List hiding (find,map, group)
 --import Control.Concurrent.STM as STM
 --import GHC.Conc
 -- show
+
 
 solveConstraint=  do
       x <- choose  [1,2,3]
