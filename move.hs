@@ -31,10 +31,16 @@ main= do
 
 callExample host port= do
    step $ liftIO $ putStrLn "asking for the remote data"
-   s <- callTo host port $ liftIO $ do
-                       putStrLn "remote callTo request"
-                       readIORef environ
-   liftIO $ putStrLn $ "resp=" ++ show s
+--   s1 <- callTo host port $ liftIO $ do
+--                       putStrLn "remote callTo request"
+--                       readIORef environ
+--
+--   s2 <- callTo host (PortNumber 8082) $ liftIO $ do
+--                       putStrLn "remote callTo request"
+--                       readIORef environ
+   r <- (,) <$> callTo host port (liftIO $ readIORef environ)
+            <*> callTo host (PortNumber 8082) (liftIO $ readIORef environ)
+   liftIO $ putStrLn $ "resp=" ++ show r
 
 
 environ= unsafePerformIO $ newIORef "Not Changed"

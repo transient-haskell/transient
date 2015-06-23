@@ -63,7 +63,8 @@ step mx= do
         setSData . Log False $ toIDyn r:rs
         return r
 
-
+-- | install in a remote node a haskell package with an executable transient service initialized with `listen`
+-- the package, the git repository and the main exectable must have the same name
 installService node port servport package= do
   beamTo node port
   liftIO $ do
@@ -84,46 +85,45 @@ installService node port servport package= do
 
 beamTo :: HostName -> PortID -> TransientIO ()
 beamTo node port= do
-      Log rec log <- getSData <|> return (Log False [])
-      if rec then return () else do
-          h <- liftIO $ connectTo node port
-          liftIO $ hSetBuffering h LineBuffering
-          liftIO $ hPutStrLn h (show $ reverse log)  >> hFlush h
-          liftIO $ hClose h
-          delSData h
-          stop
+  Log rec log <- getSData <|> return (Log False [])
+  if rec then return () else do
+      h <- liftIO $ connectTo node port
+      liftIO $ hSetBuffering h LineBuffering
+      liftIO $ hPutStrLn h (show $ reverse log)  >> hFlush h
+      liftIO $ hClose h
+      delSData h
+      stop
 
 forkTo  :: HostName -> PortID -> TransientIO ()
 forkTo node port= do
-      Log rec log <- getSData <|> return (Log False [])
-      if rec then return () else do
-          h <- liftIO $ connectTo node port
-          liftIO $ hSetBuffering h LineBuffering
-          liftIO $ hPutStrLn h (show $ reverse log)  >> hFlush h
-          liftIO $ hClose h
-          delSData h
+  Log rec log <- getSData <|> return (Log False [])
+  if rec then return () else do
+      h <- liftIO $ connectTo node port
+      liftIO $ hSetBuffering h LineBuffering
+      liftIO $ hPutStrLn h (show $ reverse log)  >> hFlush h
+      liftIO $ hClose h
+      delSData h
 
 callTo :: (Show a, Read a) => HostName -> PortID -> TransientIO a -> TransientIO a
 callTo node port remoteProc= do
-
       Log rec log <- getSData <|> return (Log False [])
       if rec
          then do -- remote side
---           liftIO $ print "remote"
+
            r <- remoteProc
            (h,sock) <- getSData
-           liftIO $ hPutStr h (show r)  `catch` (\(e::SomeException) -> sClose sock)
+           liftIO $ hPutStrLn h (show r)  `catch` (\(e::SomeException) -> sClose sock)
            stop
 
          else  async $ do -- local side
---           liftIO $   print "local"
-           h <-  connectTo node port
+
+           h <- connectTo node port
            hPutStrLn h (show $ reverse log) >> hFlush h
---           liftIO $ print "sent"
-           s <- hGetContents h
---           let l= length s
---           l `seq` liftIO (print s)
-           return $ read s
+           liftIO $ hSetBuffering h LineBuffering
+           s <- hGetLine h
+           hClose h
+
+           return $ read s  -- !> "read: " ++ s
 
 
 
