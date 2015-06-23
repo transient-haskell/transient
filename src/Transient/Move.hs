@@ -24,7 +24,9 @@ import System.IO
 import Control.Exception
 import Data.Maybe
 import Unsafe.Coerce
-
+import System.Process
+import System.Directory
+import Control.Monad
 
 data IDynamic= IDyns String | forall a.(Read a, Show a,Typeable a) => IDynamic a
 
@@ -54,12 +56,31 @@ step mx= do
 
     if recover && not (null rs)
       then do
-        setSData $ Log recover $ tail rs
+        setSData . Log recover $ tail rs
         return $ fromIDyn $ head rs
       else do
         r <- mx
-        setSessionData . Log False $ toIDyn r:rs
+        setSData . Log False $ toIDyn r:rs
         return r
+
+
+installService node port servport package= do
+  beamTo node port
+  liftIO $ do
+     let packagename= name package
+     exist <- doesDirectoryExist  packagename
+     when (not exist) $ do
+         runCommand $ "git clone "++ package
+         runCommand $ "cd "++ packagename
+         runCommand "cabal install"
+         createProcess $ shell $ "./dist/build/"++ packagename++"/"++packagename
+                                       ++ " " ++ show port
+         return()
+  where
+  name path=
+     let x= dropWhile (/= '/') path
+     in if x== "" then tail path else name $ tail    x
+
 
 beamTo :: HostName -> PortID -> TransientIO ()
 beamTo node port= do
@@ -94,12 +115,12 @@ callTo node port remoteProc= do
            liftIO $ hPutStr h (show r)  `catch` (\(e::SomeException) -> sClose sock)
            stop
 
-         else do -- local side
+         else  async $ do -- local side
 --           liftIO $   print "local"
-           h <- liftIO $ connectTo node port
-           liftIO $ hPutStrLn h (show $ reverse log) >> hFlush h
+           h <-  connectTo node port
+           hPutStrLn h (show $ reverse log) >> hFlush h
 --           liftIO $ print "sent"
-           s <- liftIO $ hGetContents h
+           s <- hGetContents h
 --           let l= length s
 --           l `seq` liftIO (print s)
            return $ read s
