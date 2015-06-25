@@ -13,7 +13,7 @@ data-dir: ""
 library
     build-depends: base , mtl , random , containers ,
                    directory , filepath , stm , HTTP , network ,
-                   transformers, process
+                   transformers, process, network-info
 
     hs-source-dirs: src .
     exposed-modules: Transient.Indeterminism Transient.Base

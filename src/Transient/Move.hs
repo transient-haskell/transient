@@ -27,6 +27,10 @@ import Unsafe.Coerce
 import System.Process
 import System.Directory
 import Control.Monad
+import Network.Info
+import System.IO.Unsafe
+import Control.Concurrent.MVar
+import Data.Monoid
 
 data IDynamic= IDyns String | forall a.(Read a, Show a,Typeable a) => IDynamic a
 
@@ -132,7 +136,7 @@ listen  port = do
 --       liftIO $ print "listen"
        sock <- liftIO $ listenOn  port
 
-       (h,_,_) <- spawn $ accept sock
+       (h,_,_) <- parallel $ Right <$> accept sock
        liftIO $ hSetBuffering h LineBuffering
 --       liftIO $ print "received something"
        slog <- liftIO $ hGetLine  h
@@ -141,10 +145,7 @@ listen  port = do
 
        setSData $ Log True $ read slog
 
-
-
-
-
+beamInit :: PortID -> Transient StateIO a -> IO b
 beamInit port program=  keep $ do
     listen port  <|> return ()
     (program >> empty)  <|> close
@@ -152,5 +153,37 @@ beamInit port program=  keep $ do
     close= do
        (h,sock) <- getSData
        liftIO $ hClose h  `catch` (\(e::SomeException) -> sClose sock)
+
+-- longCallTo: for very long processes that return the result to the calling method
+
+
+
+
+type Node= (HostName,PortID)
+
+nodeList = unsafePerformIO $ newMVar ([] :: [Node])
+
+--addNode :: HostName -> PortID -> Integer -> TransientIO ()
+--addNode  remotehost remoteport port= do
+--   ifs <- liftIO $ getNetworkInterfaces
+--
+--   ind <-  foldl (<|>) empty $ map (\(i,n) -> option i $ show (ipv4 n) ++ "\t"++name n)  $ zip [1..] ifs
+--   let host = show . ipv4 $ ifs !! ind
+--
+--   callTo remotehost remoteport $ do
+--       nodes <- liftIO $ readMVar nodeList
+--       map (\(h,p) -> addNode' h p host port) $ (host, PortNumber $ fromInteger port): nodes
+--
+--
+--   where
+--   addNode' h p h' p'= callTo h p . liftIO $ do
+--       withMVar nodeList $ \nodes -> return  ((h', PortNumber $ fromInteger p'): nodes)
+--       return ()
+
+
+
+
+
+
 
 

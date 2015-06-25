@@ -8,6 +8,9 @@ import Data.IORef
 import Control.Monad.IO.Class
 import System.Environment
 import System.IO.Unsafe
+import Data.Monoid
+import System.IO
+
 
 main= do
   args <- getArgs
@@ -21,12 +24,15 @@ main= do
           remotePort= PortNumber . fromInteger . read $ args !! 2
 
       beamInit localPort $ do
-       r <- step $   option "move" "to move to another node"
-                 <|> option "call" "to call a function in another node"
+
+       r <-oneThread $ step $   option "move" "move to another node"
+                <|> option "call" "call a function in another node"
+                <|> option "chat" "chat"
 
        case r of
          "call" -> callExample remoteHost remotePort
          "move" -> moveExample remoteHost remotePort
+         "chat" -> chat [(remoteHost,remotePort)]
 
 
 callExample host port= do
@@ -49,3 +55,16 @@ moveExample host port= do
    liftIO $ print $ "inserting "++ name ++" as new data in this node"
    liftIO $ writeIORef environ name
    return()
+
+
+
+
+chat :: [(HostName, PortID)] -> Transient StateIO ()
+chat nodes = do
+    name  <- step $ do liftIO $ putStrLn "Name?" ; input (const True)
+    text <- step $  waitEvents  $ putStr ">" >>hFlush stdout >> getLine' (const True)
+    let line= name ++": "++ text
+    foldl (<>) mempty $ map (\(h,n) -> callTo h  n  $ liftIO $ putStrLn line) nodes
+
+
+

@@ -525,7 +525,7 @@ option :: (Typeable b, Show b, Read b, Eq b) =>
 option ret message= do
     let sret= show ret
 
-    liftIO $ putStrLn $ "Enter "++sret++"\tto: " ++ message
+    liftIO $ putStrLn $ "Enter  "++sret++"\tto: " ++ message
     liftIO $ modifyMVar_ roption $ \msgs-> return $ sret:msgs
     waitEvents  $ getLine' (==ret)
     liftIO $ putStrLn $ show ret ++ " chosen"
