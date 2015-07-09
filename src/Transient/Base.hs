@@ -39,7 +39,7 @@ import           Data.List
 import           Data.IORef
 
 {-# INLINE (!>) #-}
-(!>) = const . id -- flip trace
+(!>) =  flip trace
 infixr 0 !>
 
 data Transient m x = Transient  {runTrans :: m (Maybe x)}
@@ -98,24 +98,6 @@ runTransient t= do
   runStateT (runTrans t) eventf0{threadId=th} !> "MAIN="++show th
 
 
-setEventCont ::   TransientIO a -> (a -> TransientIO b) -> StateIO ()
-setEventCont x f  = do
-   st@(EventF   _ fs d n  r applic  ch rc bs)  <- get
-   put $ EventF x ( unsafeCoerce f : fs) d n  r applic  ch rc bs
-
-
-
-resetEventCont :: Maybe a -> StateIO ()
-resetEventCont mx =do
-   st@(EventF _ fs d n  r nr  ch rc bs)  <- get
-
-   let f= \mx ->  case mx of
-                       Nothing -> empty
-                       Just x  -> (unsafeCoerce $ head fs)  x
-   put $ EventF  (f mx) ( tailsafe fs)d n  r nr  ch rc bs
-   where
-   tailsafe []=[]
-   tailsafe (x:xs)= xs
 
 
 
@@ -204,6 +186,72 @@ instance  Alternative TransientIO where
          x <-   g
          return $ k <|> x
 
+
+
+instance MonadPlus TransientIO where
+    mzero= stop
+    mplus (Transient x) (Transient y)=  Transient $ do
+         mx <- x
+         case mx of
+             Nothing -> y
+             justx -> return justx
+
+-- | a sinonym of empty that can be used in a monadic expression. it stop the
+-- computation
+stop :: TransientIO a
+stop= Control.Applicative.empty
+
+instance Monoid a => Monoid (TransientIO a) where
+  mappend x y = mappend <$> x <*> y
+  mempty= return mempty
+
+-- | set the current closure and continuation for the current statement
+setEventCont ::   TransientIO a -> (a -> TransientIO b) -> StateIO ()
+setEventCont x f  = do
+   st@(EventF   _ fs d n  r applic  ch rc bs)  <- get
+   put $ EventF x ( unsafeCoerce f : fs) d n  r applic  ch rc bs
+
+
+-- | reset the closure and continuation. remove inner binds than the prevous computations may have stacked
+-- in the list of continuations.
+resetEventCont :: Maybe a -> StateIO ()
+resetEventCont mx =do
+   st@(EventF _ fs d n  r nr  ch rc bs)  <- get
+
+   let f= \mx ->  case mx of
+                       Nothing -> empty
+                       Just x  -> (unsafeCoerce $ head fs)  x
+   put $ EventF  (f mx) ( tailsafe fs)d n  r nr  ch rc bs
+   where
+   tailsafe []=[]
+   tailsafe (x:xs)= xs
+
+
+instance Monad TransientIO where
+      return x = Transient $ return $ Just x
+      x >>= f  = Transient $ do
+        cont <- setEventCont x  f
+
+        mk <- runTrans x
+        resetEventCont mk
+        case mk of
+           Just k  -> do
+               runTrans $ f k
+
+           Nothing -> return Nothing
+
+
+
+
+instance MonadTrans (Transient ) where
+  lift mx = Transient $ mx >>= return . Just
+
+instance MonadIO TransientIO where
+  liftIO = lift . liftIO --     let x= liftIO io in x `seq` lift x
+
+
+
+
 -- Threads
 
 waitQSemB sem= atomicModifyIORef' sem $ \n -> if n > 0 then(n-1,True) else (n,False)
@@ -254,46 +302,6 @@ killChilds= Transient $  do
    cont <- get
    liftIO $  killChildren cont
    return $ Just ()
-
-
-instance MonadPlus TransientIO where
-    mzero= stop
-    mplus (Transient x) (Transient y)=  Transient $ do
-         mx <- x
-         case mx of
-             Nothing -> y
-             justx -> return justx
-
--- | a sinonym of empty that can be used in a monadic expression. it stop the
--- computation
-stop :: TransientIO a
-stop= Control.Applicative.empty
-
-instance Monoid a => Monoid (TransientIO a) where
-  mappend x y = mappend <$> x <*> y
-  mempty= return mempty
-
-instance Monad TransientIO where
-      return x = Transient $ return $ Just x
-      x >>= f  = Transient $ do
-        cont <- setEventCont x  f
-
-        mk <- runTrans x
-        resetEventCont mk
-        case mk of
-           Just k  -> do
-               runTrans $ f k
-
-           Nothing -> return Nothing
-
-
-
-instance MonadTrans (Transient ) where
-  lift mx = Transient $ mx >>= return . Just
-
-instance MonadIO TransientIO where
-  liftIO = lift . liftIO --     let x= liftIO io in x `seq` lift x
-
 
 
 -- | Get the session data of the desired type if there is any.
@@ -377,15 +385,15 @@ data EventValue= EventValue SData deriving Typeable
 
 parallel  ::    IO (Either b b) -> TransientIO b
 parallel  ioaction= Transient$   do
-        cont <- getCont                    -- !> "PARALLEL"
-        mv <- getSessionData
-        case mv  of
-         Just (EventValue v)  -> do
-            delSessionData $ EventValue () -- !> "ISJUST "
-            return  $ Just $ unsafeCoerce v
-         Nothing -> do
-            liftIO  $ loop cont    ioaction
-            return Nothing
+    cont <- getCont                    -- !> "PARALLEL"
+    mv <- getSessionData
+    case mv  of
+     Just (EventValue v)  -> do
+        delSessionData $ EventValue () -- !> "ISJUST "
+        return  $ Just $ unsafeCoerce v
+     Nothing -> do
+        liftIO  $ loop cont    ioaction
+        return Nothing
 
 
 
@@ -462,11 +470,11 @@ free th env= do
      Just sibling  -> do
        found <- atomically $ do
                 sbs <- readTVar sibling
-                let (sbs', found) = drop [] th  sbs !> "search "++show th ++ " in " ++ show (map threadId sbs)
+                let (sbs', found) = drop [] th  sbs -- !> "search "++show th ++ " in " ++ show (map threadId sbs)
                 when found $ writeTVar sibling sbs'
                 return found
        if (not found && isJust (parent env))
-         then free th $ fromJust $ parent env !> "toparent"
+         then free th $ fromJust $ parent env -- !> "toparent"
          else return $ Just env
 
    where
@@ -488,7 +496,7 @@ killChildren  cont = do
            ths <- readTVar childs
            writeTVar childs []
            return ths
-        mapM_ (killThread . threadId) ths  !> "KILLEVENT " ++ show (map threadId ths)
+        mapM_ (killThread . threadId) ths -- !> "KILLEVENT " ++ show (map threadId ths)
      return ()
 
 
@@ -598,7 +606,7 @@ rexit= unsafePerformIO newEmptyMVar
 stay=  takeMVar rexit
 
 keep mx = do
-   forkIO $ inputLoop
+--   forkIO $ inputLoop
    forkIO $ runTransient mx  >> return ()
    stay
 
