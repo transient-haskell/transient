@@ -1,6 +1,17 @@
 transient
 =========
 
+See the articles:
+
+[Philosopy, async, parallelism, thread control, events, Session state](https://www.fpcomplete.com/user/agocorona/EDSL-for-hard-working-IT-programmers?show=tutorials)
+[Backtracking and undoing IO transactions](https://www.fpcomplete.com/user/agocorona/the-hardworking-programmer-ii-practical-backtracking-to-undo-actions?show=tutorials)
+[Non-deterministic list like processing, multithreading](https://www.fpcomplete.com/user/agocorona/beautiful-parallel-non-determinism-transient-effects-iii?show=tutorials)
+[Distributed computing](https://www.fpcomplete.com/user/agocorona/moving-haskell-processes-between-nodes-transient-effects-iv?show=tutorials)
+
+These articles contains executable examples
+
+This the text of the first article:
+
 # Introduction #
 
 I have a problem: How I present the few applicative and monadic combinators that I just developed. I could present it as 
