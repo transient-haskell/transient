@@ -10,7 +10,7 @@ See the articles:
 
 These articles contains executable examples
 
-This the text of the first article:
+This is the text of the first article:
 
 # Introduction #
 
