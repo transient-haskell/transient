@@ -1,3 +1,4 @@
+{-# LANGUAGE ScopedTypeVariables #-}
 module Main where
 
 import Transient.Move
@@ -12,74 +13,77 @@ import Data.Monoid
 import System.IO
 import Control.Monad
 import Data.Maybe
-
+import Control.Exception
+import Control.Concurrent (threadDelay)
 
 import Control.Concurrent.STM
 
+x |> y =  (x >> empty) <|> y
 
-main1= runTransient $ do
-    let log= [Exec,Step $ toIDyn (Just ())]
-    setSData $ Log True log log
-    r <- call$ do
-         call $ liftIO $ print "hi"
---         Log rec _ log <- getSData
---         liftIO$ print log
-         call $ liftIO $ print "how are you"
-         return "ret"
-    liftIO $ print r
---    Log rec _ log <- getSData
---    liftIO$ print log
+twoInstancesLocalNode= do
+  let port1 = (PortNumber 2000)
+      port2 = (PortNumber 2001)
+  keep $ 
+    initialInstance port1 port2  <|>
+    addedInstance  port1 port2 
   where
-  call mx= step $ mx
+    initialInstance port1 port2= do
+         connect  "localhost" port1 "localhost" port1
+         examples
+       |> close
 
-main= do
+    addedInstance port1 port2=do
+         connect "localhost" port2 "localhost"  port1
+         examples
+       |> close
+         
+    close= do
+       (h,sock) <- getSData
+       liftIO $ hClose h  `catch` (\(e::SomeException) -> sClose sock) 
+
+
+
+recursive=   do
+   let localPort=  (PortNumber 2000)
+   let localHost= "localhost"
+
+   beamInit localPort $ do
+         step $ addNodes localPort [(localHost,localPort)]
+         r <- callTo localHost localPort $ do
+                      clustered . step $ return [True]
+         liftIO $ print r
+
+
+main = do
   args <- getArgs
-  if length args < 2 then do
-     print "the program need two parameters:  localHost localPort  remoteHost RemotePort"
+  if length args < 2
+    then do
+     putStrLn "The program need at least two parameters:  localHost localPort  remoteHost RemotePort"
+     putStrLn "Start one node alone. The rest, connected to this node."
      return ()
-    else do
+    else keep $ do
+       let localHost= args !! 0
+           localPort= PortNumber . fromInteger . read $ args !! 1
+           (remoteHost,remotePort) =
+             if length args >=4
+                then(args !! 2, PortNumber . fromInteger . read $ args !! 3)
+                else (localHost,localPort)
+       connect localHost localPort remoteHost remotePort
+       examples
 
-      let localHost= args !! 0
 
-          localPort= PortNumber . fromInteger . read $ args !! 1
---      let localHost= "localhost"
---          localPort= PortNumber $ fromIntegral 8080
---          remoteHost= Nothing
---          remotePort= Nothing
-
-      atomically $ writeTVar  myNode (localHost,localPort)
-
-      beamInit localPort $ do
-           (remoteHost,remotePort) <- step $ return $ if length args >=4
-                then(Just $ args !! 2, Just$ PortNumber . fromInteger . read $ args !! 3)
-                else (Nothing,Nothing)
-
---           h <- liftIO $ connectTo localHost localPort
---           h' <- liftIO $ connectTo localHost localPort
---           liftIO $ print (h,h')
---           stop
---           r <- step $ return  (1 :: Int)
---           step $ liftIO $ print r
---           r <- callTo localHost localPort $ do
---                    step $ return "before hello"
---                    callTo localHost localPort $ liftIO $ print "hello"
---                    return (1 :: Int)
---           liftIO $ print r
---           liftIO $ print "END"
---           stop
-           connect  localHost localPort  remoteHost remotePort
-           stop
-           nodes <- getNodes
-           liftIO $ print nodes
-           let (remoteHost,remotePort)= head $ tail nodes
-           r <-oneThread $ step $   option "move" "move to another node"
-                    <|> option "call" "call a function in another node"
-                    <|> option "chat" "chat"
-
-           case r of
-             "call" -> callExample remoteHost remotePort
-             "move" -> moveExample remoteHost remotePort
-             "chat" -> chat [(remoteHost,remotePort)]
+examples = do       
+   nodes <- step getAllNodes
+   step $ liftIO $ print $ "NODES=" ++ show  nodes
+   let (remoteHost,remotePort)=  head  nodes
+   r <-step $ oneThread
+                 $ option "move" "move to another node"
+               <|> option "call" "call a function in another node"
+               <|> option "chat" "chat"
+   case r of
+       "call" -> callExample remoteHost remotePort
+       "move" -> moveExample remoteHost remotePort
+       "chat" -> chat nodes
 
 
 callExample host port= do
@@ -106,7 +110,7 @@ moveExample host port= do
 
 
 
-chat :: [(HostName, PortID)] -> Transient StateIO ()
+chat :: [(HostName, PortID)] -> TransIO ()
 chat nodes = do
     name  <- step $ do liftIO $ putStrLn "Name?" ; input (const True)
     text <- step $  waitEvents  $ putStr ">" >>hFlush stdout >> getLine' (const True)

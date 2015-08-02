@@ -39,15 +39,15 @@ import           Data.List
 import           Data.IORef
 
 {-# INLINE (!>) #-}
-(!>) =  flip trace
+(!>) =  const . id -- flip trace
 infixr 0 !>
 
-data Transient m x = Transient  {runTrans :: m (Maybe x)}
+data TransIO  x = Transient  {runTrans :: StateT EventF IO (Maybe x)}
 type SData= ()
 
 type EventId= Int
 
-
+type TransientIO= TransIO
 
 data EventF  = forall a b . EventF{xcomp       :: TransientIO a
                                   ,fcomp       :: [b -> TransientIO b]
@@ -81,7 +81,7 @@ instance MonadState EventF  TransientIO where
 
 type StateIO= StateT EventF  IO
 
-type TransientIO= Transient StateIO
+--type TransientIO= Transient StateIO
 
 --runTrans ::  TransientIO x -> StateT EventF  IO (Maybe x)
 --runTrans (Transient mx) = mx
@@ -176,24 +176,26 @@ instance Applicative TransientIO where
          x <- runTrans g
          liftIO $ writeIORef rg  x
 
-         return $ k <*> x
+         return $ k <*> x 
 
 
 instance  Alternative TransientIO where
   empty= Transient $ return  Nothing
-  Transient f <|> Transient g= Transient $ do
-         k <-   f
-         x <-   g
-         return $ k <|> x
+  (<|>) = mplus
+  
+--  Transient f <|> Transient g= Transient $ do
+--         k <-   f
+--         x <-   g
+--         return $ k <|> x
 
 
 
 instance MonadPlus TransientIO where
-    mzero= stop
-    mplus (Transient x) (Transient y)=  Transient $ do
-         mx <- x
+    mzero= empty
+    mplus  x y=  Transient $ do
+         mx <- runTrans x
          case mx of
-             Nothing -> y
+             Nothing -> runTrans y
              justx -> return justx
 
 -- | a sinonym of empty that can be used in a monadic expression. it stop the
@@ -243,11 +245,11 @@ instance Monad TransientIO where
 
 
 
-instance MonadTrans (Transient ) where
-  lift mx = Transient $ mx >>= return . Just
+--instance MonadTrans (Transient ) where
+--  lift mx = Transient $ mx >>= return . Just
 
 instance MonadIO TransientIO where
-  liftIO = lift . liftIO --     let x= liftIO io in x `seq` lift x
+  liftIO x = Transient $ liftIO x >>= return . Just --     let x= liftIO io in x `seq` lift x
 
 
 
@@ -308,7 +310,7 @@ killChilds= Transient $  do
 getSessionData ::  (MonadState EventF m,Typeable a) =>  m (Maybe a)
 getSessionData =  resp where
  resp= gets mfData >>= \list  ->
-    case M.lookup ( typeOf $ typeResp resp ) list of
+    case M.lookup ( typeOf $ typeResp resp ) list  of
       Just x  -> return . Just $ unsafeCoerce x
       Nothing -> return $ Nothing
  typeResp :: m (Maybe x) -> x
@@ -317,13 +319,20 @@ getSessionData =  resp where
 -- | getSessionData specialized for the View monad. if Nothing, the
 -- monadic computation does not continue. getSData is a widget that does
 -- not validate when there is no data of that type in the session.
-getSData :: MonadState EventF m => Typeable a =>Transient m  a
+--
+-- If there is no such data, `getSData`  silently stop the computation.
+-- That may or may not be the desired behaviour.
+-- To make sure that this does not get unnoticed, use this construction:
+--
+-- >  getSData <|> error "no data"
+getSData ::  Typeable a => TransIO  a
 getSData= Transient getSessionData
 
 
--- | setSessionData ::  (StateType m ~ MFlowState, Typeable a) => a -> m ()
-setSessionData  x=
-  modify $ \st -> st{mfData= M.insert  (typeOf x ) (unsafeCoerce x) (mfData st)}
+-- | set session data for this type. retrieved with getSessionData orr getSData
+setSessionData ::  (MonadState EventF m, Typeable a) => a -> m ()
+setSessionData  x= do
+  let t= typeOf x in  modify $ \st -> st{mfData= M.insert  t (unsafeCoerce x) (mfData st)}
 
 -- | a shorter name for setSessionData
 setSData ::  ( MonadState EventF m,Typeable a) => a -> m ()
@@ -521,6 +530,7 @@ react setHandler iob= Transient $ do
           Just dat -> delSessionData dat >> return (Just  dat)
 
 
+-- * non-blocking keyboard input
 
 getLineRef= unsafePerformIO $ newTVarIO Nothing
 
@@ -606,7 +616,7 @@ rexit= unsafePerformIO newEmptyMVar
 stay=  takeMVar rexit
 
 keep mx = do
---   forkIO $ inputLoop
+   forkIO $ inputLoop
    forkIO $ runTransient mx  >> return ()
    stay
 
