@@ -103,7 +103,7 @@ examples localPort= do
    case r of
        "call" -> callExample remoteHost remotePort
        "move" -> moveExample remoteHost remotePort
-       "chat" -> chat localPort
+       "chat" -> chat
 
 
 callExample host port= do
@@ -128,17 +128,13 @@ moveExample host port= do
    return()
 
 
-chat :: PortID -> TransIO ()
-chat port' = do
+chat ::  TransIO ()
+chat  = do
     name  <- step $ do liftIO $ putStrLn "Name?" ; input (const True)
     text <- step $  waitEvents  $ putStr ">" >> hFlush stdout >> getLine' (const True)
     let line= name ++": "++ text
-    port <- step $ return port'
 
     nodes <- getAllNodes
     clustered $ liftIO $ putStrLn line
---    callTo h p (liftIO $ putStrLn line)  <|>  callTo h' p' (liftIO $ putStrLn line)
---    r <- foldl (<>) mempty $ map (\(h,n) -> callTo h  n  $ liftIO $  putStrLn line >> return [True]) nodes
---    liftIO $ print r
---    liftIO $ print r
+
 
