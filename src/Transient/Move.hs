@@ -15,6 +15,7 @@
     ,ScopedTypeVariables, StandaloneDeriving #-}
 module Transient.Move where
 import Transient.Base
+import Transient.Logged
 import Data.Typeable
 import Control.Applicative
 import Network
@@ -33,56 +34,6 @@ import Control.Concurrent.STM as STM
 import Data.Monoid
 import qualified Data.Map as M
 import Data.List (nub)
-
-data IDynamic= IDyns String | forall a.(Read a, Show a,Typeable a) => IDynamic a
-
-instance Show IDynamic where
-  show (IDynamic x)= show $ show x
-  show (IDyns s)= show s
-
-instance Read IDynamic where
-  readsPrec n str= map (\(x,s) -> (IDyns x,s)) $ readsPrec n str
-
-
-fromIDyn :: (Read a, Show a, Typeable a) => IDynamic -> a
-fromIDyn (IDynamic x)= unsafeCoerce x
-
-fromIDyn (IDyns s)=r where r= read s !> "read " ++ s ++ "to type "++ show (typeOf r)
-
-toIDyn x= IDynamic x
-
-
-
-type Recover= Bool
-data LogElem= Exec | Step IDynamic deriving (Read,Show)
-type CurrentPointer= [LogElem]
-type LogEntries= [LogElem]
-
-data Log= Log Recover  CurrentPointer LogEntries deriving Typeable
-
-step :: (Show a, Read a, Typeable a) => TransientIO a -> TransientIO a
-step mx=  do
-    Log recover rs full <- getSData <|> return ( Log False  [][])
---    liftIO $ putStrLn $ "step "++ show rs ++ "recover=" ++ show recover
-    case (recover,rs) of
-      (True, Step x: rs') -> do
---            liftIO $ print "READ FROM LOg"
-            setSData $ Log recover rs' full
-            return $ fromIDyn x !>  "read in step:" ++ show x 
-
-      (True,Exec:rs') -> do
---            liftIO $ print "EXeC1"
-            setSData $ Log recover rs' full
-            mx
-
-      _ -> do
---            liftIO $ print "EXeC2"
-            let add= Exec:  full
-            setSData $ Log False add add
-            r <-  mx
-            let add= Step (toIDyn r): full
-            setSData $ Log False add add
-            return  r
 
 
 
@@ -108,7 +59,7 @@ installService node port servport package= do
 
 beamTo :: HostName -> PortID -> TransientIO ()
 beamTo host port= do
-  Log rec log _<- getSData <|> return (Log False [][])
+  Log rec log _ <- getSData <|> return (Log False [][])
   if rec then return () else do
       h <- liftIO $ connectTo host port
       liftIO $ hSetBuffering h LineBuffering
@@ -127,64 +78,69 @@ forkTo host port= do
       liftIO $ hClose h
       delSData h
 
-callTo :: (Show a, Read a,Typeable a) => HostName -> PortID -> TransientIO a -> TransientIO a
-callTo host port remoteProc=  step $ Transient $ do
-      Log rec _ fulLog <- getSessionData `onNothing` return (Log False [][])
-      if rec 
-         then do -- remote side
---           liftIO $ do putStrLn ( "CALLTO remote logdata="++ show (reverse fulLog)) ; getLine
-           
-----           setSData $ Log False log fulLog
-           r <- runTrans $  remoteProc  !> "remoteProc"
-           Connection port  h sock <- getSessionData `onNothing` error "callto: no hander"  !> "executed remoteProc"
-           liftIO $ hPutStrLn h (show r)  `catch` (\(e::SomeException) -> sClose sock) !> "sent response"
-           return Nothing
 
-         else runTrans $  do
-              mr <-async $ do -- local side
-                   h <- connectTo host port
-                   hPutStrLn h (show $ reverse fulLog) >> hFlush h
---                   liftIO $  do putStrLn ( "CALLTO local send "++ (show $ reverse fulLog)) 
+callTo :: (Show a, Read a,Typeable a) => HostName -> PortID -> TransIO a -> TransIO a
+callTo host port remoteProc= step $ Transient $ do
+--      liftIO $ print "callto"
+      Log rec log fulLog <- getSessionData `onNothing` return (Log False [][])
+      if rec
+         then
+          runTrans $ do
+
+               Connection port  h sock <- getSData <|> error "callto: no hander"
+               r <- remoteProc !> "executing remoteProc" !> "CALLTO REMOTE" -- LOg="++ show fulLog
+               liftIO $ hPutStrLn h (show r) --  `catch` (\(e::SomeException) -> sClose sock)
+                -- !> "sent response, HANDLE="++ show h
+               setSData WasRemote
+               stop
+
+
+         else do
+
+            h <- liftIO $ connectTo host port
+            liftIO $ hPutStrLn h (show $ reverse fulLog) >> hFlush h !> "CALLTO LOCAL" -- send "++ show  log
+            let log'= WaitRemote:tail log
+            setSessionData $ Log rec log' log'
+            runTrans $ waitEvents $ do -- local side
                    liftIO $ hSetBuffering h LineBuffering
                    s <- hGetLine h
-                   hClose h
+--                   hClose h
 
                    let r = read s
-                    
-                   return r   !> "read: " ++ s ++" response type= "++show( typeOf r) 
-              case mr of
-                Nothing -> empty
-                Just r -> return r
+
+                   return r   !> "read: " ++ s ++" response type= "++show( typeOf r)
+
+
+
 
 data Connection= Connection PortID Handle Socket deriving Typeable
 
 -- | Wait for messages and replay the rest of the monadic sequence with the log received.
 listen :: PortID ->  TransIO ()
 listen  port = do
---       liftIO $ print "LISTEN"
        sock <- liftIO $ listenOn  port
 
-       (h,_,_) <- parallel $ Right <$> accept sock
-       liftIO $ hSetBuffering h LineBuffering
---       liftIO $ print "received something"
-       slog <- liftIO $ hGetLine  h
---       liftIO $ putStrLn $ "Listen rec=" ++ show (length slog) ++ slog
-       setSData $ Connection port h sock !> "setdata port=" ++ show port
+       (h,host,port1) <- parallel $ Right <$> accept sock
+       liftIO $  hSetBuffering h LineBuffering  -- !> "LISTEN in "++ show (h,host,port1)
 
-       let log= read slog  !> "read1 " ++ slog
+       slog <- liftIO $ hGetLine  h
+
+       setSData $ Connection port h sock  -- !> "setdata port=" ++ show port
+
+       let log= read slog   -- !> "read1 " ++ slog
        setSData $ Log True log (reverse log)
-       
 
 
 -- | init a Transient process in a interactive as well as in a replay mode.
 -- It is intended for twin processes that interact among them in different nodes.
 beamInit :: PortID -> TransIO a -> IO b
 beamInit port program=  keep $ do
-    listen port  <|> return ()
-    (program >> empty)  <|> close
+    listen port   <|> return ()
+    program
+--    (program >> stop)   <|> close
     where
     close= do
-       (_ :: PortID,h,sock) <- getSData
+       Connection _ h sock <- getSData
        liftIO $ hClose h  `catch` (\(e::SomeException) -> sClose sock)
 
 
@@ -215,7 +171,7 @@ getAllNodes= liftIO $ atomically $ readTVar nodeList >>= return . nub . concat .
 
 deriving instance Ord PortID
 
-getMyNode port= Transient $ do
+getMyNode port=  do
   myNodes <- liftIO $ atomically $ readTVar myNode
   let mx = M.lookup port myNodes
   case mx of
@@ -237,20 +193,11 @@ addNodes port  nodes= Transient . liftIO . atomically $ do
   mnodes <- readTVar nodeList
   let Just prevnodes= M.lookup port mnodes  <|> Just []
   writeTVar nodeList $ M.insert port (nub $ nodes ++ prevnodes)  mnodes
-  return $ Just ()  !> "added node "++ show nodes ++" to "++ show prevnodes
+  return $ Just ()  !>  "added node "++ show nodes ++" to "++ show prevnodes
                                     ++ " for port " ++ show port
 
 
-instance Read Socket where readsPrec = error $ "Socket Read instance undefined"
-instance Read Handle where readsPrec= error $ "Handle Read instance undefined"
-clustered :: (Typeable a, Show a, Read a) => Monoid a => TransientIO a -> TransientIO a
-clustered proc= step $ do
-     Connection port _ _ <-  getSData <|> error "clustered: No port set" !> "clustered"
-
-     nodes <- step $ getNodes port  !> "getnode"
-     step $ foldl (<>) mempty $ map (\(h,p) -> callTo h p proc) nodes !> "fold"
-
---getInterfaces :: TransIO Logged HostName
+--getInterfaces :: TransIO TransIO HostName
 --getInterfaces= do
 --   host <- step $ do
 --      ifs <- liftIO $ getNetworkInterfaces
@@ -259,29 +206,32 @@ clustered proc= step $ do
 --      ind <-  input ( < length ifs)
 --      return $ show . ipv4 $ ifs !! ind
 
+
+-- | execute a Transient action in each of the nodes connected. The results are mappend'ed
+clustered :: (Typeable a, Show a, Read a) => Monoid a => TransIO a -> TransIO a
+clustered proc= step $ do
+     nodes <- step (getSData >>= \(Connection port _ _) -> getNodes port)
+              <|>  getAllNodes
+
+     step $ foldr (<>) mempty $ map (\(h,p) -> callTo h p proc) nodes !> "fold"
+
+-- Connect to a new node to another. The other node will notify about this connection to
+-- all the nodes connected to him. the new connected node will receive the list of connected nodes
+-- the nodes will be updated with this list. it can be retrieved with `getNodes`
 connect ::   HostName ->  PortID ->  HostName ->  PortID -> TransientIO ()
 connect host  port   remotehost remoteport=do
-            listen port <|> return ()
-            step $ setMyNode  (host,port)
-            step $ addNodes port [(host,port)]
-            step $ liftIO $ putStrLn $ "connecting to: "++ show (remotehost,remoteport)
-
-            host <- step $ return host
-            port <- step $ return port
-            nodes <- callTo remotehost remoteport   $ do
-                       Connection portd _ _ <-  getSData  <|> error "NO PORT"
-                       step $ addNodes portd  [(host, port)]
-                       myNode <- step $ getMyNode portd
-                       return [myNode]
-                    
-            step $ addNodes port nodes
-            step $ liftIO $ putStrLn $ "Connected to modes: " ++ show nodes
-
-   
-
-
-
-
-
+    listen port <|> return ()
+    step $ setMyNode  (host,port)
+    step $ addNodes port [(host,port)]
+    step $ liftIO $ putStrLn $ "connecting to: "++ show (remotehost,remoteport)
+    host <- step $ return host
+    port <- step $ return port
+    nodes <- callTo remotehost remoteport   $ clustered $ do
+               Connection portd _ _  <-  getSData  <|> error "NO PORT"
+               step $ addNodes portd  [(host, port)]
+               Just myNode <- step $ getMyNode portd
+               return [myNode]
+    step $ addNodes port nodes
+    step $ liftIO $ putStrLn $ "Connected to modes: " ++ show nodes
 
 

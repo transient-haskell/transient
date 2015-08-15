@@ -38,6 +38,7 @@ import           GHC.Conc
 import           Data.List
 import           Data.IORef
 
+
 {-# INLINE (!>) #-}
 (!>) =  const . id -- flip trace
 infixr 0 !>
@@ -57,7 +58,7 @@ data EventF  = forall a b . EventF{xcomp       :: TransientIO a
                                   ,freeTh      :: Bool
                                   ,parent      :: Maybe EventF
                                   ,children    :: TVar[EventF]
-                                  ,maxThread     :: Maybe (P Int)
+                                  ,maxThread   :: Maybe (P Int)
                                   }
                                   deriving Typeable
 
@@ -154,14 +155,12 @@ instance Applicative TransientIO where
              appg x = Transient $  do
                    liftIO $ writeIORef rg $ Just x :: StateIO ()
                    k <- liftIO $ readIORef rf
-
                    return $ k <*> Just x  -- !> "RETURNED: " ++ show(isJust k)++ show(isJust x)
 
 
              appf k = Transient $  do
                    liftIO $ writeIORef rf  $ Just k :: StateIO ()
                    x<- liftIO $ readIORef rg
-
                    return $ Just k <*> x  --  !> "RETURNED: " ++ show(isJust k)++ show(isJust x)
 
 
@@ -169,33 +168,58 @@ instance Applicative TransientIO where
          put $ EventF f (unsafeCoerce appf:  fs)
                                           a b c d peers children g1
          k <- runTrans f
-         liftIO $ writeIORef rf  k -- :: StateIO ()
+         was <- getSessionData `onNothing` return NoRemote
+         if was== WasRemote
+           then  return Nothing
+           else do
+             liftIO $ writeIORef rf  k -- :: StateIO ()
 
-         put $ EventF g (unsafeCoerce appg :  fs)
-                                          a b c d peers  children g1
-         x <- runTrans g
-         liftIO $ writeIORef rg  x
+             mfdata <- gets mfData
+             put $ EventF g (unsafeCoerce appg :  fs) mfdata b c d peers  children g1
 
-         return $ k <*> x 
+
+             x <- runTrans g              !> "RUN g"
+             liftIO $ writeIORef rg  x
+             return $ k <*> x
+
+
+data IDynamic= IDyns String | forall a.(Read a, Show a,Typeable a) => IDynamic a
+
+instance Show IDynamic where
+  show (IDynamic x)= show $ show x
+  show (IDyns s)= show s
+
+instance Read IDynamic where
+  readsPrec n str= map (\(x,s) -> (IDyns x,s)) $ readsPrec n str
+
+
+type Recover= Bool
+type CurrentPointer= [LogElem]
+type LogEntries= [LogElem]
+data LogElem=  WaitRemote | Exec | Step IDynamic deriving (Read,Show)
+data Log= Log Recover  CurrentPointer LogEntries deriving Typeable
 
 
 instance  Alternative TransientIO where
-  empty= Transient $ return  Nothing
+  empty = Transient $ return  Nothing
   (<|>) = mplus
-  
+
 --  Transient f <|> Transient g= Transient $ do
 --         k <-   f
 --         x <-   g
 --         return $ k <|> x
 
-
+data RemoteStatus=  WasRemote | NoRemote deriving (Typeable, Eq)
 
 instance MonadPlus TransientIO where
     mzero= empty
     mplus  x y=  Transient $ do
-         mx <- runTrans x
-         case mx of
-             Nothing -> runTrans y
+         mx <- runTrans x    !> "RUNTRANS11111"
+         was <- getSessionData `onNothing` return NoRemote
+         if was== WasRemote
+           then {-(delSessionData was !> "WASREMOTE") >> -}return Nothing
+           else case mx of
+             Nothing -> runTrans y    !> "RUNTRANS22222"
              justx -> return justx
 
 -- | a sinonym of empty that can be used in a monadic expression. it stop the
@@ -232,7 +256,7 @@ resetEventCont mx =do
 instance Monad TransientIO where
       return x = Transient $ return $ Just x
       x >>= f  = Transient $ do
-        cont <- setEventCont x  f
+        setEventCont x  f
 
         mk <- runTrans x
         resetEventCont mk
@@ -261,7 +285,7 @@ signalQSemB sem= atomicModifyIORef' sem  $ \n ->  (n + 1,())
 
 -- | set the maximun number of threads for a procedure. It is useful for the
 threads :: Int -> TransientIO a -> TransientIO a
-threads n proc= Transient $do
+threads n proc= Transient $ do
    msem <- gets maxThread
    sem <- liftIO $ newIORef n
    modify $ \s -> s{maxThread= Just sem}

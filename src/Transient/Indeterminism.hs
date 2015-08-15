@@ -11,7 +11,7 @@
 -- |
 --
 -----------------------------------------------------------------------------
-{-# LANGUAGE BangPatterns, DeriveDataTypeable #-}
+{-# LANGUAGE BangPatterns #-}
 module Transient.Indeterminism (
 choose, choose', collect, group --, found
 ) where
@@ -48,8 +48,7 @@ group num proc =  do
     n <- liftIO $ atomicModifyIORef' v $ \(n,xs) -> let !n'=n +1 in ((n', x:xs),n')
     if n < num
       then stop
-      else do
-       liftIO $ atomicModifyIORef v $ \(n,xs) ->  ((0,[]),xs)
+      else liftIO $ atomicModifyIORef v $ \(n,xs) ->  ((0,[]),xs)
 
 choose' :: [a] -> TransientIO a
 choose'  xs = foldl (<|>) empty $ map (parallel . return . Left) xs
@@ -80,9 +79,7 @@ collect n search=  do
             writeTVar  rv (n1+1,r:rs) !> "MODIFY"
         stop
 
-      detect= do
-
-        freeThreads $ do
+      detect= freeThreads $ do
           xs <- async $ do
              threadDelay 1000 -- to allow some activity before monitoring it
              atomically $ do
