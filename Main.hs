@@ -84,7 +84,7 @@ threadSample= do
         liftIO $ print (x,y,th)
 
 nonDeterminsm= do
-      option "nondet" "Non determinism exaples"
+      option "nondet" "Non determinism examples"
       example1 <|> example2
                <|> collectSample
                <|> threadSample
@@ -120,7 +120,7 @@ fileSearch=   do
 
 
 main= keep $ do
-      oneThread $ option "main" "to return to the main menu"   <|> return ""
+      oneThread $ option "main" "to kill previous spawned processes and return to the main menu"   <|> return ""
       liftIO $ putStrLn "MAIN MENU"
 
       nonDeterminsm <|> trans <|>
@@ -235,7 +235,8 @@ server=  do
        option "server" "A web server in the port 8080"
        liftIO $ print "Server Stated"
        sock <-  liftIO $  listenOn $ PortNumber 8080
-       (h,_,_) <- spawn $ accept sock
+
+       (h,_,_) <- spawn $ accept sock `catch` (\(e::SomeException) -> sClose sock >> throw e)
        liftIO $ do
            hPutStr h msg
            putStrLn "new request"
@@ -251,27 +252,26 @@ msg = "HTTP/1.0 200 OK\r\nContent-Length: 5\r\n\r\nPong!\r\n"
 distributed= do
       option "distr" "examples of distributed computing"
       let port1 = PortNumber 2000
-          port2 = PortNumber 2001
 
 
+      addNodes [(host,port1)]
       listen port1 <|> return ()-- conn port1 port1 <|> conn port2 port1
 
       examples' host port1
       where
       host= "localhost"
-
       conn p p'=  connect host p host p'
 
 examples' remoteHost remotePort= do
-   logged $ option "main"  "to see the menu" <|> return ""
+   logged $ option "maind"  "to see this menu" <|> return ""
    r <-logged    $ option "move" "move to another node"
                <|> option "call" "call a function in another node"
                <|> option "chat" "chat"
                <|> option "netev" "events propagating trough the network"
    case r of
-       "call" -> callExample remoteHost remotePort
-       "move" -> moveExample remoteHost remotePort
-       "chat" -> chat
+       "call"  -> callExample remoteHost remotePort
+       "move"  -> moveExample remoteHost remotePort
+       "chat"  -> chat
        "netev" -> networkEvents remoteHost remotePort
 
 

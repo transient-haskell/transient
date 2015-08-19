@@ -119,13 +119,15 @@ data Connection= Connection PortID Handle Socket deriving Typeable
 listen :: PortID ->  TransIO ()
 listen  port = do
        setSData $ Log False [] []
-       sock <- liftIO $ listenOn  port
+       sock <- liftIO $ withSocketsDo $ listenOn  port
 
-       (h,host,port1) <- waitEvents $ accept sock
+       (h,host,port1) <- parallel $ Right <$> accept sock
+                          `catch` (\(e::SomeException) -> sClose sock >> throw e)
 
        liftIO $  hSetBuffering h LineBuffering  -- !> "LISTEN in "++ show (h,host,port1)
 
-       slog <- liftIO $ hGetLine  h
+       slog <- Transient $ liftIO $ (Just <$> hGetLine  h)
+                          `catch` (\(e::SomeException) -> print "ERR" >>  return Nothing)
 
        setSData $ Connection port h sock  -- !> "setdata port=" ++ show port
 
@@ -140,10 +142,10 @@ beamInit port program=  keep $ do
     listen port   <|> return ()
     program
 --    (program >> stop)   <|> close
-    where
-    close= do
-       Connection _ h sock <- getSData
-       liftIO $ hClose h  `catch` (\(e::SomeException) -> sClose sock)
+--    where
+--    close= do
+--       Connection _ h sock <- getSData
+--       liftIO $ hClose h  `catch` (\(e::SomeException) -> sClose sock)
 
 
 
