@@ -37,21 +37,35 @@ fromIDyn (IDyns s)=r where r= read s !> "read " ++ s ++ "to type "++ show (typeO
 
 toIDyn x= IDynamic x
 
+-- | synonymous of `step`
+logged :: (Show a, Read a, Typeable a) => TransientIO a -> TransientIO a
+logged= step
 
 
---type Recover= Bool
 
---data LogElem=  WaitRemote | Exec | Step IDynamic deriving (Read,Show)
-
---type CurrentPointer= [LogElem]
---type LogEntries= [LogElem]
-
---data Log= Log Recover  CurrentPointer LogEntries deriving Typeable
-
+-- | write the result of the computation in the log and return it.
+-- but if there is data in the internal log, it read the data from the log and
+-- do not execute the computation.
+--
+-- It accept nested step's. The effect is that if the outer step is executed completely
+-- the log of the inner steps are erased. If it is not the case, the inner steps are logged
+-- this reduce the log of large computations to the minimum. That is a feature not present
+-- in the package Workflow.
+--
+-- >  r <- step $ do
+-- >          step this :: TransIO ()
+-- >          step that :: TransIO ()
+-- >          step thatOther
+-- >  liftIO $ print r
+--
+--  when `print` is executed, the log is just the value of r.
+--
+--  but when `thatOther` is executed the log is: [Exec,(), ()]
+--
 step :: (Show a, Read a, Typeable a) => TransientIO a -> TransientIO a
 step mx=  do
     Log recover rs full <- getSData <|> return ( Log False  [][])
-----    liftIO $ print rs
+
     case (recover,rs) of
       (True, Step x: rs') -> do
             setSData $ Log recover rs' full

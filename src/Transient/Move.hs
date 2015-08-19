@@ -80,7 +80,7 @@ forkTo host port= do
 
 
 callTo :: (Show a, Read a,Typeable a) => HostName -> PortID -> TransIO a -> TransIO a
-callTo host port remoteProc= step $ Transient $ do
+callTo host port remoteProc= logged $ Transient $ do
 --      liftIO $ print "callto"
       Log rec log fulLog <- getSessionData `onNothing` return (Log False [][])
       if rec
@@ -118,9 +118,11 @@ data Connection= Connection PortID Handle Socket deriving Typeable
 -- | Wait for messages and replay the rest of the monadic sequence with the log received.
 listen :: PortID ->  TransIO ()
 listen  port = do
+       setSData $ Log False [] []
        sock <- liftIO $ listenOn  port
 
-       (h,host,port1) <- parallel $ Right <$> accept sock
+       (h,host,port1) <- waitEvents $ accept sock
+
        liftIO $  hSetBuffering h LineBuffering  -- !> "LISTEN in "++ show (h,host,port1)
 
        slog <- liftIO $ hGetLine  h
@@ -150,56 +152,42 @@ instance Read PortNumber where
   readsPrec n str= let [(n,s)]=   readsPrec n str in [(fromIntegral n,s)]
 
 
-
-
 deriving instance Read PortID
 deriving instance Typeable PortID
 
+-- * Level 2: connections node lists and operations with the node list
+
 type Node= (HostName,PortID)
 
-nodeList :: TVar (M.Map PortID  [Node])
-nodeList = unsafePerformIO $ newTVarIO $ M.empty
-
-myNode :: TVar (M.Map PortID HostName)
-myNode= unsafePerformIO $ newTVarIO  M.empty
-
-getAllNodes :: TransientIO [Node]
-getAllNodes= liftIO $ atomically $ readTVar nodeList >>= return . nub . concat . M.elems
---
---getMyNode= liftIO $atomically $ readTVar myNode
-
+nodeList :: TVar  [Node]
+nodeList = unsafePerformIO $ newTVarIO []
 
 deriving instance Ord PortID
 
-getMyNode port=  do
-  myNodes <- liftIO $ atomically $ readTVar myNode
-  let mx = M.lookup port myNodes
-  case mx of
-    Nothing -> return Nothing
-    Just host -> return $ Just (host,port)
+getNodes :: TransIO [Node]
+getNodes  = Transient $ Just <$> (liftIO $ atomically $ readTVar  nodeList)
 
-setMyNode  (host,port)= Transient . liftIO . atomically $ do
-  myNodes <-  readTVar myNode
-  writeTVar myNode  $ M.insert port  host myNodes
+
+
+
+addNodes   nodes= Transient . liftIO . atomically $ do
+  prevnodes <- readTVar nodeList
+
+  writeTVar nodeList $ nub $ prevnodes ++  nodes
   return $ Just ()
-
-getNodes port = Transient $ do
-  nodes <- liftIO $ atomically $ readTVar  nodeList
-  return $ M.lookup port nodes
-
-
-
-addNodes port  nodes= Transient . liftIO . atomically $ do
-  mnodes <- readTVar nodeList
-  let Just prevnodes= M.lookup port mnodes  <|> Just []
-  writeTVar nodeList $ M.insert port (nub $ nodes ++ prevnodes)  mnodes
-  return $ Just ()  !>  "added node "++ show nodes ++" to "++ show prevnodes
-                                    ++ " for port " ++ show port
-
 
 --getInterfaces :: TransIO TransIO HostName
 --getInterfaces= do
---   host <- step $ do
+--   host <- logged $ do
+--      ifs <- liftIO $ getNetworkInterfaces
+--      liftIO $ mapM_ (\(i,n) ->putStrLn $ show i ++ "\t"++  show (ipv4 n) ++ "\t"++name n)$ zip [0..] ifs
+--      liftIO $ putStrLn "Select one: "
+--      ind <-  input ( < length ifs)
+--      return $ show . ipv4 $ ifs !! ind
+
+--getInterfaces :: TransIO TransIO HostName
+--getInterfaces= do
+--   host <- logged $ do
 --      ifs <- liftIO $ getNetworkInterfaces
 --      liftIO $ mapM_ (\(i,n) ->putStrLn $ show i ++ "\t"++  show (ipv4 n) ++ "\t"++name n)$ zip [0..] ifs
 --      liftIO $ putStrLn "Select one: "
@@ -209,29 +197,26 @@ addNodes port  nodes= Transient . liftIO . atomically $ do
 
 -- | execute a Transient action in each of the nodes connected. The results are mappend'ed
 clustered :: (Typeable a, Show a, Read a) => Monoid a => TransIO a -> TransIO a
-clustered proc= step $ do
-     nodes <- step (getSData >>= \(Connection port _ _) -> getNodes port)
-              <|>  getAllNodes
+clustered proc= logged $ do
+     nodes <- logged getNodes
+     logged $ foldr (<>) mempty $ map (\(h,p) -> callTo h p proc) nodes !> "fold"
 
-     step $ foldr (<>) mempty $ map (\(h,p) -> callTo h p proc) nodes !> "fold"
-
--- Connect to a new node to another. The other node will notify about this connection to
+-- | Connect to a new node to another. The other node will notify about this connection to
 -- all the nodes connected to him. the new connected node will receive the list of connected nodes
 -- the nodes will be updated with this list. it can be retrieved with `getNodes`
 connect ::   HostName ->  PortID ->  HostName ->  PortID -> TransientIO ()
-connect host  port   remotehost remoteport=do
+connect host  port   remotehost remoteport=  do
     listen port <|> return ()
-    step $ setMyNode  (host,port)
-    step $ addNodes port [(host,port)]
-    step $ liftIO $ putStrLn $ "connecting to: "++ show (remotehost,remoteport)
-    host <- step $ return host
-    port <- step $ return port
-    nodes <- callTo remotehost remoteport   $ clustered $ do
-               Connection portd _ _  <-  getSData  <|> error "NO PORT"
-               step $ addNodes portd  [(host, port)]
-               Just myNode <- step $ getMyNode portd
-               return [myNode]
-    step $ addNodes port nodes
-    step $ liftIO $ putStrLn $ "Connected to modes: " ++ show nodes
+    logged $ do
+        logged $ addNodes [(host,port)]
+        logged $ liftIO $ putStrLn $ "connecting to: "++ show (remotehost,remoteport)
+        host <- logged $ return host
+        port <- logged $ return port
+        nodes <- callTo remotehost remoteport   $ do
+                   clustered $  addNodes [(host, port)]
+                   getNodes
+
+        logged $ addNodes nodes
+        logged $ liftIO $ putStrLn $ "Connected to modes: " ++ show nodes
 
 

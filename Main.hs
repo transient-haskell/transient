@@ -9,6 +9,7 @@ import           Data.Typeable
 import           Transient.Base
 import           Transient.Backtrack
 import           Transient.Indeterminism
+import           Transient.Logged
 import           Transient.Move
 import           Control.Applicative
 import           Control.Concurrent
@@ -23,7 +24,7 @@ import           qualified Data.Map as M
 import           Network
 import           System.IO
 import           System.Environment
---import           Data.IORef
+import           Data.IORef
 --import Text.Parsec hiding (option, (<|>))
 --import Text.Parsec.Token
 import Data.List hiding (find,map, group)
@@ -124,7 +125,7 @@ main= keep $ do
 
       nonDeterminsm <|> trans <|>
              colors <|> app   <|>
-            futures <|> server
+            futures <|> server <|> distributed
 
 -- / show
 
@@ -244,6 +245,78 @@ server=  do
 
 msg = "HTTP/1.0 200 OK\r\nContent-Length: 5\r\n\r\nPong!\r\n"
 
+
+-- distributed computing
+
+distributed= do
+      option "distr" "examples of distributed computing"
+      let port1 = PortNumber 2000
+          port2 = PortNumber 2001
+
+
+      listen port1 <|> return ()-- conn port1 port1 <|> conn port2 port1
+
+      examples' host port1
+      where
+      host= "localhost"
+
+      conn p p'=  connect host p host p'
+
+examples' remoteHost remotePort= do
+   logged $ option "main"  "to see the menu" <|> return ""
+   r <-logged    $ option "move" "move to another node"
+               <|> option "call" "call a function in another node"
+               <|> option "chat" "chat"
+               <|> option "netev" "events propagating trough the network"
+   case r of
+       "call" -> callExample remoteHost remotePort
+       "move" -> moveExample remoteHost remotePort
+       "chat" -> chat
+       "netev" -> networkEvents remoteHost remotePort
+
+
+callExample host port= do
+   logged $ putStrLnhp  port "asking for the remote data"
+   s <- callTo host port $ liftIO $ do
+                       putStrLnhp  port "remote callTo request"
+                       readIORef environ
+
+
+   liftIO $ putStrLn $ "resp=" ++ show s
+
+
+environ= unsafePerformIO $ newIORef "Not Changed"
+
+moveExample host port= do
+   putStrLnhp  port "enter a string. It will be inserted in the other node by a migrating program"
+   name <- logged $ input (const True)
+   beamTo host port
+   putStrLnhp  port "moved!"
+   putStrLnhp  port $ "inserting "++ name ++" as new data in this node"
+   liftIO $ writeIORef environ name
+   return()
+
+
+chat ::  TransIO ()
+chat  = do
+    name  <- logged $ do liftIO $ putStrLn "Name?" ; input (const True)
+    text <- logged $  waitEvents  $ putStr ">" >> hFlush stdout >> getLine' (const True)
+    let line= name ++": "++ text
+    clustered $   liftIO $ putStrLn line
+
+
+networkEvents rh rp= do
+     logged $  do
+       putStrLnhp  rp "callTo is not  a simole remote call. it stablish a connection"
+       putStrLnhp  rp "between transient processes in different nodes"
+       putStrLnhp  rp "in this example, events are piped back from a remote node to the local node"
+
+     r <- callTo rh rp $ do
+                         option "fire"  "fire event"
+                         return "event fired"
+     putStrLnhp  rp $ r ++ " in remote node"
+
+putStrLnhp p msg= liftIO $ putStr (show p) >> putStr " ->" >> putStrLn msg
 
 --main=do
 --      r <- getURL "https://www.w3.org/services/html2txt?url=http%3A%2F%2Fwww.searchquotes.com%2Fsearch%2Ftransient%2F"

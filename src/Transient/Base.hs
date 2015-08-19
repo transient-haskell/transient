@@ -40,7 +40,7 @@ import           Data.IORef
 
 
 {-# INLINE (!>) #-}
-(!>) =  const . id -- flip trace
+(!>) = const. id --  flip trace
 infixr 0 !>
 
 data TransIO  x = Transient  {runTrans :: StateT EventF IO (Maybe x)}
@@ -214,12 +214,12 @@ data RemoteStatus=  WasRemote | NoRemote deriving (Typeable, Eq)
 instance MonadPlus TransientIO where
     mzero= empty
     mplus  x y=  Transient $ do
-         mx <- runTrans x    !> "RUNTRANS11111"
+         mx <- runTrans x    -- !> "RUNTRANS11111"
          was <- getSessionData `onNothing` return NoRemote
          if was== WasRemote
-           then {-(delSessionData was !> "WASREMOTE") >> -}return Nothing
+           then return Nothing
            else case mx of
-             Nothing -> runTrans y    !> "RUNTRANS22222"
+             Nothing -> runTrans y   --  !> "RUNTRANS22222"
              justx -> return justx
 
 -- | a sinonym of empty that can be used in a monadic expression. it stop the
@@ -313,7 +313,9 @@ freeThreads proc= Transient $ do
      modify $ \st -> st{freeTh= freeTh st}
      return r
 
--- | The threads will be killed when the parent thread dies
+-- | The threads will be killed when the parent thread dies. That is the default
+-- This can be invoked to revert the effect of `freeThreads`
+hookedThreads :: TransientIO a -> TransientIO a
 hookedThreads proc= Transient $ do
      st <- get
      put st{freeTh= False}
@@ -446,10 +448,12 @@ loop (cont'@(EventF x fs a b c d peers childs g))  rec  =  do
          Left dat -> iocont dat
 
          Right dat -> do
-              forkMaybe  $ iocont dat
+              forkMaybe cont $ iocont dat
               loop'
 
-      forkMaybe  proc = do
+  forkMaybe  cont loop'
+  where
+      forkMaybe cont proc = do
          dofork <- case maxThread cont of
                   Nothing -> return True
                   Just sem -> do
@@ -488,7 +492,7 @@ loop (cont'@(EventF x fs a b c d peers childs g))  rec  =  do
 
             else proc  -- !> "NO THREAD"
 
-  forkMaybe  loop'
+
 
 
 
@@ -524,12 +528,12 @@ addThread parent child = when(not $ freeTh parent) $ do
 
 killChildren  cont = do
      forkIO $ do
-        let childs= children cont --  !> "killChildren list= "++ addr (children cont)
+        let childs= children cont   !> "killChildren list= "++ addr (children cont)
         ths <- atomically $ do
            ths <- readTVar childs
            writeTVar childs []
            return ths
-        mapM_ (killThread . threadId) ths -- !> "KILLEVENT " ++ show (map threadId ths)
+        mapM_ (killThread . threadId) ths  !> "KILLEVENT " ++ show (map threadId ths)
      return ()
 
 
