@@ -12,7 +12,4 @@ version: 1
 extra-packages: ''
 ghc-args: []
 excluded-modules:
-- Base9.hs
-- BaseEmit.hs
 - Setup.hs
-- dist/build/autogen/Paths_Transient.hs

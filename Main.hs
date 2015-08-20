@@ -11,6 +11,7 @@ import           Transient.Backtrack
 import           Transient.Indeterminism
 import           Transient.Logged
 import           Transient.Move
+import           Transient.EVars
 import           Control.Applicative
 import           Control.Concurrent
 import           Control.Exception
@@ -20,18 +21,21 @@ import           System.IO.Unsafe
 import           System.Directory
 import           System.FilePath
 import           Network.HTTP
-import           qualified Data.Map as M
 import           Network
 import           System.IO
-import           System.Environment
 import           Data.IORef
---import Text.Parsec hiding (option, (<|>))
---import Text.Parsec.Token
-import Data.List hiding (find,map, group)
---import Control.Concurrent.STM as STM
---import GHC.Conc
--- show
 
+import Data.List hiding (find,map, group)
+
+
+main= keep $ do
+      oneThread $ option "main" "to kill previous spawned processes and return to the main menu"   <|> return ""
+      liftIO $ putStrLn "MAIN MENU"
+
+      nonDeterminsm <|> trans <|>
+             colors <|> app   <|>
+            futures <|> server <|> 
+            distributed <|> pubSub
 
 solveConstraint=  do
       x <- choose  [1,2,3]
@@ -119,15 +123,9 @@ fileSearch=   do
 
 
 
-main= keep $ do
-      oneThread $ option "main" "to kill previous spawned processes and return to the main menu"   <|> return ""
-      liftIO $ putStrLn "MAIN MENU"
 
-      nonDeterminsm <|> trans <|>
-             colors <|> app   <|>
-            futures <|> server <|> distributed
 
--- / show
+
 
 trans= do
        option "trans" "transaction examples with backtracking for undoing actions"
@@ -254,7 +252,7 @@ distributed= do
       let port1 = PortNumber 2000
 
 
-      addNodes [(host,port1)]
+      addNodes [Node host port1 Nothing]
       listen port1 <|> return ()-- conn port1 port1 <|> conn port2 port1
 
       examples' host port1
@@ -317,6 +315,30 @@ networkEvents rh rp= do
      putStrLnhp  rp $ r ++ " in remote node"
 
 putStrLnhp p msg= liftIO $ putStr (show p) >> putStr " ->" >> putStrLn msg
+
+
+pubSub=  do
+  option "pubs" "an example of publish-suscribe using Event Vars (EVars)"
+  v <- newEVar  :: TransIO (EVar String)
+  suscribe v <|> publish v
+  where  
+  publish v= do
+    liftIO $ putStrLn "Enter a message to publish"
+    msg <- input(const True)
+    writeEVar v msg
+    liftIO $ print "after writing the EVar"
+
+  suscribe :: EVar String -> TransIO ()
+  suscribe v= proc1 v  <|>  (proc2 v)
+   
+
+  proc1 v=  do
+    msg <- readEVar v 
+    liftIO $ putStrLn $  "proc1 readed var: " ++ show msg
+    
+  proc2 v= do
+    msg <- readEVar v 
+    liftIO $ putStrLn $ "proc2 readed var: " ++ show msg
 
 --main=do
 --      r <- getURL "https://www.w3.org/services/html2txt?url=http%3A%2F%2Fwww.searchquotes.com%2Fsearch%2Ftransient%2F"

@@ -33,7 +33,7 @@ import System.IO.Unsafe
 import Control.Concurrent.STM as STM
 import Data.Monoid
 import qualified Data.Map as M
-import Data.List (nub)
+import Data.List (nub,(\\))
 
 
 
@@ -110,8 +110,14 @@ callTo host port remoteProc= logged $ Transient $ do
 
                    return r   !> "read: " ++ s ++" response type= "++show( typeOf r)
 
-
-
+-- | A connectionless version of callTo for long running remote calls
+callTo' :: (Show a, Read a,Typeable a) => HostName -> PortID -> TransIO a -> TransIO a
+callTo' rhost rport remoteProc= logged $ do
+    (host,port) <- getMyNode
+    logged $ beamTo rhost rport
+    r <- logged remoteProc
+    logged $ beamTo host port
+    return r
 
 data Connection= Connection PortID Handle Socket deriving Typeable
 
@@ -159,22 +165,26 @@ deriving instance Typeable PortID
 
 -- * Level 2: connections node lists and operations with the node list
 
-type Node= (HostName,PortID)
+data Node= Node{host :: HostName, port :: PortID, connection :: Maybe(Handle,Socket,HostName,PortID)} deriving (Eq,Typeable)
+
+instance Show Node where show (Node h p _)= show (h,p)
+instance Read Node where readsPrec _ s= let [((h,p),s')]= readsPrec 0 s in [((Node h p Nothing),s')]
 
 nodeList :: TVar  [Node]
 nodeList = unsafePerformIO $ newTVarIO []
 
 deriving instance Ord PortID
 
+myNode= unsafePerformIO $ atomically $ newTVar Nothing
+
+setMyNode h p= liftIO $ atomically $ writeTVar  myNode $ Just (h,p)
+getMyNode= Transient $ liftIO $ atomically $ readTVar myNode
+
 getNodes :: TransIO [Node]
 getNodes  = Transient $ Just <$> (liftIO $ atomically $ readTVar  nodeList)
 
-
-
-
 addNodes   nodes= Transient . liftIO . atomically $ do
   prevnodes <- readTVar nodeList
-
   writeTVar nodeList $ nub $ prevnodes ++  nodes
   return $ Just ()
 
@@ -187,21 +197,17 @@ addNodes   nodes= Transient . liftIO . atomically $ do
 --      ind <-  input ( < length ifs)
 --      return $ show . ipv4 $ ifs !! ind
 
---getInterfaces :: TransIO TransIO HostName
---getInterfaces= do
---   host <- logged $ do
---      ifs <- liftIO $ getNetworkInterfaces
---      liftIO $ mapM_ (\(i,n) ->putStrLn $ show i ++ "\t"++  show (ipv4 n) ++ "\t"++name n)$ zip [0..] ifs
---      liftIO $ putStrLn "Select one: "
---      ind <-  input ( < length ifs)
---      return $ show . ipv4 $ ifs !! ind
 
-
--- | execute a Transient action in each of the nodes connected. The results are mappend'ed
+-- | execute a Transient action in each of the nodes connected. The results are aggregated with `mappend`
 clustered :: (Typeable a, Show a, Read a) => Monoid a => TransIO a -> TransIO a
 clustered proc= logged $ do
-     nodes <- logged getNodes
-     logged $ foldr (<>) mempty $ map (\(h,p) -> callTo h p proc) nodes !> "fold"
+     nodes <- step getNodes
+     logged $ foldr (<>) mempty $ map (\(Node h p _) -> callTo h p proc) nodes !> "fold"
+
+-- | a connectionless version of clustered for long running remote computations. Not tested 
+clustered' proc= logged $ do
+     nodes <- step getNodes
+     logged $ mapM (\(Node h p _) -> callTo' h p proc) $ nodes 
 
 -- | Connect to a new node to another. The other node will notify about this connection to
 -- all the nodes connected to him. the new connected node will receive the list of connected nodes
@@ -210,12 +216,15 @@ connect ::   HostName ->  PortID ->  HostName ->  PortID -> TransientIO ()
 connect host  port   remotehost remoteport=  do
     listen port <|> return ()
     logged $ do
-        logged $ addNodes [(host,port)]
-        logged $ liftIO $ putStrLn $ "connecting to: "++ show (remotehost,remoteport)
-        host <- logged $ return host
+        let n= Node host port Nothing
+        logged $ do
+             setMyNode host port
+             addNodes [n]
+             liftIO $ putStrLn $ "connecting to: "++ show (remotehost,remoteport)
+        newnode <- logged $ return n -- must pass my node the remote node or else it will use his own
         port <- logged $ return port
         nodes <- callTo remotehost remoteport   $ do
-                   clustered $  addNodes [(host, port)]
+                   clustered $  addNodes [newnode]
                    getNodes
 
         logged $ addNodes nodes

@@ -87,31 +87,4 @@ step mx=  do
             setSData $ Log False add add
             return  r
 
---waitRemote mx= do
---    Log recover rs full <- getSData <|> return ( Log False  [][])
---
---    case (recover,rs) of
---      (True, Step x: rs') -> do
---            setSData $ Log recover rs' full
---            return $ fromIDyn x -- !>  "read in step:" ++ show x
---
---      (True,[WaitRemote]) -> do
---            setSData $ Log recover [] full !> "waitRemote1"
---            mx
---
---
---
---      (True, WaitRemote:rs') -> do
---            setSData $ Log recover rs' full !> "waitRemote2"
---
---            empty -- return $ error "not evaluable: waiting for remote result in Alternative/Applicative expression"
---
---
---
---      _ -> do
---            let add= WaitRemote:  full
---            setSData $ Log False add add   !> "waitRemote3"
---            r <-  mx
---            let add= Step (toIDyn r): full
---            setSData $ Log False add add
---            return  r
+
