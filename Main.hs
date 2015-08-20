@@ -318,7 +318,7 @@ putStrLnhp p msg= liftIO $ putStr (show p) >> putStr " ->" >> putStrLn msg
 
 
 pubSub=  do
-  option "pubs" "an example of publish-suscribe using Event Vars (EVars)"
+  option "pubs" "an example of publish-subscribe using Event Vars (EVars)"
   v <- newEVar  :: TransIO (EVar String)
   v' <- newEVar 
   suscribe v v' <|> publish v v'
