@@ -325,6 +325,7 @@ pubSub=  do
   where 
       
   publish v v'= do
+    option "msg"  "another message" <|> return ""
     liftIO $ putStrLn "Enter a message to publish"
     msg <- input(const True)
     writeEVar v msg

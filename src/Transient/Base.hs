@@ -40,7 +40,7 @@ import           Data.IORef
 
 
 {-# INLINE (!>) #-}
-(!>) = const. id --  flip trace
+(!>) =  const . id -- flip trace
 infixr 0 !>
 
 data TransIO  x = Transient  {runTrans :: StateT EventF IO (Maybe x)}
