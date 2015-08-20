@@ -15,15 +15,20 @@ newtype EVars= EVars  (IORef (M.Map Int [EventF])) deriving Typeable
 
 data EVar a= EVar Int (IORef (Maybe a))
 
--- * concurrency effect 
+-- * concurrency effects 
 -- Evars are event vars. `writeEVar` trigger the execution of all the continuations associated to the  `readEVar` of this variable
 -- (the code that is after them) as  stack: the most recent reads are executed first.
 --
 -- It is like the publish-suscribe pattern but without inversion of control, since a readEVar can be inserted at any place in the
 -- Transient flow.
 --
--- EVars are created upstream and can be used to communicate two subbranches of the monad. Following the Transient philosophy they 
--- do not block his own thread if used with alternative operators, unlike the IO and STM vars. 
+-- EVars are created upstream and can be used to communicate two sub-threads of the monad. Following the Transient philosophy they 
+-- do not block his own thread if used with alternative operators, unlike the IORefs and TVars. And unlike STM vars, that are composable,
+-- they wait for their respective events, while TVars execute the whole expression when any variable is modified.
+-- 
+-- They execution continue after the writeEVar when all suscribers have been executed.
+--
+-- see https://www.fpcomplete.com/user/agocorona/publish-suscribe-variables-transient-effects-v
 -- 
 
 

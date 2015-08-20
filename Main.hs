@@ -320,25 +320,47 @@ putStrLnhp p msg= liftIO $ putStr (show p) >> putStr " ->" >> putStrLn msg
 pubSub=  do
   option "pubs" "an example of publish-suscribe using Event Vars (EVars)"
   v <- newEVar  :: TransIO (EVar String)
-  suscribe v <|> publish v
-  where  
-  publish v= do
+  v' <- newEVar 
+  suscribe v v' <|> publish v v'
+  where 
+      
+  publish v v'= do
     liftIO $ putStrLn "Enter a message to publish"
     msg <- input(const True)
     writeEVar v msg
-    liftIO $ print "after writing the EVar"
+    liftIO $ print "after writing first EVar"
+    writeEVar v' $ "second " ++ msg
+    liftIO $ print "after writing second EVar"
+    
+  suscribe :: EVar String -> EVar String -> TransIO ()
+  suscribe v v'= do
+       r <- (,) <$> proc1 v  <*>  proc2 v'
+       liftIO $ do
+             putStr $ "applicative result= " 
+             print r
 
-  suscribe :: EVar String -> TransIO ()
-  suscribe v= proc1 v  <|>  (proc2 v)
-   
+  suscribe2 ::  EVar String -> EVar String -> TransIO ()
+  suscribe2 v v'= do
+        x <- readEVar v
+        y <- readEVar v'
+        liftIO $ do
+                 putStr "monadic result"
+                 print (x,y)
 
   proc1 v=  do
     msg <- readEVar v 
     liftIO $ putStrLn $  "proc1 readed var: " ++ show msg
+    return msg
     
   proc2 v= do
-    msg <- readEVar v 
+    msg <- readEVar v
     liftIO $ putStrLn $ "proc2 readed var: " ++ show msg
+    return msg
+
+
+
+
+
 
 --main=do
 --      r <- getURL "https://www.w3.org/services/html2txt?url=http%3A%2F%2Fwww.searchquotes.com%2Fsearch%2Ftransient%2F"
