@@ -26,7 +26,7 @@ data EVar a= EVar Int (IORef (Maybe a))
 -- do not block his own thread if used with alternative operators, unlike the IORefs and TVars. And unlike STM vars, that are composable,
 -- they wait for their respective events, while TVars execute the whole expression when any variable is modified.
 -- 
--- They execution continue after the writeEVar when all suscribers have been executed.
+-- The execution continues after the writeEVar when all suscribers have been executed.
 --
 -- see https://www.fpcomplete.com/user/agocorona/publish-suscribe-variables-transient-effects-v
 -- 
