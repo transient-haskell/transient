@@ -9,10 +9,10 @@ let `ap1` and `ap2` two applications with arbitrary complexity, with all effects
 
 then the combinations:
 
-     ap1 <|> ap2  
-     ap1 >>= \x -> ap2 
-     ap1 <> ap2 ann
-     (,) <$> ap1 <*> ap2
+     - ap1 <|> ap2  
+     - ap1 >>= \x -> ap2 
+     - ap1 <> ap2 
+     - (,) <$> ap1 <*> ap2
      
 are possible and generate a new applications that are composable as well.
      
