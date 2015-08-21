@@ -1,6 +1,28 @@
 transient
 =========
 
+One of the biggest dreams of software is total composability.
+
+This may be put in these terms: 
+
+let `ap1` and `ap2` two applications with arbitrary complexity, with all effects including multiple threads, asynchronous IO, indeterminism, events and perhaps, distributed computing.
+
+then the combinations:
+
+     - ap1 <|> ap2  
+     - ap1 >>= \x -> ap2 
+     - ap1 <> ap2 
+     - (,) <$> ap1 <*> ap2
+     
+are possible and generate new applications that are composable as well.
+     
+Transient does exactly that.
+
+For this purpose transient is a extensible effects monad with all major effects and
+primitives for parallelism, events, asyncronous IO, early termination, non-determinism
+logging and distributed computing. Since it is possible to extend it with more effects without
+adding monad transformers, the composability is assured.
+
 See the articles:
 
 - [Philosophy, async, parallelism, thread control, events, Session state](https://www.fpcomplete.com/user/agocorona/EDSL-for-hard-working-IT-programmers?show=tutorials)
