@@ -14,7 +14,7 @@ then the combinations:
      - ap1 <> ap2 
      - (,) <$> ap1 <*> ap2
      
-are possible and generate a new applications that are composable as well.
+are possible and generate new applications that are composable as well.
      
 Transient does exactly that.
 
