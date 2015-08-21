@@ -1,5 +1,7 @@
 name: transient
-descript
+description: A monad for extensible effects, and totally composable primitives for dealing with events, async IO, cloud computing and many common effects
+homepage: http://www.fpcomplete.com/user/agocorona
+bug-reports: https://github.com/agocorona/transient/issues
 version: 0.1.0.0
 cabal-version: >=1.10
 build-type: Simple
@@ -41,3 +43,6 @@ executable move
     hs-source-dirs: .
     other-modules:
 
+source-repository head
+  type:     git
+  location: https://github.com/agocorona/transient
