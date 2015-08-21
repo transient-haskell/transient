@@ -9,8 +9,8 @@
 -- Stability   :
 -- Portability :
 --
--- |
---
+-- | See http://github.com/agocorona/transient
+-- everithing in this module is exported in order to allow extensibility.
 -----------------------------------------------------------------------------
 {-# LANGUAGE ExistentialQuantification #-}
 {-# LANGUAGE FlexibleContexts          #-}
@@ -101,11 +101,11 @@ runTransient t= do
 
 
 
-
+-- | get the continuation context: closure, continuation, state, child threads etc
 getCont ::(MonadState EventF  m) => m EventF
 getCont = get
 
-
+-- | run the continuation context
 runCont :: EventF -> StateIO ()
 runCont (EventF  x fs _ _  _ _  _ _ _)= runTrans ((unsafeCoerce x') >>= compose ( fs)) >> return ()
     where
@@ -123,14 +123,16 @@ runCont cont= do
          Just r -> runContinuation cont r
 -}
 
+-- | compose a list of continuations
 compose []= const empty
 compose (f: fs)= \x -> f x >>= compose fs
 
 
-
+-- | run the closure  (the 'x'  in 'x >>= f') of the current bind operation.
 runClosure :: EventF -> StateIO (Maybe a)
 runClosure (EventF x _ _ _ _ _ _ _ _) =  unsafeCoerce $ runTrans x
 
+-- | run the continuation (the 'f' in 'x >> f') of the current bind operation
 runContinuation ::  EventF -> a -> StateIO (Maybe b)
 runContinuation (EventF _ fs _ _ _ _  _ _ _) x= runTrans $  (unsafeCoerce $ compose $  fs) x
 
@@ -182,7 +184,7 @@ instance Applicative TransientIO where
              liftIO $ writeIORef rg  x
              return $ k <*> x
 
-
+-- | dynamic serializable data for logging
 data IDynamic= IDyns String | forall a.(Read a, Show a,Typeable a) => IDynamic a
 
 instance Show IDynamic where
@@ -278,7 +280,7 @@ instance MonadIO TransientIO where
 
 
 
--- Threads
+-- * Threads
 
 waitQSemB sem= atomicModifyIORef' sem $ \n -> if n > 0 then(n-1,True) else (n,False)
 signalQSemB sem= atomicModifyIORef' sem  $ \n ->  (n + 1,())
@@ -331,8 +333,9 @@ killChilds= Transient $  do
    liftIO $  killChildren cont
    return $ Just ()
 
+-- * extensible state: session data management
 
--- | Get the session data of the desired type if there is any.
+-- | Get the session data for the desired type if there is any.
 getSessionData ::  (MonadState EventF m,Typeable a) =>  m (Maybe a)
 getSessionData =  resp where
  resp= gets mfData >>= \list  ->
@@ -342,15 +345,15 @@ getSessionData =  resp where
  typeResp :: m (Maybe x) -> x
  typeResp= undefined
 
--- | getSessionData specialized for the View monad. if Nothing, the
--- monadic computation does not continue. getSData is a widget that does
--- not validate when there is no data of that type in the session.
+-- | getSessionData specialized for the Transient monad. if Nothing, the
+-- monadic computation does not continue.
 --
 -- If there is no such data, `getSData`  silently stop the computation.
 -- That may or may not be the desired behaviour.
 -- To make sure that this does not get unnoticed, use this construction:
 --
 -- >  getSData <|> error "no data"
+--
 getSData ::  Typeable a => TransIO  a
 getSData= Transient getSessionData
 
@@ -370,19 +373,20 @@ delSessionData x=
 delSData :: ( MonadState EventF m,Typeable a) => a -> m ()
 delSData= delSessionData
 
-withSData ::  ( MonadState EventF m,Typeable a) => (Maybe a -> a) -> m ()
-withSData f= modify $ \st -> st{mfData=
-    let dat = mfData st
-        mx= M.lookup typeofx dat
-        mx'= case mx of Nothing -> Nothing; Just x -> unsafeCoerce x
-        fx=  f mx'
-        typeofx= typeOf $ typeoff f
-    in  M.insert typeofx  (unsafeCoerce fx) dat}
-    where
-    typeoff :: (Maybe a -> a) -> a
-    typeoff = undefined
+--withSData ::  ( MonadState EventF m,Typeable a) => (Maybe a -> a) -> m ()
+--withSData f= modify $ \st -> st{mfData=
+--    let dat = mfData st
+--        mx= M.lookup typeofx dat
+--        mx'= case mx of Nothing -> Nothing; Just x -> unsafeCoerce x
+--        fx=  f mx'
+--        typeofx= typeOf $ typeoff f
+--    in  M.insert typeofx  (unsafeCoerce fx) dat}
+--    where
+--    typeoff :: (Maybe a -> a) -> a
+--    typeoff = undefined
 ----
 
+-- | generator of identifiers
 genNewId :: MonadIO m => MonadState EventF m =>  m Int
 genNewId=  do
           st <- get
@@ -398,13 +402,14 @@ refSequence= unsafePerformIO $ newp 0
 
 data Loop= Once | Loop | Multithread deriving Eq
 
+-- | variant of `parallel` that repeatedly executes the IO computation and kill the previously created childs
 waitEvents ::   IO b -> TransientIO b
 waitEvents io= do
    r <- parallel (Right <$> io)
    killChilds
    return r
 
-
+-- | variant of + parallel` that execute the IO computation once, and kill the previous child threads
 async  ::  IO b -> TransientIO b
 async io= do
    r <- parallel  (Left <$>io)
@@ -417,6 +422,14 @@ spawn io= freeThreads $ do
    return r
 
 data EventValue= EventValue SData deriving Typeable
+
+-- |  return empty to the current thread and launch the IO action in a new thread and attaches the continuation after it.
+-- if the result of the action is `Right` the process is repeated. if not, it finish.
+--
+-- If the maximum number of threads, set with `threads` has been reached  `parallel` perform
+-- the work sequentially, in the current thread.
+--
+-- when finish, increase the counter of threads available, if there is a limitation of them.
 
 parallel  ::    IO (Either b b) -> TransientIO b
 parallel  ioaction= Transient$   do
@@ -494,8 +507,6 @@ loop (cont'@(EventF x fs a b c d peers childs g))  rec  =  do
 
 
 
-
-
 free th env= do
   if isNothing $ parent env
    then  return Nothing  !>  show th ++ " orphan"
@@ -526,6 +537,7 @@ addThread parent child = when(not $ freeTh parent) $ do
        ths <- readTVar headpths
        writeTVar headpths $  child:ths
 
+-- | kill all the threads associated with the continuation context
 killChildren  cont = do
      forkIO $ do
         let childs= children cont   !> "killChildren list= "++ addr (children cont)
@@ -539,12 +551,16 @@ killChildren  cont = do
 
 type EventSetter eventdata response= (eventdata ->  IO response) -> IO ()
 type ToReturn  response=  IO response
+
+-- | deinvert an event handler. The first parameter is the event handler to be deinverted
+-- the second is the value to return to the event handler
+-- it configures the event handler by calling the first parameter, that set the event
+-- handler, with the current continuation
 react
   :: Typeable eventdata
   => EventSetter eventdata response
   -> ToReturn  response
   -> TransientIO eventdata
-
 react setHandler iob= Transient $ do
         cont    <- getCont
         mEvData <- getSessionData
@@ -596,7 +612,7 @@ input cond= Transient . liftIO . atomically $ do
                      else return Nothing
             _ -> return Nothing
 
-
+-- | non blocking `getLine` with a validator
 getLine' cond=    do
      atomically $ do
        mr <- readTVar getLineRef
@@ -639,21 +655,27 @@ inputLoop=  do
       tail1 []=[]
       tail1 x= tail x
 
+
 rexit= unsafePerformIO newEmptyMVar
 
 stay=  takeMVar rexit
 
+-- | keep the main thread running, initiate the asynchronous keyboard input and execute
+-- the transient computation.
 keep mx = do
    forkIO $ inputLoop
    forkIO $ runTransient mx  >> return ()
    stay
 
+-- | force the finalization of the main thread and thus, all the application
 exit :: TransientIO a
 exit= do
   liftIO $ putStrLn "Tempus fugit: exit"
   liftIO $ putMVar rexit   True
   return undefined
 
+-- | alternative operator for maybe values. Used  in infix mode
+onNothing :: Monad m => m (Maybe b) -> m b -> m b
 onNothing iox iox'= do
        mx <- iox
        case mx of

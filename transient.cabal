@@ -1,5 +1,5 @@
 name: transient
-description: A monad for extensible effects, and totally composable primitives for dealing with events, async IO, cloud computing and many common effects
+synopsis: A monad for extensible effects and primitives for unrestricted composability of applications
 homepage: http://www.fpcomplete.com/user/agocorona
 bug-reports: https://github.com/agocorona/transient/issues
 version: 0.1.0.0
@@ -10,21 +10,26 @@ license-file: LICENSE
 maintainer: agocorona@gmail.com
 category: Control
 author: Alberto G. Corona
+description:
+     see <http://github.com/agocorona/transient>
+
 data-dir: ""
 
 library
     build-depends: base -any, mtl -any, random -any, containers -any,
                    directory -any, filepath -any, stm -any, HTTP -any, network -any,
                    transformers -any, process -any, network-info -any
+
     exposed-modules: Transient.Indeterminism Transient.Base
                      Transient.Backtrack Transient.Move Transient.Logged
     exposed: True
     buildable: True
+    default-language: Haskell2010
     hs-source-dirs: src .
     other-modules:
 
 executable transient
-    build-depends: base -any, mtl -any, random -any, containers -any,
+    build-depends: base >4 && <5, mtl -any, random -any, containers -any,
                    directory -any, filepath -any, stm -any, HTTP -any, network -any,
                    transformers -any, transient -any
     main-is: Main.hs

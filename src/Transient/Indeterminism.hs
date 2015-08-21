@@ -8,7 +8,7 @@
 -- Stability   :
 -- Portability :
 --
--- |
+-- | see <https://www.fpcomplete.com/user/agocorona/beautiful-parallel-non-determinism-transient-effects-iii>
 --
 -----------------------------------------------------------------------------
 {-# LANGUAGE BangPatterns #-}
@@ -40,7 +40,7 @@ choose   xs = do
             [x]  -> return $ Left $ head es
             x:_  -> return $ Right x
 
--- | group the output of a possible mmultithreaded process in groups of n elements.
+-- | group the output of a possible multithreaded process in groups of n elements.
 group :: Int -> TransientIO a -> TransientIO [a]
 group num proc =  do
     v <- liftIO $ newIORef (0,[])
@@ -50,6 +50,7 @@ group num proc =  do
       then stop
       else liftIO $ atomicModifyIORef v $ \(n,xs) ->  ((0,[]),xs)
 
+-- | alternative definition with more parallelism
 choose' :: [a] -> TransientIO a
 choose'  xs = foldl (<|>) empty $ map (parallel . return . Left) xs
 
@@ -62,7 +63,7 @@ choose'  xs = foldl (<|>) empty $ map (parallel . return . Left) xs
 --
 
 
--- execute a process and get the first n solutions.
+-- | execute a process and get the first n solutions.
 -- if the process end without finding the number of solutions requested, it return the fond ones
 -- if he find the number of solutions requested, it kill the threads of the process and return
 -- It works monitoring the solutions found and the number of active threads.

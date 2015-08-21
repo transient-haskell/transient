@@ -8,8 +8,7 @@
 -- Stability   :
 -- Portability :
 --
--- |
---
+-- | see <https://www.fpcomplete.com/user/agocorona/moving-haskell-processes-between-nodes-transient-effects-iv>
 -----------------------------------------------------------------------------
 {-# LANGUAGE DeriveDataTypeable , ExistentialQuantification
     ,ScopedTypeVariables, StandaloneDeriving #-}
@@ -56,7 +55,8 @@ installService node port servport package= do
      let x= dropWhile (/= '/') path
      in if x== "" then tail path else name $ tail    x
 
-
+-- | continue the execution in a new node
+-- all the previous actions from `listen` to this statement must have been logged
 beamTo :: HostName -> PortID -> TransientIO ()
 beamTo host port= do
   Log rec log _ <- getSData <|> return (Log False [][])
@@ -68,6 +68,8 @@ beamTo host port= do
       delSData h
       stop
 
+-- | execute in the remote node a process with the same execution state
+-- all the previous actions from `listen` to this statement must have been logged
 forkTo  :: HostName -> PortID -> TransientIO ()
 forkTo host port= do
   Log rec log _<- getSData <|> return (Log False [][])
@@ -78,7 +80,8 @@ forkTo host port= do
       liftIO $ hClose h
       delSData h
 
-
+-- | executes an action in another node.
+-- all the previous actions from `listen` to this statement must have been logged
 callTo :: (Show a, Read a,Typeable a) => HostName -> PortID -> TransIO a -> TransIO a
 callTo host port remoteProc= logged $ Transient $ do
 --      liftIO $ print "callto"
@@ -147,11 +150,6 @@ beamInit :: PortID -> TransIO a -> IO b
 beamInit port program=  keep $ do
     listen port   <|> return ()
     program
---    (program >> stop)   <|> close
---    where
---    close= do
---       Connection _ h sock <- getSData
---       liftIO $ hClose h  `catch` (\(e::SomeException) -> sClose sock)
 
 
 
@@ -204,10 +202,10 @@ clustered proc= logged $ do
      nodes <- step getNodes
      logged $ foldr (<>) mempty $ map (\(Node h p _) -> callTo h p proc) nodes !> "fold"
 
--- | a connectionless version of clustered for long running remote computations. Not tested 
+-- | a connectionless version of clustered for long running remote computations. Not tested
 clustered' proc= logged $ do
      nodes <- step getNodes
-     logged $ mapM (\(Node h p _) -> callTo' h p proc) $ nodes 
+     logged $ mapM (\(Node h p _) -> callTo' h p proc) $ nodes
 
 -- | Connect to a new node to another. The other node will notify about this connection to
 -- all the nodes connected to him. the new connected node will receive the list of connected nodes
