@@ -1,4 +1,5 @@
 name: transient
+descript
 version: 0.1.0.0
 cabal-version: >=1.10
 build-type: Simple

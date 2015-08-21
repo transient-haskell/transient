@@ -325,13 +325,13 @@ pubSub=  do
   where 
       
   publish v v'= do
-    option "msg"  "another message" <|> return ""
     liftIO $ putStrLn "Enter a message to publish"
     msg <- input(const True)
     writeEVar v msg
-    liftIO $ print "after writing first EVar"
+    liftIO $ putStrLn "after writing first EVar\n"
     writeEVar v' $ "second " ++ msg
-    liftIO $ print "after writing second EVar"
+    liftIO $ putStrLn "after writing second EVar\n"
+    publish v v'
     
   suscribe :: EVar String -> EVar String -> TransIO ()
   suscribe v v'= do

@@ -15,8 +15,7 @@ newtype EVars= EVars  (IORef (M.Map Int [EventF]))  deriving Typeable
 
 data EVar a= EVar Int (IORef (Maybe a))
 
--- * concurrency effects 
--- Evars are event vars. `writeEVar` trigger the execution of all the continuations associated to the  `readEVar` of this variable
+-- * Evars are event vars. `writeEVar` trigger the execution of all the continuations associated to the  `readEVar` of this variable
 -- (the code that is after them) as  stack: the most recent reads are executed first.
 --
 -- It is like the publish-subscribe pattern but without inversion of control, since a readEVar can be inserted at any place in the
