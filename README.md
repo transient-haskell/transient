@@ -1,7 +1,7 @@
 transient
 =========
 
-One of the biggest dreams of software is total composability.
+One of the biggest dreams of software engineering is unrestricted composability.
 
 This may be put in these terms: 
 
