@@ -34,7 +34,7 @@ main= keep $ do
 
       nonDeterminsm <|> trans <|>
              colors <|> app   <|>
-            futures <|> server <|> 
+            futures <|> server <|>
             distributed <|> pubSub
 
 solveConstraint=  do
@@ -320,28 +320,31 @@ putStrLnhp p msg= liftIO $ putStr (show p) >> putStr " ->" >> putStrLn msg
 pubSub=  do
   option "pubs" "an example of publish-subscribe using Event Vars (EVars)"
   v  <- newEVar  :: TransIO (EVar String)
+
   v' <- newEVar 
-  suscribe v v' <|> publish v v'
-  where 
+  subscribe v v' <|> publish v v'
+  where
       
   publish v v'= do
     liftIO $ putStrLn "Enter a message to publish"
     msg <-  input(const True)
+
     writeEVar v msg
     liftIO $ putStrLn "after writing first EVar\n"
     writeEVar v' $ "second " ++ msg
     liftIO $ putStrLn "after writing second EVar\n"
     publish v v'
-    
-  suscribe :: EVar String -> EVar String -> TransIO ()
-  suscribe v v'= do
+
+
+  subscribe :: EVar String -> EVar String -> TransIO ()
+  subscribe v v'= do
        r <- (,) <$> proc1 v  <*>  proc2 v'
        liftIO $ do
-             putStr $ "applicative result= " 
+             putStr "applicative result= "
              print r
 
-  suscribe2 ::  EVar String -> EVar String -> TransIO ()
-  suscribe2 v v'= do
+  susbcribe2 ::  EVar String -> EVar String -> TransIO ()
+  susbcribe2 v v'= do
         x <- readEVar v
         y <- readEVar v'
         liftIO $ do
@@ -349,10 +352,10 @@ pubSub=  do
                  print (x,y)
 
   proc1 v=  do
-    msg <- readEVar v 
+    msg <- readEVar v
     liftIO $ putStrLn $  "proc1 readed var: " ++ show msg
     return msg
-    
+
   proc2 v= do
     msg <- readEVar v
     liftIO $ putStrLn $ "proc2 readed var: " ++ show msg

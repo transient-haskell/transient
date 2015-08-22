@@ -19,41 +19,41 @@ import Control.Concurrent (threadDelay)
 import Data.Typeable
 import Control.Concurrent.STM
 import Data.IORef
+-- some tests for distributed computing
+
+--main= do
+--      let port1 = PortNumber 2000
+--          port2 = PortNumber 2001
+--
+--
+--      keep $  do
+--        conn port1 port1 <|> conn port2 port1
+--
+--        examples' host port2
+--      where
+--      host= "localhost"
+----      delay = liftIO $ threadDelay 1000000
+--      conn p p'=  connect host p host p'
+--
+--
+--
+--
+--
+--test = do
+--   args <- getArgs
+--   let ports= [("localhost",PortNumber 2000), ("localhost",PortNumber 2001)]
+--
+--   let [(_,port1), (_,port2)]= if null args  then ports else reverse ports
+--   print [port1, port2]
+--   let local= "localhost"
+--   beamInit port1 $ do
+--           logged $ option "call" "call"
+--           callTo local port2 (liftIO $ print "HOLA")
+--             <|> callTo local port2(liftIO $ print "HELLO")
 
 
-main= do
-      let port1 = PortNumber 2000
-          port2 = PortNumber 2001
-
-
-      keep $  do
-        conn port1 port1 <|> conn port2 port1
-
-        examples' host port2
-      where
-      host= "localhost"
---      delay = liftIO $ threadDelay 1000000
-      conn p p'=  connect host p host p'
-
-
-
-
-
-test = do
-   args <- getArgs
-   let ports= [("localhost",PortNumber 2000), ("localhost",PortNumber 2001)]
-
-   let [(_,port1), (_,port2)]= if null args  then ports else reverse ports
-   print [port1, port2]
-   let local= "localhost"
-   beamInit port1 $ do
-           logged $ option "call" "call"
-           callTo local port2 (liftIO $ print "HOLA")
-             <|> callTo local port2(liftIO $ print "HELLO")
-
-
-
-two = do
+-- to be executed with two or more nodes
+main = do
   args <- getArgs
   if length args < 2
     then do
@@ -71,35 +71,27 @@ two = do
        examples
 
 
-examples = do
-   nodes <- logged getNodes
-   logged $ liftIO $ print $ "NODES=" ++ show  nodes
-   let (remoteHost,remotePort)=  head $ tail nodes
-   examples' remoteHost remotePort
-
-examples' remoteHost remotePort= do
+examples =  do
    logged $ option "main"  "to see the menu" <|> return ""
    r <-logged      $ option "move" "move to another node"
                <|> option "call" "call a function in another node"
                <|> option "chat" "chat"
                <|> option "netev" "events propagating trough the network"
    case r of
-       "call" -> callExample remoteHost remotePort
-       "move" -> moveExample remoteHost remotePort
+       "call" -> callExample
+       "move" -> moveExample
        "chat" -> chat
-       "netev" -> networkEvents remoteHost remotePort
+       "netev" -> networkEvents
 
 data Environ= Environ (IORef String) deriving Typeable
 
-callExample host port= do
+callExample = do
+   nodes <- logged getNodes
+   let Node host port _=  head $ tail nodes
+
    logged $ putStrLnhp  port "asking for the remote data"
    s <- callTo host port $  do
                        putStrLnhp  port "remote callTo request"
-                       Environ environ <- getSData <|> do
-                                    ref <- liftIO $ newIORef "Not Changed"
-                                    let env= Environ ref
-                                    setSData env
-                                    return env
                        liftIO $ readIORef environ
 
 
@@ -108,17 +100,16 @@ callExample host port= do
 
 environ= unsafePerformIO $ newIORef "Not Changed"
 
-moveExample host port= do
+moveExample = do
+   nodes <- logged getNodes
+   let Node host port _=  head $ tail nodes
+
    putStrLnhp  port "enter a string. It will be inserted in the other node by a migrating program"
    name <- logged $ input (const True)
    beamTo host port
    putStrLnhp  port "moved!"
    putStrLnhp  port $ "inserting "++ name ++" as new data in this node"
-   Environ environ <- getSData <|> do
-                                    ref <- liftIO $ newIORef "Not Changed"
-                                    let env= Environ ref
-                                    setSData env
-                                    return env
+
 
    liftIO $ writeIORef environ name
    return()
@@ -132,7 +123,9 @@ chat  = do
     clustered $   liftIO $ putStrLn line
 
 
-networkEvents rh rp= do
+networkEvents = do
+     nodes <- logged getNodes
+     let Node rh rp _=  head $ tail nodes
      logged $  do
        putStrLnhp  rp "callTo is not  a simole remote call. it stablish a connection"
        putStrLnhp  rp "between transient processes in different nodes"

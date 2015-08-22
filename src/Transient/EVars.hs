@@ -91,6 +91,7 @@ unsubscribe (EVar id _)= Transient $ do
    map <- liftIO $ readIORef ref
    let Just conts = M.lookup id map <|> Just []
    liftIO $ writeIORef ref $  M.insert id (tail conts) map
+   
    return $ Just ()
 
    

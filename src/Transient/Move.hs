@@ -33,7 +33,7 @@ import Control.Concurrent.STM as STM
 import Data.Monoid
 import qualified Data.Map as M
 import Data.List (nub,(\\))
-
+import Data.IORef
 
 
 -- | install in a remote node a haskell package with an executable transient service initialized with `listen`
@@ -173,10 +173,10 @@ nodeList = unsafePerformIO $ newTVarIO []
 
 deriving instance Ord PortID
 
-myNode= unsafePerformIO $ atomically $ newTVar Nothing
+myNode= unsafePerformIO $ newIORef Nothing
 
-setMyNode h p= liftIO $ atomically $ writeTVar  myNode $ Just (h,p)
-getMyNode= Transient $ liftIO $ atomically $ readTVar myNode
+setMyNode h p= liftIO $ writeIORef  myNode $ Just (h,p)
+getMyNode= Transient $ liftIO $ readIORef myNode
 
 getNodes :: TransIO [Node]
 getNodes  = Transient $ Just <$> (liftIO $ atomically $ readTVar  nodeList)
@@ -223,9 +223,11 @@ connect host  port   remotehost remoteport=  do
         port <- logged $ return port
         nodes <- callTo remotehost remoteport   $ do
                    clustered $  addNodes [newnode]
-                   getNodes
+                   r <- getNodes
+                   liftIO $ putStrLn $ "Connected to modes: " ++ show r
+                   return r
 
         logged $ addNodes nodes
-        logged $ liftIO $ putStrLn $ "Connected to modes: " ++ show nodes
+
 
 
