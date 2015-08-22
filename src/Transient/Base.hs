@@ -68,7 +68,7 @@ newp= newIORef
 
 
 --(=:) :: P a  -> (a -> a) -> IO()
-(=:) n f= liftIO $ atomicModifyIORef' n $  \v ->  ((f v),())
+(=:) n f= liftIO $ atomicModifyIORef n $  \v ->  ((f v),())
 
 addr x= show $ unsafePerformIO $ do
        st <- makeStableName $! x
@@ -283,8 +283,8 @@ instance MonadIO TransientIO where
 
 -- * Threads
 
-waitQSemB sem= atomicModifyIORef' sem $ \n -> if n > 0 then(n-1,True) else (n,False)
-signalQSemB sem= atomicModifyIORef' sem  $ \n ->  (n + 1,())
+waitQSemB sem= atomicModifyIORef sem $ \n -> if n > 0 then(n-1,True) else (n,False)
+signalQSemB sem= atomicModifyIORef sem  $ \n ->  (n + 1,())
 
 -- | set the maximun number of threads for a procedure. It is useful for the
 threads :: Int -> TransientIO a -> TransientIO a
@@ -476,7 +476,7 @@ loop (cont'@(EventF x fs a b c d peers childs g))  rec  =  do
 
          if dofork
             then  do
-                 th <- forkFinally proc $ \me -> do
+                 th <- forkFinally1 proc $ \me -> do
                          case me of -- !> "THREAD ENDED" of
                           Left  e -> do
                            when (fromException e /= Just ThreadKilled)$ liftIO $ print e
@@ -506,7 +506,10 @@ loop (cont'@(EventF x fs a b c d peers childs g))  rec  =  do
 
             else proc  -- !> "NO THREAD"
 
-
+forkFinally1 :: IO a -> (Either SomeException a -> IO ()) -> IO ThreadId
+forkFinally1 action and_then =
+  mask $ \restore ->
+    forkIO $ try (restore action) >>= and_then
 
 free th env= do
   if isNothing $ parent env
