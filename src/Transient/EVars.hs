@@ -47,7 +47,7 @@ newEVar  = Transient $ do
 -- The continuation gets registered to be executed whenever the variable is updated.
 -- if readEVar is in any kind of loop, since each continuation is different, this will register
 -- again the continuation. The effect is that the continuation will be executed multiple times
--- To avoid multiple registrations, use `unregister`
+-- To avoid multiple registrations, use `unsubscribe`
 readEVar :: EVar a -> TransIO a
 readEVar (EVar id ref1)= Transient $ do 
    mr <- liftIO $ readIORef ref1
@@ -85,7 +85,7 @@ writeEVar (EVar id ref1) x= Transient $ do
        if (length conts /= length conts') then return () else liftIO $ writeIORef ref $   M.insert id (nexts ++ [current]) map 
        runCont'  (n - 1) id ref
 
--- | unsuscribe the last `readEVar` for this EVar
+-- | unsuscribe the last `readEVar` executed for this EVar
 unsubscribe (EVar id _)= Transient $ do
    EVars ref <- getSessionData `onNothing` error "No Events context"
    map <- liftIO $ readIORef ref
