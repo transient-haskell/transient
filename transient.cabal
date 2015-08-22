@@ -2,7 +2,7 @@ name: transient
 synopsis: A monad for extensible effects and primitives for unrestricted composability of applications
 homepage: http://www.fpcomplete.com/user/agocorona
 bug-reports: https://github.com/agocorona/transient/issues
-version: 0.1.0.3
+version: 0.1.0.4
 cabal-version: >=1.10
 build-type: Simple
 license: GPL-3
@@ -20,7 +20,7 @@ library
                    directory -any, filepath -any, stm -any, HTTP -any, network -any,
                    transformers -any, process -any, network-info -any
 
-    exposed-modules: Transient.Indeterminism Transient.Base
+    exposed-modules: Transient.Indeterminism Transient.Base Transient.EVars
                      Transient.Backtrack Transient.Move Transient.Logged
     exposed: True
     buildable: True
