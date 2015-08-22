@@ -1,7 +1,7 @@
 transient
 =========
 
-One of the biggest dreams of software is total composability.
+One of the biggest dreams of software engineering is unrestricted composability.
 
 This may be put in these terms: 
 
@@ -14,7 +14,7 @@ then the combinations:
      - ap1 <> ap2 
      - (,) <$> ap1 <*> ap2
      
-are possible and generate new applications that are composable as well.
+are possible if the types match, and generate new applications that are composable as well.
      
 Transient does exactly that.
 
