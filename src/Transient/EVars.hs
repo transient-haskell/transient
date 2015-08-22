@@ -10,6 +10,7 @@ import Control.Applicative
 import Data.IORef
 import Control.Monad.IO.Class
 import Control.Monad.State
+import Data.List(nub)
 
 newtype EVars= EVars  (IORef (M.Map Int [EventF]))  deriving Typeable
 
@@ -30,17 +31,23 @@ data EVar a= EVar Int (IORef (Maybe a))
 -- see https://www.fpcomplete.com/user/agocorona/publish-subscribe-variables-transient-effects-v
 -- 
 
-
+-- | creates an EVar
 newEVar ::  TransientIO (EVar a)
 newEVar  = Transient $ do
-   EVars ref <- getSessionData `onNothing`  do
+   getSessionData `onNothing`  do -- initialize EVars
                             ref <- liftIO $ newIORef M.empty
                             setSData $ EVars ref
-                            return  (EVars ref) 
+                            return  (EVars ref)
    id <- genNewId
    ref <- liftIO $ newIORef Nothing
    return . Just $ EVar id ref
 
+
+-- | read the EVar. It only succeed when the EVar is being updated
+-- The continuation gets registered to be executed whenever the variable is updated.
+-- if readEVar is in any kind of loop, since each continuation is different, this will register
+-- again the continuation. The effect is that the continuation will be executed multiple times
+-- To avoid multiple registrations, use `unregister`
 readEVar :: EVar a -> TransIO a
 readEVar (EVar id ref1)= Transient $ do 
    mr <- liftIO $ readIORef ref1
@@ -53,16 +60,37 @@ readEVar (EVar id ref1)= Transient $ do
          let Just conts=  M.lookup  id map <|> Just []
          liftIO $ writeIORef ref $  M.insert id (cont:conts) map
          return Nothing
-         
+
+-- |  update the EVar and execute all readEVar blocks with last in - first out priority
 writeEVar (EVar id ref1) x= Transient $ do
-   EVars ref <- getSessionData `onNothing`  error "No Events context" 
+   EVars ref <- getSessionData `onNothing` error "No Events context"
    liftIO $ writeIORef ref1 $ Just x
    map <- liftIO $ readIORef ref
-   let Just conts= M.lookup id map <|> Just []
-   mapM runCont conts 
+   let Just conts = M.lookup id map <|> Just []
+       len= length conts
+   runCont'  len id ref 
    liftIO $ writeIORef ref1 Nothing
    return $ Just ()
- 
+   
+   where
+   runCont'  0 _ _ = return () 
+   runCont'  n id ref= do
+       map <- liftIO $ readIORef ref
+       let Just conts= M.lookup id map <|> Just []
+       let current= head conts
+           nexts= tail conts
+       runCont current
+       map' <- liftIO $ readIORef ref
+       let Just conts'= M.lookup id map' <|> Just []
+       if (length conts /= length conts') then return () else liftIO $ writeIORef ref $   M.insert id (nexts ++ [current]) map 
+       runCont'  (n - 1) id ref
 
+-- | unsuscribe the last `readEVar` for this EVar
+unsubscribe (EVar id _)= Transient $ do
+   EVars ref <- getSessionData `onNothing` error "No Events context"
+   map <- liftIO $ readIORef ref
+   let Just conts = M.lookup id map <|> Just []
+   liftIO $ writeIORef ref $  M.insert id (tail conts) map
+   return $ Just ()
 
-
+   

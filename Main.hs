@@ -319,14 +319,14 @@ putStrLnhp p msg= liftIO $ putStr (show p) >> putStr " ->" >> putStrLn msg
 
 pubSub=  do
   option "pubs" "an example of publish-subscribe using Event Vars (EVars)"
-  v <- newEVar  :: TransIO (EVar String)
+  v  <- newEVar  :: TransIO (EVar String)
   v' <- newEVar 
   suscribe v v' <|> publish v v'
   where 
       
   publish v v'= do
     liftIO $ putStrLn "Enter a message to publish"
-    msg <- input(const True)
+    msg <-  input(const True)
     writeEVar v msg
     liftIO $ putStrLn "after writing first EVar\n"
     writeEVar v' $ "second " ++ msg

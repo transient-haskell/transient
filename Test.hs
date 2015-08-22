@@ -4,7 +4,7 @@ module Main where
 import Transient.Move
 import Transient.Logged
 import Transient.Base
-import Transient.Vars
+import Transient.EVars
 import Network
 import Control.Applicative
 
@@ -22,28 +22,15 @@ import Control.Concurrent.STM
 import Data.IORef
 import Control.Monad.State
 
-pubSubs= keep $ do
-    v <- newEVar 
-    suscribe v <|> publish v
-    
-publish v= do
-    option "pub" "publish a new message"
-    liftIO $ putStrLn "Enter a message to publish"
-    msg <- input(const True)
-    writeEVar v msg
-    liftIO $ print "after writing the EVar"
+main= keep $ do
+      v <- newEVar
+      option "rep" "rep" 
+      (do
+          r <- readEVar v 
+          unsuscribe v
+          liftIO $ print r
+          )  <|>   ( writeEVar v "hi")
 
-suscribe :: EVar String -> TransIO ()
-suscribe v= proc1 v  <|>  (proc2 v)
-   
-
-proc1 v=  do
-    msg <- readEVar v 
-    liftIO $ putStrLn $  "proc1 readed var: " ++ show msg
-    
-proc2 v= do
-    msg <- readEVar v 
-    liftIO $ putStrLn $ "proc2 readed var: " ++ show msg
 
 tasync :: TransIO a -> TransIO a
 tasync transio=  do
@@ -108,7 +95,7 @@ two = do
 examples = do
    nodes <- logged getNodes
    logged $ liftIO $ print $ "NODES=" ++ show  nodes
-   let (remoteHost,remotePort)=  head $ tail nodes
+   let Node remoteHost remotePort _=  head $ tail nodes
    examples' remoteHost remotePort
 
 examples' remoteHost remotePort= do
