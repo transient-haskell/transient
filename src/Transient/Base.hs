@@ -40,7 +40,7 @@ import           Data.IORef
 
 
 {-# INLINE (!>) #-}
-(!>) =  const . id -- flip trace
+(!>) = const . id -- flip trace
 infixr 0 !>
 
 data TransIO  x = Transient  {runTrans :: StateT EventF IO (Maybe x)}
@@ -286,7 +286,8 @@ instance MonadIO TransientIO where
 waitQSemB sem= atomicModifyIORef sem $ \n -> if n > 0 then(n-1,True) else (n,False)
 signalQSemB sem= atomicModifyIORef sem  $ \n ->  (n + 1,())
 
--- | set the maximun number of threads for a procedure. It is useful for the
+-- | set the maximun number of threads for a procedure. It is useful to limit the
+-- parallelization of transient code that uses `parallel` `spawn` and `waitEvents`
 threads :: Int -> TransientIO a -> TransientIO a
 threads n proc= Transient $ do
    msem <- gets maxThread
@@ -316,7 +317,7 @@ freeThreads proc= Transient $ do
      modify $ \st -> st{freeTh= freeTh st}
      return r
 
--- | The threads will be killed when the parent thread dies. That is the default
+-- | The threads will be killed when the parent thread dies. That is the default.
 -- This can be invoked to revert the effect of `freeThreads`
 hookedThreads :: TransientIO a -> TransientIO a
 hookedThreads proc= Transient $ do
@@ -417,10 +418,10 @@ async io= do
    killChilds
    return r
 
+-- | variant that spawn free threads. Since there is not thread control, this is faster
 spawn ::  IO b -> TransientIO b
-spawn io= freeThreads $ do
-   r <- parallel (Right <$>io)
-   return r
+spawn io= freeThreads $ parallel (Right <$>io)
+
 
 data EventValue= EventValue SData deriving Typeable
 

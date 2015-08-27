@@ -2,7 +2,7 @@
 
 {-# LANGUAGE ScopedTypeVariables #-}
 
-{-# LANGUAGE DeriveDataTypeable  #-}
+
 module Main where
 
 import           Data.Typeable
@@ -51,7 +51,7 @@ pythags = freeThreads $ do
   z <- choose [1..round $ sqrt(fromIntegral $ 2*x*x)]
 
   guard (x*x+y*y==z*z)
-  th <- liftIO $  myThreadId
+  th <- liftIO  myThreadId
   return (x, y, z, th)
 
 example1= do
@@ -84,7 +84,7 @@ threadSample= do
      threads n $ do
         x <- choose  [1,2,3]
         y <- choose  [4,5,6]
-        th <- liftIO $ myThreadId
+        th <- liftIO myThreadId
         liftIO $ print (x,y,th)
 
 nonDeterminsm= do
@@ -251,46 +251,46 @@ distributed= do
       option "distr" "examples of distributed computing"
       let port1 = PortNumber 2000
 
-
-      addNodes [Node host port1 Nothing]
+      let node =createNode host port1
+      addNodes [node ]
       listen port1 <|> return ()-- conn port1 port1 <|> conn port2 port1
 
-      examples' host port1
+      examples' node
       where
       host= "localhost"
-      conn p p'=  connect host p host p'
 
-examples' remoteHost remotePort= do
+
+examples' node= do
    logged $ option "maind"  "to see this menu" <|> return ""
    r <-logged    $ option "move" "move to another node"
                <|> option "call" "call a function in another node"
                <|> option "chat" "chat"
                <|> option "netev" "events propagating trough the network"
    case r of
-       "call"  -> callExample remoteHost remotePort
-       "move"  -> moveExample remoteHost remotePort
+       "call"  -> callExample node
+       "move"  -> moveExample node
        "chat"  -> chat
-       "netev" -> networkEvents remoteHost remotePort
+       "netev" -> networkEvents node
 
 
-callExample host port= do
-   logged $ putStrLnhp  port "asking for the remote data"
-   s <- callTo host port $ liftIO $ do
-                       putStrLnhp  port "remote callTo request"
+callExample node= do
+   logged $ putStrLnhp  node "asking for the remote data"
+   s <- callTo node $ liftIO $ do
+                       putStrLnhp  node "remote callTo request"
                        readIORef environ
 
 
    liftIO $ putStrLn $ "resp=" ++ show s
 
-
+{-# NOINLINE environ #-}
 environ= unsafePerformIO $ newIORef "Not Changed"
 
-moveExample host port= do
-   putStrLnhp  port "enter a string. It will be inserted in the other node by a migrating program"
+moveExample node= do
+   putStrLnhp  node "enter a string. It will be inserted in the other node by a migrating program"
    name <- logged $ input (const True)
-   beamTo host port
-   putStrLnhp  port "moved!"
-   putStrLnhp  port $ "inserting "++ name ++" as new data in this node"
+   beamTo node
+   putStrLnhp  node "moved!"
+   putStrLnhp  node $ "inserting "++ name ++" as new data in this node"
    liftIO $ writeIORef environ name
    return()
 
@@ -303,16 +303,16 @@ chat  = do
     clustered $   liftIO $ putStrLn line
 
 
-networkEvents rh rp= do
+networkEvents node= do
      logged $  do
-       putStrLnhp  rp "callTo is not  a simole remote call. it stablish a connection"
-       putStrLnhp  rp "between transient processes in different nodes"
-       putStrLnhp  rp "in this example, events are piped back from a remote node to the local node"
+       putStrLnhp  node "callTo is not  a simole remote call. it stablish a connection"
+       putStrLnhp  node "between transient processes in different nodes"
+       putStrLnhp  node "in this example, events are piped back from a remote node to the local node"
 
-     r <- callTo rh rp $ do
+     r <- callTo node $ do
                          option "fire"  "fire event"
                          return "event fired"
-     putStrLnhp  rp $ r ++ " in remote node"
+     putStrLnhp node $ r ++ " in remote node"
 
 putStrLnhp p msg= liftIO $ putStr (show p) >> putStr " ->" >> putStrLn msg
 
@@ -321,10 +321,10 @@ pubSub=  do
   option "pubs" "an example of publish-subscribe using Event Vars (EVars)"
   v  <- newEVar  :: TransIO (EVar String)
 
-  v' <- newEVar 
+  v' <- newEVar
   subscribe v v' <|> publish v v'
   where
-      
+
   publish v v'= do
     liftIO $ putStrLn "Enter a message to publish"
     msg <-  input(const True)
