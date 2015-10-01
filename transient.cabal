@@ -1,53 +1,52 @@
 name: transient
-synopsis: A monad for extensible effects and primitives for unrestricted composability of applications
-homepage: http://www.fpcomplete.com/user/agocorona
-bug-reports: https://github.com/agocorona/transient/issues
-version: 0.1.0.4
+version: 0.1.0.6
 cabal-version: >=1.10
 build-type: Simple
 license: GPL-3
 license-file: LICENSE
 maintainer: agocorona@gmail.com
+homepage: http://www.fpcomplete.com/user/agocorona
+bug-reports: https://github.com/agocorona/transient/issues
+synopsis: A monad for extensible effects and primitives for unrestricted composability of applications
+description: see <http://github.com/agocorona/transient>
 category: Control
 author: Alberto G. Corona
-description:
-     see <http://github.com/agocorona/transient>
-
 data-dir: ""
+
+source-repository head
+    type: git
+    location: https://github.com/agocorona/transient
 
 library
     build-depends: base -any, mtl -any, random -any, containers -any,
                    directory -any, filepath -any, stm -any, HTTP -any, network -any,
-                   transformers -any, process -any, network-info -any, bytestring, old-time
-
-    exposed-modules: Transient.Indeterminism Transient.Base Transient.EVars
-                     Transient.Backtrack Transient.Move Transient.Logged
+                   transformers -any, process -any, network-info -any,
+                   bytestring -any, old-time -any
+    exposed-modules: Transient.Indeterminism Transient.Base
+                     Transient.EVars Transient.Backtrack Transient.Move Transient.Logged
+                     Transient.Stream.Resource
     exposed: True
     buildable: True
     default-language: Haskell2010
     hs-source-dirs: src .
-    other-modules:
 
 executable transient
-    build-depends: base >4 && <5, mtl -any, random -any, containers -any,
-                   directory -any, filepath -any, stm -any, HTTP -any, network -any,
-                   transformers -any, transient -any, bytestring
+    build-depends: base >4 && <5, mtl -any, random -any,
+                   containers -any, directory -any, filepath -any, stm -any,
+                   HTTP -any, network -any, transformers -any, transient -any,
+                   bytestring -any
     main-is: Main.hs
     buildable: True
     default-language: Haskell2010
     hs-source-dirs: .
-    other-modules:
 
 executable move
     build-depends: base -any, mtl -any, random -any, containers -any,
                    directory -any, filepath -any, stm -any, HTTP -any, network -any,
-                   transformers -any, transient -any, bytestring
+                   transformers -any, transient -any, bytestring -any
     main-is: move.hs
     buildable: True
     default-language: Haskell2010
     hs-source-dirs: .
-    other-modules:
 
-source-repository head
-  type:     git
-  location: https://github.com/agocorona/transient
+

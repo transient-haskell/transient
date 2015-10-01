@@ -13,7 +13,7 @@ notes.lhs
 dist
 .cabal-sandbox
 cabal.sanbox.config
-
+.stack*
 # emacs stuff
 *~
 \#*\#
