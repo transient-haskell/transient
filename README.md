@@ -9,19 +9,19 @@ let `ap1` and `ap2` two applications with arbitrary complexity, with all effects
 
 then the combinations:
 
-     - ap1 <|> ap2  
-     - ap1 >>= \x -> ap2 
-     - ap1 <> ap2 
-     - (,) <$> ap1 <*> ap2
+     - ap1 <|> ap2          -- Alternative expression
+     - ap1 >>= \x -> ap2    -- monadic sequence
+     - ap1 <> ap2           -- monoidal expression
+     - (,) <$> ap1 <*> ap2  -- Applicative expression
      
 are possible if the types match, and generate new applications that are composable as well.
      
 Transient does exactly that.
 
-For this purpose transient is a extensible effects monad with all major effects and
-primitives for parallelism, events, asyncronous IO, early termination, non-determinism
-logging and distributed computing. Since it is possible to extend it with more effects without
-adding monad transformers, the composability is assured.
+The operators  `<|>` and `<>` can be used for concurrency, the operator `<|>` can be used for parallelism and  >>= for sequencing of threads and/or distributed processes. So even in the presence of these effects and others, everithing is composable.
+
+For this purpose transient is a extensible effects monad with all major effects and primitives for parallelism, events, asyncronous IO, early termination, non-determinism logging and distributed computing. Since it is possible to extend it with more effects without adding monad transformers, the composability is assured.
+
 
 See the articles:
 
