@@ -1,0 +1,20 @@
+Configuring stm-2.4.4...
+ghc: warning: _tzset from msvcrt is linked instead of __imp__tzset
+Building stm-2.4.4...
+Preprocessing library stm-2.4.4...
+[ 1 of 10] Compiling Control.Sequential.STM ( Control\Sequential\STM.hs, .stack-work\dist\x86_64-windows\Cabal-1.22.4.0\build\Control\Sequential\STM.o )
+[ 2 of 10] Compiling Control.Concurrent.STM.TBQueue ( Control\Concurrent\STM\TBQueue.hs, .stack-work\dist\x86_64-windows\Cabal-1.22.4.0\build\Control\Concurrent\STM\TBQueue.o )
+[ 3 of 10] Compiling Control.Concurrent.STM.TQueue ( Control\Concurrent\STM\TQueue.hs, .stack-work\dist\x86_64-windows\Cabal-1.22.4.0\build\Control\Concurrent\STM\TQueue.o )
+[ 4 of 10] Compiling Control.Concurrent.STM.TChan ( Control\Concurrent\STM\TChan.hs, .stack-work\dist\x86_64-windows\Cabal-1.22.4.0\build\Control\Concurrent\STM\TChan.o )
+[ 5 of 10] Compiling Control.Concurrent.STM.TMVar ( Control\Concurrent\STM\TMVar.hs, .stack-work\dist\x86_64-windows\Cabal-1.22.4.0\build\Control\Concurrent\STM\TMVar.o )
+[ 6 of 10] Compiling Control.Concurrent.STM.TVar ( Control\Concurrent\STM\TVar.hs, .stack-work\dist\x86_64-windows\Cabal-1.22.4.0\build\Control\Concurrent\STM\TVar.o )
+[ 7 of 10] Compiling Control.Concurrent.STM.TArray ( Control\Concurrent\STM\TArray.hs, .stack-work\dist\x86_64-windows\Cabal-1.22.4.0\build\Control\Concurrent\STM\TArray.o )
+[ 8 of 10] Compiling Control.Monad.STM ( Control\Monad\STM.hs, .stack-work\dist\x86_64-windows\Cabal-1.22.4.0\build\Control\Monad\STM.o )
+[ 9 of 10] Compiling Control.Concurrent.STM ( Control\Concurrent\STM.hs, .stack-work\dist\x86_64-windows\Cabal-1.22.4.0\build\Control\Concurrent\STM.o )
+[10 of 10] Compiling Control.Concurrent.STM.TSem ( Control\Concurrent\STM\TSem.hs, .stack-work\dist\x86_64-windows\Cabal-1.22.4.0\build\Control\Concurrent\STM\TSem.o )
+In-place registering stm-2.4.4...
+ghc: warning: _tzset from msvcrt is linked instead of __imp__tzset
+Installing library in
+C:\Users\magocoal\AppData\Roaming\stack\snapshots\x86_64-windows\lts-3.1\7.10.2\lib\x86_64-windows-ghc-7.10.2\stm-2.4.4-C1kFMnPqFjvDhFjgMZGUpr
+Registering stm-2.4.4...
+ghc: warning: _tzset from msvcrt is linked instead of __imp__tzset

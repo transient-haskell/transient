@@ -20,6 +20,17 @@ import Transient.Base
 import Control.Applicative
 import Control.Monad.IO.Class
 
+
+--newtype Logged m a =  Logged {runLogged :: m a}
+--
+--data RLogged= forall a.(Read a, Show a) => RLogged  a
+--
+--instance Monad m => Monad (Logged m)  where
+--   return  x=  Logged $ return x
+--   Logged x >>= f =  Logged $ do
+--         r <- x
+--         runLogged $ f r
+
 --data IDynamic= IDyns String | forall a.(Read a, Show a,Typeable a) => IDynamic a
 
 --instance Show IDynamic where

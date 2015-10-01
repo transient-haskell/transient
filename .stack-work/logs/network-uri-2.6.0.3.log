@@ -1,0 +1,16 @@
+Configuring network-uri-2.6.0.3...
+ghc: warning: _tzset from msvcrt is linked instead of __imp__tzset
+Building network-uri-2.6.0.3...
+Preprocessing library network-uri-2.6.0.3...
+[1 of 1] Compiling Network.URI      ( Network\URI.hs, .stack-work\dist\x86_64-windows\Cabal-1.22.4.0\build\Network\URI.o )
+
+Network\URI.hs:129:1: Warning:
+    The import of ‘Data.Traversable’ is redundant
+      except perhaps to import instances from ‘Data.Traversable’
+    To import instances alone, use: import Data.Traversable()
+In-place registering network-uri-2.6.0.3...
+ghc: warning: _tzset from msvcrt is linked instead of __imp__tzset
+Installing library in
+C:\Users\magocoal\AppData\Roaming\stack\snapshots\x86_64-windows\lts-3.1\7.10.2\lib\x86_64-windows-ghc-7.10.2\network-uri-2.6.0.3-LFMzacKIfjmC6gRt5N3aSz
+Registering network-uri-2.6.0.3...
+ghc: warning: _tzset from msvcrt is linked instead of __imp__tzset

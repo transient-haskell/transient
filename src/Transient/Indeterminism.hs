@@ -33,12 +33,17 @@ import GHC.Conc
 choose  ::  [a] -> TransientIO a
 choose []= empty
 choose   xs = do
-    evs <- liftIO  $ newIORef xs
-    parallel   $ do
+    evs <- liftIO $ newIORef xs
+    r <- parallel $ do
            es <- atomicModifyIORef' evs $ \es -> let !tes= tail es in (tes,es)
            case es of
-            [x]  -> return $ Left $ head es
-            x:_  -> return $ Right x
+            [x]  -> return $ SLast $ head es
+            x:_  -> return $ SMore x
+    return $ toData r
+
+toData r= case r of
+      SMore x -> x
+      SLast x -> x
 
 -- | group the output of a possible multithreaded process in groups of n elements.
 group :: Int -> TransientIO a -> TransientIO [a]
@@ -52,7 +57,7 @@ group num proc =  do
 
 -- | alternative definition with more parallelism
 choose' :: [a] -> TransientIO a
-choose'  xs = foldl (<|>) empty $ map (parallel . return . Left) xs
+choose'  xs = foldl (<|>) empty $ map (\x -> parallel (return (SLast x)) >>= return . toData) xs
 
 
 --newtype Collect a= Collect (MVar (Int, [a])) deriving Typeable

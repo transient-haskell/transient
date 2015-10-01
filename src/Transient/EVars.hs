@@ -14,7 +14,7 @@ import Data.List(nub)
 
 newtype EVars= EVars  (IORef (M.Map Int [EventF]))  deriving Typeable
 
-data EVar a= EVar Int (IORef (Maybe a))
+data EVar a= EVar Int (IORef (Maybe a)) deriving Typeable
 
 
 -- | creates an EVar.
@@ -52,14 +52,14 @@ newEVar  = Transient $ do
 -- To avoid multiple registrations, use `unsubscribe`
 readEVar :: EVar a -> TransIO a
 readEVar (EVar id ref1)= Transient $ do
-   mr <- liftIO $ readIORef ref1
+   mr <- liftIO $ readIORef ref1 !> "READEVAR"
    case mr of
      Just _ -> return mr
      Nothing -> do
          cont <- getCont
          EVars ref <- getSessionData `onNothing` error "No Events context"
          map <- liftIO $ readIORef ref
-         let Just conts=  M.lookup  id map <|> Just []
+         let Just conts=  M.lookup id map <|> Just []
          liftIO $ writeIORef ref $  M.insert id (cont:conts) map
          return Nothing
 

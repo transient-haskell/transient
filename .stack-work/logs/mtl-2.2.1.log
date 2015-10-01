@@ -1,0 +1,32 @@
+Configuring mtl-2.2.1...
+ghc: warning: _tzset from msvcrt is linked instead of __imp__tzset
+Building mtl-2.2.1...
+Preprocessing library mtl-2.2.1...
+[ 1 of 22] Compiling Control.Monad.Writer.Class ( Control\Monad\Writer\Class.hs, .stack-work\dist\x86_64-windows\Cabal-1.22.4.0\build\Control\Monad\Writer\Class.o )
+[ 2 of 22] Compiling Control.Monad.State.Class ( Control\Monad\State\Class.hs, .stack-work\dist\x86_64-windows\Cabal-1.22.4.0\build\Control\Monad\State\Class.o )
+[ 3 of 22] Compiling Control.Monad.Reader.Class ( Control\Monad\Reader\Class.hs, .stack-work\dist\x86_64-windows\Cabal-1.22.4.0\build\Control\Monad\Reader\Class.o )
+[ 4 of 22] Compiling Control.Monad.RWS.Class ( Control\Monad\RWS\Class.hs, .stack-work\dist\x86_64-windows\Cabal-1.22.4.0\build\Control\Monad\RWS\Class.o )
+[ 5 of 22] Compiling Control.Monad.Identity ( Control\Monad\Identity.hs, .stack-work\dist\x86_64-windows\Cabal-1.22.4.0\build\Control\Monad\Identity.o )
+[ 6 of 22] Compiling Control.Monad.Error.Class ( Control\Monad\Error\Class.hs, .stack-work\dist\x86_64-windows\Cabal-1.22.4.0\build\Control\Monad\Error\Class.o )
+[ 7 of 22] Compiling Control.Monad.Cont.Class ( Control\Monad\Cont\Class.hs, .stack-work\dist\x86_64-windows\Cabal-1.22.4.0\build\Control\Monad\Cont\Class.o )
+[ 8 of 22] Compiling Control.Monad.Trans ( Control\Monad\Trans.hs, .stack-work\dist\x86_64-windows\Cabal-1.22.4.0\build\Control\Monad\Trans.o )
+[ 9 of 22] Compiling Control.Monad.Error ( Control\Monad\Error.hs, .stack-work\dist\x86_64-windows\Cabal-1.22.4.0\build\Control\Monad\Error.o )
+[10 of 22] Compiling Control.Monad.Except ( Control\Monad\Except.hs, .stack-work\dist\x86_64-windows\Cabal-1.22.4.0\build\Control\Monad\Except.o )
+[11 of 22] Compiling Control.Monad.List ( Control\Monad\List.hs, .stack-work\dist\x86_64-windows\Cabal-1.22.4.0\build\Control\Monad\List.o )
+[12 of 22] Compiling Control.Monad.RWS.Lazy ( Control\Monad\RWS\Lazy.hs, .stack-work\dist\x86_64-windows\Cabal-1.22.4.0\build\Control\Monad\RWS\Lazy.o )
+[13 of 22] Compiling Control.Monad.RWS ( Control\Monad\RWS.hs, .stack-work\dist\x86_64-windows\Cabal-1.22.4.0\build\Control\Monad\RWS.o )
+[14 of 22] Compiling Control.Monad.Reader ( Control\Monad\Reader.hs, .stack-work\dist\x86_64-windows\Cabal-1.22.4.0\build\Control\Monad\Reader.o )
+[15 of 22] Compiling Control.Monad.RWS.Strict ( Control\Monad\RWS\Strict.hs, .stack-work\dist\x86_64-windows\Cabal-1.22.4.0\build\Control\Monad\RWS\Strict.o )
+[16 of 22] Compiling Control.Monad.State.Lazy ( Control\Monad\State\Lazy.hs, .stack-work\dist\x86_64-windows\Cabal-1.22.4.0\build\Control\Monad\State\Lazy.o )
+[17 of 22] Compiling Control.Monad.State ( Control\Monad\State.hs, .stack-work\dist\x86_64-windows\Cabal-1.22.4.0\build\Control\Monad\State.o )
+[18 of 22] Compiling Control.Monad.State.Strict ( Control\Monad\State\Strict.hs, .stack-work\dist\x86_64-windows\Cabal-1.22.4.0\build\Control\Monad\State\Strict.o )
+[19 of 22] Compiling Control.Monad.Writer.Lazy ( Control\Monad\Writer\Lazy.hs, .stack-work\dist\x86_64-windows\Cabal-1.22.4.0\build\Control\Monad\Writer\Lazy.o )
+[20 of 22] Compiling Control.Monad.Writer ( Control\Monad\Writer.hs, .stack-work\dist\x86_64-windows\Cabal-1.22.4.0\build\Control\Monad\Writer.o )
+[21 of 22] Compiling Control.Monad.Writer.Strict ( Control\Monad\Writer\Strict.hs, .stack-work\dist\x86_64-windows\Cabal-1.22.4.0\build\Control\Monad\Writer\Strict.o )
+[22 of 22] Compiling Control.Monad.Cont ( Control\Monad\Cont.hs, .stack-work\dist\x86_64-windows\Cabal-1.22.4.0\build\Control\Monad\Cont.o )
+In-place registering mtl-2.2.1...
+ghc: warning: _tzset from msvcrt is linked instead of __imp__tzset
+Installing library in
+C:\Users\magocoal\AppData\Roaming\stack\snapshots\x86_64-windows\lts-3.1\7.10.2\lib\x86_64-windows-ghc-7.10.2\mtl-2.2.1-KMpng31YRYc5JfMWFZ3FCU
+Registering mtl-2.2.1...
+ghc: warning: _tzset from msvcrt is linked instead of __imp__tzset

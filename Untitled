@@ -1,7 +1,0 @@
-how to recover connection to return callTo:
-
-first detect the error with one check:
-
-in calTo, remote side:
-
-    catch (e:: NetworkException -> moveTo...)

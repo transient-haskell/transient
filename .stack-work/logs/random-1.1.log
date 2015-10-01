@@ -1,0 +1,135 @@
+Configuring random-1.1...
+ghc: warning: _tzset from msvcrt is linked instead of __imp__tzset
+Building random-1.1...
+Preprocessing library random-1.1...
+[1 of 1] Compiling System.Random    ( System\Random.hs, .stack-work\dist\x86_64-windows\Cabal-1.22.4.0\build\System\Random.o )
+
+System\Random.hs:43:1: Warning: Tab character
+
+System\Random.hs:45:1: Warning: Tab character
+
+System\Random.hs:47:1: Warning: Tab character
+
+System\Random.hs:53:1: Warning: Tab character
+
+System\Random.hs:55:1: Warning: Tab character
+
+System\Random.hs:56:1: Warning: Tab character
+
+System\Random.hs:57:1: Warning: Tab character
+
+System\Random.hs:59:1: Warning: Tab character
+
+System\Random.hs:61:1: Warning: Tab character
+
+System\Random.hs:63:1: Warning: Tab character
+
+System\Random.hs:64:1: Warning: Tab character
+
+System\Random.hs:65:1: Warning: Tab character
+
+System\Random.hs:66:1: Warning: Tab character
+
+System\Random.hs:68:1: Warning: Tab character
+
+System\Random.hs:69:1: Warning: Tab character
+
+System\Random.hs:70:1: Warning: Tab character
+
+System\Random.hs:71:1: Warning: Tab character
+
+System\Random.hs:73:1: Warning: Tab character
+
+System\Random.hs:74:1: Warning: Tab character
+
+System\Random.hs:76:1: Warning: Tab character
+
+System\Random.hs:90:22: Warning: Tab character
+
+System\Random.hs:91:17: Warning: Tab character
+
+System\Random.hs:94:17: Warning: Tab character
+
+System\Random.hs:102:15: Warning: Tab character
+
+System\Random.hs:240:1: Warning: Tab character
+
+System\Random.hs:241:1: Warning: Tab character
+
+System\Random.hs:249:1: Warning: Tab character
+
+System\Random.hs:269:1: Warning: Tab character
+
+System\Random.hs:270:1: Warning: Tab character
+
+System\Random.hs:271:1: Warning: Tab character
+
+System\Random.hs:272:1: Warning: Tab character
+
+System\Random.hs:273:1: Warning: Tab character
+
+System\Random.hs:326:11: Warning: Tab character
+
+System\Random.hs:343:11: Warning: Tab character
+
+System\Random.hs:384:11: Warning: Tab character
+
+System\Random.hs:395:1: Warning: Tab character
+
+System\Random.hs:396:1: Warning: Tab character
+
+System\Random.hs:396:20: Warning: Tab character
+
+System\Random.hs:397:1: Warning: Tab character
+
+System\Random.hs:397:20: Warning: Tab character
+
+System\Random.hs:399:11: Warning: Tab character
+
+System\Random.hs:406:1: Warning: Tab character
+
+System\Random.hs:415:1: Warning: Tab character
+
+System\Random.hs:428:1: Warning: Tab character
+
+System\Random.hs:429:1: Warning: Tab character
+
+System\Random.hs:430:1: Warning: Tab character
+
+System\Random.hs:440:3: Warning: Tab character
+
+System\Random.hs:502:1: Warning: Tab character
+
+System\Random.hs:503:1: Warning: Tab character
+
+System\Random.hs:504:1: Warning: Tab character
+
+System\Random.hs:506:1: Warning: Tab character
+
+System\Random.hs:507:1: Warning: Tab character
+
+System\Random.hs:508:1: Warning: Tab character
+
+System\Random.hs:519:1: Warning: Tab character
+
+System\Random.hs:519:14: Warning: Tab character
+
+System\Random.hs:520:1: Warning: Tab character
+
+System\Random.hs:522:1: Warning: Tab character
+
+System\Random.hs:523:1: Warning: Tab character
+
+System\Random.hs:524:1: Warning: Tab character
+
+System\Random.hs:526:1: Warning: Tab character
+
+System\Random.hs:527:1: Warning: Tab character
+
+System\Random.hs:528:1: Warning: Tab character
+In-place registering random-1.1...
+ghc: warning: _tzset from msvcrt is linked instead of __imp__tzset
+Installing library in
+C:\Users\magocoal\AppData\Roaming\stack\snapshots\x86_64-windows\lts-3.1\7.10.2\lib\x86_64-windows-ghc-7.10.2\random-1.1-6WzQFNFERRiDpidsruizqk
+Registering random-1.1...
+ghc: warning: _tzset from msvcrt is linked instead of __imp__tzset

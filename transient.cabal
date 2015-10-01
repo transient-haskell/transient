@@ -18,7 +18,7 @@ data-dir: ""
 library
     build-depends: base -any, mtl -any, random -any, containers -any,
                    directory -any, filepath -any, stm -any, HTTP -any, network -any,
-                   transformers -any, process -any, network-info -any
+                   transformers -any, process -any, network-info -any, bytestring, old-time
 
     exposed-modules: Transient.Indeterminism Transient.Base Transient.EVars
                      Transient.Backtrack Transient.Move Transient.Logged
@@ -31,7 +31,7 @@ library
 executable transient
     build-depends: base >4 && <5, mtl -any, random -any, containers -any,
                    directory -any, filepath -any, stm -any, HTTP -any, network -any,
-                   transformers -any, transient -any
+                   transformers -any, transient -any, bytestring
     main-is: Main.hs
     buildable: True
     default-language: Haskell2010
@@ -41,7 +41,7 @@ executable transient
 executable move
     build-depends: base -any, mtl -any, random -any, containers -any,
                    directory -any, filepath -any, stm -any, HTTP -any, network -any,
-                   transformers -any, transient -any
+                   transformers -any, transient -any, bytestring
     main-is: move.hs
     buildable: True
     default-language: Haskell2010

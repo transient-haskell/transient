@@ -1,0 +1,467 @@
+Configuring network-2.6.2.1...
+configure: WARNING: unrecognized options: --with-compiler, --with-gcc
+checking build system type... i686-pc-msys
+checking host system type... i686-pc-msys
+checking for gcc... gcc
+checking whether the C compiler works... yes
+checking for C compiler default output file name... a.exe
+checking for suffix of executables... .exe
+checking whether we are cross compiling... no
+checking for suffix of object files... o
+checking whether we are using the GNU C compiler... yes
+checking whether gcc accepts -g... yes
+checking for gcc option to accept ISO C89... none needed
+checking for an ANSI C-conforming const... yes
+checking how to run the C preprocessor... gcc -E
+checking for grep that handles long lines and -e... /usr/bin/grep
+checking for egrep... /usr/bin/grep -E
+checking for ANSI C header files... yes
+checking for sys/types.h... yes
+checking for sys/stat.h... yes
+checking for stdlib.h... yes
+checking for string.h... yes
+checking for memory.h... yes
+checking for strings.h... yes
+checking for inttypes.h... yes
+checking for stdint.h... yes
+checking for unistd.h... yes
+checking fcntl.h usability... yes
+checking fcntl.h presence... yes
+checking for fcntl.h... yes
+checking limits.h usability... yes
+checking limits.h presence... yes
+checking for limits.h... yes
+checking for stdlib.h... (cached) yes
+checking for sys/types.h... (cached) yes
+checking for unistd.h... (cached) yes
+checking winsock2.h usability... yes
+checking winsock2.h presence... yes
+checking for winsock2.h... yes
+checking ws2tcpip.h usability... yes
+checking ws2tcpip.h presence... yes
+checking for ws2tcpip.h... yes
+checking arpa/inet.h usability... no
+checking arpa/inet.h presence... no
+checking for arpa/inet.h... no
+checking netdb.h usability... no
+checking netdb.h presence... no
+checking for netdb.h... no
+checking netinet/in.h usability... no
+checking netinet/in.h presence... no
+checking for netinet/in.h... no
+checking netinet/tcp.h usability... no
+checking netinet/tcp.h presence... no
+checking for netinet/tcp.h... no
+checking sys/socket.h usability... no
+checking sys/socket.h presence... no
+checking for sys/socket.h... no
+checking sys/uio.h usability... no
+checking sys/uio.h presence... no
+checking for sys/uio.h... no
+checking sys/un.h usability... no
+checking sys/un.h presence... no
+checking for sys/un.h... no
+checking linux/can.h usability... no
+checking linux/can.h presence... no
+checking for linux/can.h... no
+checking linux/tcp.h usability... no
+checking linux/tcp.h presence... no
+checking for linux/tcp.h... no
+checking net/if.h usability... no
+checking net/if.h presence... no
+checking for net/if.h... no
+checking for readlink... no
+checking for symlink... no
+checking for if_nametoindex... no
+checking for struct msghdr.msg_control... no
+checking for struct msghdr.msg_accrights... no
+checking for struct sockaddr.sa_len... no
+checking for in_addr_t in netinet/in.h... no
+checking for SO_PEERCRED and struct ucred in sys/socket.h... no
+checking for getpeereid in unistd.h... checking for getpeereid... no
+checking for _head_libws2_32_a in -lws2_32... no
+checking for getaddrinfo... yes
+checking for gai_strerror... no
+checking whether AI_ADDRCONFIG is declared... no
+checking whether AI_ALL is declared... no
+checking whether AI_NUMERICSERV is declared... no
+checking whether AI_V4MAPPED is declared... no
+checking whether IPV6_V6ONLY is declared... yes
+checking whether IPPROTO_IP is declared... yes
+checking whether IPPROTO_TCP is declared... yes
+checking whether IPPROTO_IPV6 is declared... yes
+checking for sendfile in sys/sendfile.h... no
+checking for sendfile in sys/socket.h... no
+checking for gethostent... no
+checking for accept4... no
+configure: creating ./config.status
+config.status: creating network.buildinfo
+config.status: creating include/HsNetworkConfig.h
+configure: WARNING: unrecognized options: --with-compiler, --with-gcc
+ghc: warning: _tzset from msvcrt is linked instead of __imp__tzset
+Building network-2.6.2.1...
+Preprocessing library network-2.6.2.1...
+[1 of 9] Compiling Network.Socket.ByteString.Internal ( Network\Socket\ByteString\Internal.hs, .stack-work\dist\x86_64-windows\Cabal-1.22.4.0\build\Network\Socket\ByteString\Internal.o )
+[2 of 9] Compiling Network.Socket.Types ( .stack-work\dist\x86_64-windows\Cabal-1.22.4.0\build\Network\Socket\Types.hs, .stack-work\dist\x86_64-windows\Cabal-1.22.4.0\build\Network\Socket\Types.o )
+
+NetworkSocketTypes.hsc:67:1: Warning:
+    The import of ‘Foreign.Marshal.Array’ is redundant
+      except perhaps to import instances from ‘Foreign.Marshal.Array’
+    To import instances alone, use: import Foreign.Marshal.Array()
+
+NetworkSocketTypes.hsc:748:1: Warning:
+    the 'stdcall' calling convention is unsupported on this platform,
+    treating as ccall
+    When checking declaration:
+      foreign import stdcall unsafe "static ntohs" ntohs
+        :: Word16 -> Word16
+
+NetworkSocketTypes.hsc:749:1: Warning:
+    the 'stdcall' calling convention is unsupported on this platform,
+    treating as ccall
+    When checking declaration:
+      foreign import stdcall unsafe "static htons" htons
+        :: Word16 -> Word16
+
+NetworkSocketTypes.hsc:857:1: Warning:
+    Pattern match(es) are non-exhaustive
+    In an equation for ‘sizeOfSockAddr’:
+        Patterns not matched:
+            SockAddrUnix _
+            SockAddrCan _
+
+NetworkSocketTypes.hsc:872:1: Warning:
+    Pattern match(es) are non-exhaustive
+    In an equation for ‘sizeOfSockAddrByFamily’:
+        Patterns not matched:
+            AF_UNSPEC
+            AF_UNIX
+            AF_IMPLINK
+            AF_PUP
+            ...
+
+NetworkSocketTypes.hsc:915:1: Warning:
+    Pattern match(es) are non-exhaustive
+    In an equation for ‘pokeSockAddr’:
+        Patterns not matched:
+            _ (SockAddrUnix _)
+            _ (SockAddrCan _)
+
+NetworkSocketTypes.hsc:951:3: Warning:
+    Pattern match(es) are non-exhaustive
+    In a case alternative:
+        Patterns not matched: #x with #x `notElem` [2#, 23#]
+
+NetworkSocketTypes.hsc:1012:10: Warning:
+    Orphan instance: instance Storable HostAddress6
+    To avoid this
+        move the instance declaration to the module of the class or of the type, or
+        wrap the type with a newtype and declare the instance on the new type.
+[3 of 9] Compiling Network.Socket.Internal ( .stack-work\dist\x86_64-windows\Cabal-1.22.4.0\build\Network\Socket\Internal.hs, .stack-work\dist\x86_64-windows\Cabal-1.22.4.0\build\Network\Socket\Internal.o )
+
+NetworkSocketInternal.hsc:72:1: Warning:
+    The import of ‘Foreign.C.Error’ is redundant
+      except perhaps to import instances from ‘Foreign.C.Error’
+    To import instances alone, use: import Foreign.C.Error()
+
+NetworkSocketInternal.hsc:189:9: Warning:
+    This binding for ‘r’ shadows the existing binding
+      bound at NetworkSocketInternal.hsc:182:3
+
+NetworkSocketInternal.hsc:204:1: Warning:
+    the 'stdcall' calling convention is unsupported on this platform,
+    treating as ccall
+    When checking declaration:
+      foreign import stdcall unsafe "static WSAGetLastError" c_getLastError
+        :: IO CInt
+
+NetworkSocketInternal.hsc:177:3: Warning:
+    A do-notation statement discarded a result of type ‘a’
+    Suppress this warning by saying
+      ‘_ <- throwSocketErrorIfMinus1Retry name act’
+    or by using the flag -fno-warn-unused-do-bind
+[4 of 9] Compiling Network.Socket   ( .stack-work\dist\x86_64-windows\Cabal-1.22.4.0\build\Network\Socket.hs, .stack-work\dist\x86_64-windows\Cabal-1.22.4.0\build\Network\Socket.o )
+
+NetworkSocket.hsc:177:1: Warning:
+    The import of ‘delete’ from module ‘Data.List’ is redundant
+
+NetworkSocket.hsc:182:1: Warning:
+    The import of ‘Foreign.C.Error’ is redundant
+      except perhaps to import instances from ‘Foreign.C.Error’
+    To import instances alone, use: import Foreign.C.Error()
+
+NetworkSocket.hsc:184:1: Warning:
+    The import of ‘CUInt’ from module ‘Foreign.C.Types’ is redundant
+
+NetworkSocket.hsc:187:1: Warning:
+    The import of ‘Foreign.Marshal.Array’ is redundant
+      except perhaps to import instances from ‘Foreign.Marshal.Array’
+    To import instances alone, use: import Foreign.Marshal.Array()
+
+NetworkSocket.hsc:198:1: Warning:
+    The import of ‘threadWaitRead’ from module ‘GHC.Conc’ is redundant
+
+NetworkSocket.hsc:247:1: Warning:
+    Top-level binding with no type signature: socket2FD :: Socket -> FD
+
+NetworkSocket.hsc:420:9: Warning:
+    Defined but not used: ‘connectBlocked’
+
+NetworkSocket.hsc:619:21: Warning: Defined but not used: ‘s’
+
+NetworkSocket.hsc:641:24: Warning: Defined but not used: ‘s’
+
+NetworkSocket.hsc:671:24: Warning: Defined but not used: ‘s’
+
+NetworkSocket.hsc:705:27: Warning: Defined but not used: ‘s’
+
+NetworkSocket.hsc:1017:1: Warning:
+    the 'stdcall' calling convention is unsupported on this platform,
+    treating as ccall
+    When checking declaration:
+      foreign import stdcall unsafe "static htonl" htonl
+        :: Word32 -> Word32
+
+NetworkSocket.hsc:1548:1: Warning:
+    the 'stdcall' calling convention is unsupported on this platform,
+    treating as ccall
+    When checking declaration:
+      foreign import stdcall unsafe "static inet_addr" c_inet_addr
+        :: Ptr CChar -> IO HostAddress
+
+NetworkSocket.hsc:1551:1: Warning:
+    the 'stdcall' calling convention is unsupported on this platform,
+    treating as ccall
+    When checking declaration:
+      foreign import stdcall unsafe "static shutdown" c_shutdown
+        :: CInt -> CInt -> IO CInt
+
+NetworkSocket.hsc:1561:1: Warning:
+    the 'stdcall' calling convention is unsupported on this platform,
+    treating as ccall
+    When checking declaration:
+      foreign import stdcall unsafe "static closesocket" c_close
+        :: CInt -> IO CInt
+
+NetworkSocket.hsc:1565:1: Warning:
+    the 'stdcall' calling convention is unsupported on this platform,
+    treating as ccall
+    When checking declaration:
+      foreign import stdcall unsafe "static socket" c_socket
+        :: CInt -> CInt -> CInt -> IO CInt
+
+NetworkSocket.hsc:1567:1: Warning:
+    the 'stdcall' calling convention is unsupported on this platform,
+    treating as ccall
+    When checking declaration:
+      foreign import stdcall unsafe "static bind" c_bind
+        :: CInt -> Ptr SockAddr -> CInt -> IO CInt
+
+NetworkSocket.hsc:1569:1: Warning:
+    the 'stdcall' calling convention is unsupported on this platform,
+    treating as ccall
+    When checking declaration:
+      foreign import stdcall safe "static connect" c_connect
+        :: CInt -> Ptr SockAddr -> CInt -> IO CInt
+
+NetworkSocket.hsc:1571:1: Warning:
+    the 'stdcall' calling convention is unsupported on this platform,
+    treating as ccall
+    When checking declaration:
+      foreign import stdcall unsafe "static accept" c_accept
+        :: CInt -> Ptr SockAddr -> Ptr CInt -> IO CInt
+
+NetworkSocket.hsc:1571:1: Warning: Defined but not used: ‘c_accept’
+
+NetworkSocket.hsc:1577:1: Warning:
+    the 'stdcall' calling convention is unsupported on this platform,
+    treating as ccall
+    When checking declaration:
+      foreign import stdcall unsafe "static listen" c_listen
+        :: CInt -> CInt -> IO CInt
+
+NetworkSocket.hsc:1581:1: Warning:
+    the 'stdcall' calling convention is unsupported on this platform,
+    treating as ccall
+    When checking declaration:
+      foreign import stdcall safe "static accept" c_accept_safe
+        :: CInt -> Ptr SockAddr -> Ptr CInt -> IO CInt
+
+NetworkSocket.hsc:1587:1: Warning:
+    the 'stdcall' calling convention is unsupported on this platform,
+    treating as ccall
+    When checking declaration:
+      foreign import stdcall unsafe "static send" c_send
+        :: CInt -> Ptr a -> CSize -> CInt -> IO CInt
+
+NetworkSocket.hsc:1587:1: Warning: Defined but not used: ‘c_send’
+
+NetworkSocket.hsc:1589:1: Warning:
+    the 'stdcall' calling convention is unsupported on this platform,
+    treating as ccall
+    When checking declaration:
+      foreign import stdcall safe "static sendto" c_sendto
+        :: CInt
+           -> Ptr a -> CSize -> CInt -> Ptr SockAddr -> CInt -> IO CInt
+
+NetworkSocket.hsc:1591:1: Warning:
+    the 'stdcall' calling convention is unsupported on this platform,
+    treating as ccall
+    When checking declaration:
+      foreign import stdcall unsafe "static recv" c_recv
+        :: CInt -> Ptr CChar -> CSize -> CInt -> IO CInt
+
+NetworkSocket.hsc:1591:1: Warning: Defined but not used: ‘c_recv’
+
+NetworkSocket.hsc:1593:1: Warning:
+    the 'stdcall' calling convention is unsupported on this platform,
+    treating as ccall
+    When checking declaration:
+      foreign import stdcall safe "static recvfrom" c_recvfrom
+        :: CInt
+           -> Ptr a -> CSize -> CInt -> Ptr SockAddr -> Ptr CInt -> IO CInt
+
+NetworkSocket.hsc:1595:1: Warning:
+    the 'stdcall' calling convention is unsupported on this platform,
+    treating as ccall
+    When checking declaration:
+      foreign import stdcall unsafe "static getpeername" c_getpeername
+        :: CInt -> Ptr SockAddr -> Ptr CInt -> IO CInt
+
+NetworkSocket.hsc:1597:1: Warning:
+    the 'stdcall' calling convention is unsupported on this platform,
+    treating as ccall
+    When checking declaration:
+      foreign import stdcall unsafe "static getsockname" c_getsockname
+        :: CInt -> Ptr SockAddr -> Ptr CInt -> IO CInt
+
+NetworkSocket.hsc:1600:1: Warning:
+    the 'stdcall' calling convention is unsupported on this platform,
+    treating as ccall
+    When checking declaration:
+      foreign import stdcall unsafe "static getsockopt" c_getsockopt
+        :: CInt -> CInt -> CInt -> Ptr CInt -> Ptr CInt -> IO CInt
+
+NetworkSocket.hsc:1602:1: Warning:
+    the 'stdcall' calling convention is unsupported on this platform,
+    treating as ccall
+    When checking declaration:
+      foreign import stdcall unsafe "static setsockopt" c_setsockopt
+        :: CInt -> CInt -> CInt -> Ptr CInt -> CInt -> IO CInt
+
+NetworkSocket.hsc:278:3: Warning:
+    Pattern match(es) are non-exhaustive
+    In an equation for ‘showsPrec’:
+        Patterns not matched:
+            _ (SockAddrUnix _)
+            _ (SockAddrCan _)
+[5 of 9] Compiling Network.Socket.ByteString ( .stack-work\dist\x86_64-windows\Cabal-1.22.4.0\build\Network\Socket\ByteString.hs, .stack-work\dist\x86_64-windows\Cabal-1.22.4.0\build\Network\Socket\ByteString.o )
+
+NetworkSocketByteString.hsc:51:1: Warning:
+    The import of ‘Foreign.C.Types’ is redundant
+      except perhaps to import instances from ‘Foreign.C.Types’
+    To import instances alone, use: import Foreign.C.Types()
+
+NetworkSocketByteString.hsc:54:1: Warning:
+    The import of ‘SockAddr, Socket’
+    from module ‘Network.Socket’ is redundant
+
+NetworkSocketByteString.hsc:94:6: Warning:
+    Defined but not used: ‘sock’
+[6 of 9] Compiling Network.Socket.ByteString.Lazy.Windows ( Network\Socket\ByteString\Lazy\Windows.hs, .stack-work\dist\x86_64-windows\Cabal-1.22.4.0\build\Network\Socket\ByteString\Lazy\Windows.o )
+
+Network\Socket\ByteString\Lazy\Windows.hs:9:1: Warning:
+    The import of ‘Control.Applicative’ is redundant
+      except perhaps to import instances from ‘Control.Applicative’
+    To import instances alone, use: import Control.Applicative()
+[7 of 9] Compiling Network.Socket.ByteString.Lazy ( Network\Socket\ByteString\Lazy.hs, .stack-work\dist\x86_64-windows\Cabal-1.22.4.0\build\Network\Socket\ByteString\Lazy.o )
+[8 of 9] Compiling Network.BSD      ( .stack-work\dist\x86_64-windows\Cabal-1.22.4.0\build\Network\BSD.hs, .stack-work\dist\x86_64-windows\Cabal-1.22.4.0\build\Network\BSD.o )
+
+NetworkBSD.hsc:105:1: Warning:
+    The import of ‘CUInt’ from module ‘Foreign.C.Types’ is redundant
+
+NetworkBSD.hsc:109:1: Warning:
+    The import of ‘fromBool’
+    from module ‘Foreign.Marshal.Utils’ is redundant
+
+NetworkBSD.hsc:162:43: Warning:
+    In the use of data constructor ‘PortNum’
+    (imported from Network.Socket, but defined in Network.Socket.Types):
+    Deprecated: "Do not use the PortNum constructor. Use the Num instance. PortNum will be removed in the next release."
+
+NetworkBSD.hsc:185:1: Warning:
+    the 'stdcall' calling convention is unsupported on this platform,
+    treating as ccall
+    When checking declaration:
+      foreign import stdcall unsafe "static getservbyname" c_getservbyname
+        :: CString -> CString -> IO (Ptr ServiceEntry)
+
+NetworkBSD.hsc:190:19: Warning:
+    In the use of data constructor ‘PortNum’
+    (imported from Network.Socket, but defined in Network.Socket.Types):
+    Deprecated: "Do not use the PortNum constructor. Use the Num instance. PortNum will be removed in the next release."
+
+NetworkBSD.hsc:196:1: Warning:
+    the 'stdcall' calling convention is unsupported on this platform,
+    treating as ccall
+    When checking declaration:
+      foreign import stdcall unsafe "static getservbyport" c_getservbyport
+        :: CInt -> CString -> IO (Ptr ServiceEntry)
+
+NetworkBSD.hsc:282:1: Warning:
+    the 'stdcall' calling convention is unsupported on this platform,
+    treating as ccall
+    When checking declaration:
+      foreign import stdcall unsafe "static getprotobyname" c_getprotobyname
+        :: CString -> IO (Ptr ProtocolEntry)
+
+NetworkBSD.hsc:292:1: Warning:
+    the 'stdcall' calling convention is unsupported on this platform,
+    treating as ccall
+    When checking declaration:
+      foreign import stdcall unsafe "static getprotobynumber" c_getprotobynumber
+        :: CInt -> IO (Ptr ProtocolEntry)
+
+NetworkBSD.hsc:383:1: Warning:
+    the 'stdcall' calling convention is unsupported on this platform,
+    treating as ccall
+    When checking declaration:
+      foreign import stdcall safe "static gethostbyname" c_gethostbyname
+        :: CString -> IO (Ptr HostEntry)
+
+NetworkBSD.hsc:397:1: Warning:
+    the 'stdcall' calling convention is unsupported on this platform,
+    treating as ccall
+    When checking declaration:
+      foreign import stdcall safe "static gethostbyaddr" c_gethostbyaddr
+        :: Ptr HostAddress -> CInt -> CInt -> IO (Ptr HostEntry)
+
+NetworkBSD.hsc:555:1: Warning:
+    the 'stdcall' calling convention is unsupported on this platform,
+    treating as ccall
+    When checking declaration:
+      foreign import stdcall unsafe "static gethostname" c_gethostname
+        :: CString -> CSize -> IO CInt
+
+NetworkBSD.hsc:564:1: Warning: Defined but not used: ‘getEntries’
+[9 of 9] Compiling Network          ( Network.hs, .stack-work\dist\x86_64-windows\Cabal-1.22.4.0\build\Network.o )
+
+Network.hs:292:16: Warning:
+    Pattern match(es) are non-exhaustive
+    In a case alternative:
+        Patterns not matched:
+            SockAddrUnix _
+            SockAddrCan _
+
+Network.hs:401:5: Warning:
+    Pattern match(es) are non-exhaustive
+    In a case alternative:
+        Patterns not matched:
+            SockAddrUnix _
+            SockAddrCan _
+In-place registering network-2.6.2.1...
+ghc: warning: _tzset from msvcrt is linked instead of __imp__tzset
+Installing library in
+C:\Users\magocoal\AppData\Roaming\stack\snapshots\x86_64-windows\lts-3.1\7.10.2\lib\x86_64-windows-ghc-7.10.2\network-2.6.2.1-03yk5TjgOq2GoA5aBKCTPo
+Registering network-2.6.2.1...
+ghc: warning: _tzset from msvcrt is linked instead of __imp__tzset

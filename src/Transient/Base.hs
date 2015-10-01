@@ -40,7 +40,7 @@ import           Data.IORef
 
 
 {-# INLINE (!>) #-}
-(!>) = const . id -- flip trace
+(!>) =  const . id -- flip trace
 infixr 0 !>
 
 data TransIO  x = Transient  {runTrans :: StateT EventF IO (Maybe x)}
@@ -50,7 +50,8 @@ type EventId= Int
 
 type TransientIO= TransIO
 
-data EventF  = forall a b . EventF{xcomp       :: TransientIO a
+data EventF  = forall a b . EventF{event       :: Maybe SData
+                                  ,xcomp       :: TransientIO a
                                   ,fcomp       :: [b -> TransientIO b]
                                   ,mfData      :: M.Map TypeRep SData
                                   ,mfSequence  :: Int
@@ -93,7 +94,7 @@ runTransient :: TransientIO x -> IO (Maybe x, EventF)
 runTransient t= do
 
   th <- myThreadId
-  let eventf0=  EventF  empty [] M.empty 0
+  let eventf0=  EventF  Nothing empty [] M.empty 0
           th False  Nothing  (unsafePerformIO $ newTVarIO []) Nothing
 
 
@@ -108,7 +109,7 @@ getCont = get
 
 -- | run the continuation context
 runCont :: EventF -> StateIO ()
-runCont (EventF  x fs _ _  _ _  _ _ _)= runTrans ((unsafeCoerce x') >>= compose ( fs)) >> return ()
+runCont (EventF _ x fs _ _  _ _  _ _ _)= runTrans ((unsafeCoerce x') >>= compose ( fs)) >> return ()
     where
     x'=  do
 --           modify $ \s -> s{replay=True}
@@ -131,11 +132,18 @@ compose (f: fs)= \x -> f x >>= compose fs
 
 -- | run the closure  (the 'x'  in 'x >>= f') of the current bind operation.
 runClosure :: EventF -> StateIO (Maybe a)
-runClosure (EventF x _ _ _ _ _ _ _ _) =  unsafeCoerce $ runTrans x
+runClosure (EventF _ x _ _ _ _ _ _ _ _) =  unsafeCoerce $ runTrans x
 
 -- | run the continuation (the 'f' in 'x >> f') of the current bind operation
 runContinuation ::  EventF -> a -> StateIO (Maybe b)
-runContinuation (EventF _ fs _ _ _ _  _ _ _) x= runTrans $  (unsafeCoerce $ compose $  fs) x
+runContinuation (EventF _ _ fs _ _ _ _  _ _ _) x=
+   runTrans $  (unsafeCoerce $ compose $  fs)  x
+
+-- | run a chain of continuations. It is up to the programmer to assure by construction that
+--  each continuation type-check with the next and the parameter type match the input of the first
+-- continuation and that the output is of the type intended.
+runContinuations :: [a -> TransIO b] -> c -> TransIO d
+runContinuations fs x= (compose $ unsafeCoerce fs)  x
 
 instance   Functor TransientIO where
   fmap f mx=   -- Transient $ fmap (fmap f) $ runTrans mx
@@ -152,7 +160,7 @@ instance Applicative TransientIO where
          rf <- liftIO $ newIORef Nothing
          rg <- liftIO $ newIORef Nothing   -- !> "NEWIOREF"
 
-         cont@(EventF _ fs a b c d peers children g1) <- get   -- !> "APLICATIVE DOIT"
+         cont@(EventF _ _ fs a b c d peers children g1) <- get   -- !> "APLICATIVE DOIT"
 
          let
              appg x = Transient $  do
@@ -168,7 +176,7 @@ instance Applicative TransientIO where
 
 
 
-         put $ EventF f (unsafeCoerce appf:  fs)
+         put $ EventF Nothing f (unsafeCoerce appf:  fs)
                                           a b c d peers children g1
          k <- runTrans f
          was <- getSessionData `onNothing` return NoRemote
@@ -178,7 +186,7 @@ instance Applicative TransientIO where
              liftIO $ writeIORef rf  k -- :: StateIO ()
 
              mfdata <- gets mfData
-             put $ EventF g (unsafeCoerce appg :  fs) mfdata b c d peers  children g1
+             put $ EventF Nothing g (unsafeCoerce appg :  fs) mfdata b c d peers  children g1
 
 
              x <- runTrans g              !> "RUN g"
@@ -237,20 +245,20 @@ instance Monoid a => Monoid (TransientIO a) where
 -- | set the current closure and continuation for the current statement
 setEventCont ::   TransientIO a -> (a -> TransientIO b) -> StateIO ()
 setEventCont x f  = do
-   st@(EventF   _ fs d n  r applic  ch rc bs)  <- get
-   put $ EventF x ( unsafeCoerce f : fs) d n  r applic  ch rc bs
+   st@(EventF  e _ fs d n  r applic  ch rc bs)  <- get
+   put $ EventF e x ( unsafeCoerce f : fs) d n  r applic  ch rc bs
 
 
 -- | reset the closure and continuation. remove inner binds than the prevous computations may have stacked
 -- in the list of continuations.
 resetEventCont :: Maybe a -> StateIO ()
 resetEventCont mx =do
-   st@(EventF _ fs d n  r nr  ch rc bs)  <- get
+   st@(EventF e _ fs d n  r nr  ch rc bs)  <- get
 
    let f= \mx ->  case mx of
                        Nothing -> empty
                        Just x  -> (unsafeCoerce $ head fs)  x
-   put $ EventF  (f mx) ( tailsafe fs)d n  r nr  ch rc bs
+   put $ EventF e (f mx) ( tailsafe fs)d n  r nr  ch rc bs
    where
    tailsafe []=[]
    tailsafe (x:xs)= xs
@@ -306,6 +314,29 @@ oneThread comp=  do
    killChilds
    return r
 
+-- | add n threads to the limit of threads. If there is no limit, it set it
+addThreads' :: Int -> TransIO ()
+addThreads' n= do
+   msem <- gets maxThread
+   case msem of
+    Just sem -> liftIO $ modifyIORef sem $ \n' -> n + n'
+    Nothing  -> do
+        sem <- liftIO (newIORef n)
+        modify $ \ s -> s{maxThread= Just sem}
+
+-- | assure that at least there are n threads left
+addThreads n= do
+   msem <- gets maxThread
+   case msem of
+     Nothing -> return ()
+     Just sem ->  liftIO $ modifyIORef sem $ \n' -> if n' > n then n' else  n
+
+getNonUsedThreads :: TransIO (Maybe Int)
+getNonUsedThreads= do
+   msem <- gets maxThread
+   case msem of
+    Just sem -> liftIO $ Just <$> readIORef sem
+    Nothing -> return Nothing
 
 
 -- | The threads generated in the process passed as parameter will not be killed.
@@ -401,29 +432,37 @@ refSequence :: IORef Int
 refSequence= unsafePerformIO $ newp 0
 
 
+-- | async calls
 
-data Loop= Once | Loop | Multithread deriving Eq
+data StreamData a=  SMore a | SLast a | SDone | SError String deriving (Typeable, Show,Read)
+
 
 -- | variant of `parallel` that repeatedly executes the IO computation and kill the previously created childs
+--
+-- It is useful in single threaded problems where each event discard the computations spawned by
+-- previous events
 waitEvents ::   IO b -> TransientIO b
 waitEvents io= do
-   r <- parallel (Right <$> io)
+   SMore r <- parallel (SMore <$> io)
    killChilds
    return r
 
 -- | variant of + parallel` that execute the IO computation once, and kill the previous child threads
 async  ::  IO b -> TransientIO b
 async io= do
-   r <- parallel  (Left <$>io)
+   SLast r <- parallel  (SLast <$>io)
    killChilds
    return r
 
 -- | variant that spawn free threads. Since there is not thread control, this is faster
 spawn ::  IO b -> TransientIO b
-spawn io= freeThreads $ parallel (Right <$>io)
+spawn io= freeThreads $ do
+
+   SMore r <- parallel (SMore <$>io)
+   return r
 
 
-data EventValue= EventValue SData deriving Typeable
+--data EventValue= EventValue SData deriving Typeable
 
 -- |  return empty to the current thread and launch the IO action in a new thread and attaches the continuation after it.
 -- if the result of the action is `Right` the process is repeated. if not, it finish.
@@ -431,63 +470,69 @@ data EventValue= EventValue SData deriving Typeable
 -- If the maximum number of threads, set with `threads` has been reached  `parallel` perform
 -- the work sequentially, in the current thread.
 --
--- when finish, increase the counter of threads available, if there is a limitation of them.
-
-parallel  ::    IO (Either b b) -> TransientIO b
-parallel  ioaction= Transient$   do
+-- When `parallel`finish, increase the counter of threads available, if there is a limitation of them.
+--
+-- The behaviour of `parallel` depend on `StreamData` if `SMore`, `parallel` will excute again the
+-- IO action. with `SLast`, `SDone` and `SError`, `parallel` will execute the continuation and will stop.
+parallel  ::    IO (StreamData b) -> TransientIO (StreamData b)
+parallel  ioaction= Transient $   do
     cont <- getCont                    -- !> "PARALLEL"
-    mv <- getSessionData
-    case mv  of
-     Just (EventValue v)  -> do
-        delSessionData $ EventValue () -- !> "ISJUST "
-        return  $ Just $ unsafeCoerce v
+    case event cont of
+     j@(Just _) -> do
+        put cont{event=Nothing}
+        return $ unsafeCoerce j
      Nothing -> do
-        liftIO  $ loop cont    ioaction
+        liftIO $ forkIO $ loop cont ioaction
         return Nothing
 
-
-
-
-loop (cont'@(EventF x fs a b c d peers childs g))  rec  =  do
+-- executes the an IO action and then the continuation included in the first parameter
+loop :: EventF -> IO (StreamData t) -> IO ()
+loop (cont'@(EventF e x fs a b c d peers childs g))  rec  =  do
   chs <- liftIO $ newTVarIO []
-  let cont = EventF x fs a b c d (Just cont') chs g
-      iocont dat=
-          runStateT ( do
-             setSessionData . EventValue $ unsafeCoerce dat
-             runCont cont
-             ) cont
-             >> return ()
-      loop'= do
-        mdat <- rec
-        case mdat of
-         Left dat -> iocont dat
+  let cont = EventF e x fs a b c d (Just cont') chs g
+      iocont dat= do
+          runStateT (runCont cont) cont{event= Just $ unsafeCoerce dat}
+          return ()
 
-         Right dat -> do
-              forkMaybe cont $ iocont dat
-              loop'
+      -- execute the IO computation and then the closure-continuation
+      loop'= forkMaybe False cont $ do
+         mdat <- rec
+         case mdat of
+             se@(SError _) -> iocont se
+             SDone -> iocont SDone
+             last@(SLast _) -> iocont last
 
-  forkMaybe  cont loop'
+             more@(SMore _) -> do
+                  forkMaybe False cont $ iocont more
+                  loop'
+
+  loop'
+  return ()
   where
-      forkMaybe cont proc = do
-         dofork <- case maxThread cont of
+  forkMaybe True cont proc = forkMaybe' True cont proc
+  forkMaybe False cont proc = do
+     dofork <- case maxThread cont of
                   Nothing -> return True
                   Just sem -> do
                     dofork <- waitQSemB sem
                     if dofork then  return True else return False
+     forkMaybe' dofork cont proc
 
+  forkMaybe' dofork cont proc=
          if dofork
             then  do
                  th <- forkFinally1 proc $ \me -> do
-                         case me of -- !> "THREAD ENDED" of
+                         case me of -- !> "THREAD END" of
                           Left  e -> do
-                           when (fromException e /= Just ThreadKilled)$ liftIO $ print e
-                           killChildren  cont  !> "KILL RECEIVED" ++ (show $ unsafePerformIO myThreadId)
 
-                          Right _ -> do
+                             when (fromException e /= Just ThreadKilled)$ liftIO $ print e
+                             killChildren  cont  !> "KILL RECEIVED" ++ (show $ unsafePerformIO myThreadId)
+
+                          Right _ -> when(not $ freeTh cont') $ do -- if was not a free thread
                              --  if parent is alive
                              --  then remove himself from the list (with free)
                              --  and pass his active children to his parent
-                             return ()
+
                              th <- myThreadId
                              mparent <- free th cont
                              case mparent of
@@ -672,12 +717,17 @@ keep mx = do
    forkIO $ runTransient mx  >> return ()
    stay
 
+-- | same than `keep`but do not initiate the asynchronous keyboard input
+keepDebug :: TransIO () -> IO()
+keepDebug mx  = do
+   forkIO $ runTransient mx  >> return ()
+   stay
+
 -- | force the finalization of the main thread and thus, all the application
 exit :: TransientIO a
 exit= do
-  liftIO $ putStrLn "Tempus fugit: exit"
   liftIO $ putMVar rexit   True
-  return undefined
+  stop
 
 -- | alternative operator for maybe values. Used  in infix mode
 onNothing :: Monad m => m (Maybe b) -> m b -> m b
