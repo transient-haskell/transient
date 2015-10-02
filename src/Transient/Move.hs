@@ -99,20 +99,20 @@ forkTo node= do
 
 -- | executes an action in another node.
 -- All the previous actions from `listen` to this statement must have been logged
-callTo :: (Show a, Read a,Typeable a) => Node -> TransIO a -> TransIO a
+callTo :: Loggable a => Node -> TransIO a -> TransIO a
 callTo n p = streamFrom n (SMore <$> p) >>= \(SMore x) -> return x
 
 
 -- | synonymous of `callTo`
 -- all the previous actions from `listen` to this statement must have been logged
-runAt :: (Show a, Read a,Typeable a) => Node -> TransIO a -> TransIO a
+runAt :: Loggable a => Node -> TransIO a -> TransIO a
 runAt= callTo
 
 -- | `callTo` can stream data but can not inform the receiving process about the finalization. This call
 -- does it.
 --
 -- All the previous actions from `listen` to this statement must have been logged
-streamFrom :: (Show a, Read a,Typeable a) => Node -> TransIO (StreamData a) -> TransIO (StreamData a)
+streamFrom :: Loggable a => Node -> TransIO (StreamData a) -> TransIO (StreamData a)
 streamFrom node remoteProc= logged $ Transient $ do
       Log rec log fulLog <- getSessionData `onNothing` return (Log False [][])
       if rec
@@ -222,6 +222,7 @@ connectTo' bufSize hostname (PortNumber port) = do
 -- | Wait for messages and replay the rest of the monadic sequence with the log received.
 listen ::  Node ->  TransIO ()
 listen  (Node _  port _) = do
+   addThreads 1
    setSData $ Log False [] []
    Connection _ bufSize <- getSData <|> return (Connection Nothing 8192)
    sock <- liftIO $ withSocketsDo $ listenOn  port
@@ -371,7 +372,7 @@ addNodes   nodes=  liftIO . atomically $ do
 -- >    liftIO $ putStrLn r
 -- >    where
 -- >    createLocalNode n= createNode "localhost" (PortNumber n)
-clustered :: (Typeable a, Show a, Read a)  => TransIO a -> TransIO a
+clustered :: Loggable a  => TransIO a -> TransIO a
 clustered proc= logged $ do
      nodes <- step getNodes
      logged $ foldr (<|>) empty $ map (\node -> callTo node proc) nodes !> "fold"

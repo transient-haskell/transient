@@ -65,7 +65,7 @@ example2= do
     liftIO $ print r
 
 collectSample= threads 4 $ do
-    option "coll" "group sample: return results in a list"
+    option "coll" "collect sample: return results in a list"
     r <- collect 0 $ do
       x <- choose  [1,2,3]
       y <- choose  [4,5,6]

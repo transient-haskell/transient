@@ -13,7 +13,7 @@
 -----------------------------------------------------------------------------
 {-# LANGUAGE BangPatterns #-}
 module Transient.Indeterminism (
-choose, choose', collect, group --, found
+choose, choose', collect, group
 ) where
 
 import Transient.Base
@@ -26,6 +26,7 @@ import Data.Typeable
 import Control.Monad.State
 import Control.Concurrent.STM as STM
 import GHC.Conc
+import Data.Time.Clock
 
 
 -- | slurp a list of values and process them in parallel . To limit the number of processing
@@ -69,8 +70,8 @@ choose'  xs = foldl (<|>) empty $ map (\x -> parallel (return (SLast x)) >>= ret
 
 
 -- | execute a process and get the first n solutions.
--- if the process end without finding the number of solutions requested, it return the fond ones
--- if he find the number of solutions requested, it kill the threads of the process and return
+-- if the process end without finding the number of solutions requested, it return the found ones
+-- if he find the number of solutions requested, it kill the non-free threads of the process and return
 -- It works monitoring the solutions found and the number of active threads.
 -- If the first parameter is 0, collect will return all the results
 collect ::  Int -> TransientIO a -> TransientIO [a]
@@ -78,6 +79,7 @@ collect n search=  do
   rv <- liftIO $ atomically $ newTVar (0,[]) !> "NEWMVAR"
   endflag <- liftIO $ newTVarIO False
   st <- get
+  t <- liftIO $ getCurrentTime
   let any1 = do
         r <- search   !> "ANY"
         liftIO $ atomically $ do
@@ -85,14 +87,14 @@ collect n search=  do
             writeTVar  rv (n1+1,r:rs) !> "MODIFY"
         stop
 
-      detect= freeThreads $ do
+      monitor= freeThreads $ do
           xs <- async $ do
-             threadDelay 1000 -- to allow some activity before monitoring it
+--             threadDelay 1000 -- to allow some activity before monitoring it
              atomically $ do
                 (n',xs) <- readTVar rv
                 ns <- readTVar $ children st
-
-                if (n > 0 && n' >= n) ||  null ns  !> show (n,n') !> (show $ length ns)
+                t' <- unsafeIOToSTM getCurrentTime
+                if (n > 0 && n' >= n)  ||   (null ns && (diffUTCTime t t' > 1000))   !> show (n,n', length ns)
                   then return xs
                   else retry
 
@@ -102,5 +104,7 @@ collect n search=  do
           liftIO $ addThread st stnow
           return  xs
 
-  (any1 >> stop)  <|> detect
+  monitor <|> any1
+
+
 

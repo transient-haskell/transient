@@ -11,7 +11,7 @@
 -- |
 --
 -----------------------------------------------------------------------------
-{-# LANGUAGE  ExistentialQuantification #-}
+{-# LANGUAGE  ExistentialQuantification, FlexibleInstances, UndecidableInstances #-}
 module Transient.Logged  where
 
 import Data.Typeable
@@ -40,6 +40,8 @@ import Control.Monad.IO.Class
 --instance Read IDynamic where
 --  readsPrec n str= map (\(x,s) -> (IDyns x,s)) $ readsPrec n str
 
+class (Show a, Read a,Typeable a) => Loggable a
+instance (Show a, Read a,Typeable a) => Loggable a
 
 fromIDyn :: (Read a, Show a, Typeable a) => IDynamic -> a
 fromIDyn (IDynamic x)= unsafeCoerce x

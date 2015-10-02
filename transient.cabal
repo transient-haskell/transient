@@ -21,7 +21,7 @@ library
     build-depends: base -any, mtl -any, random -any, containers -any,
                    directory -any, filepath -any, stm -any, HTTP -any, network -any,
                    transformers -any, process -any, network-info -any,
-                   bytestring -any, old-time -any
+                   bytestring -any, time -any
     exposed-modules: Transient.Indeterminism Transient.Base
                      Transient.EVars Transient.Backtrack Transient.Move Transient.Logged
                      Transient.Stream.Resource

@@ -37,11 +37,14 @@ import           Data.Maybe
 import           GHC.Conc
 import           Data.List
 import           Data.IORef
+import           System.Environment
 
 
 {-# INLINE (!>) #-}
 (!>) =  const . id -- flip trace
 infixr 0 !>
+(!!>) =   flip trace
+infixr 0 !!>
 
 data TransIO  x = Transient  {runTrans :: StateT EventF IO (Maybe x)}
 type SData= ()
@@ -447,6 +450,12 @@ waitEvents io= do
    killChilds
    return r
 
+-- Multithreaded version of `waitEvents` that do not kill the computations spawned by previous events
+waitEvents' ::   IO b -> TransientIO b
+waitEvents' io= do
+   SMore r <- parallel (SMore <$> io)
+   return r
+
 -- | variant of + parallel` that execute the IO computation once, and kill the previous child threads
 async  ::  IO b -> TransientIO b
 async io= do
@@ -462,7 +471,8 @@ spawn io= freeThreads $ do
    return r
 
 
---data EventValue= EventValue SData deriving Typeable
+
+
 
 -- |  return empty to the current thread and launch the IO action in a new thread and attaches the continuation after it.
 -- if the result of the action is `Right` the process is repeated. if not, it finish.
@@ -482,7 +492,7 @@ parallel  ioaction= Transient $   do
         put cont{event=Nothing}
         return $ unsafeCoerce j
      Nothing -> do
-        liftIO $ forkIO $ loop cont ioaction
+        liftIO $ loop cont ioaction
         return Nothing
 
 -- executes the an IO action and then the continuation included in the first parameter
@@ -690,12 +700,17 @@ inputLoop=  do
 
     inputLoop'= do
            r<- getLine
-           if r=="end" then putMVar rexit () else do
-              let rs = breakSlash [] r
-              mapM_ (\ r -> do threadDelay 1000
-                               atomically . writeTVar  getLineRef $ Just r) rs
-              inputLoop'
+           processLine r
+           inputLoop'
 
+processLine r= do
+--   when (r=="end") $ putMVar rexit ()
+   let rs = breakSlash [] r
+   mapM_ (\ r -> if (r=="end") then putMVar rexit () else do
+                    threadDelay 1000
+                    atomically . writeTVar  getLineRef $ Just r) rs
+
+    where
     breakSlash :: [String] -> String -> [String]
     breakSlash s ""= s
     breakSlash res s=
@@ -711,15 +726,23 @@ rexit= unsafePerformIO newEmptyMVar
 stay=  takeMVar rexit
 
 -- | keep the main thread running, initiate the asynchronous keyboard input and execute
--- the transient computation.
+-- the transient computation. It also read a slash separated list of string that are interpreted by
+-- `option` and `input` as if they were entered by the keyboard
 keep mx = do
    forkIO $ inputLoop
    forkIO $ runTransient mx  >> return ()
+   threadDelay 100000
+   args <- getArgs
+   let path = filter (\arg -> arg !! 0 == '/') args
+   when (not (null path)) $ do
+        putStr "Executing: " >> print (head path)
+        processLine $  head path
    stay
 
--- | same than `keep`but do not initiate the asynchronous keyboard input
-keepDebug :: TransIO () -> IO()
-keepDebug mx  = do
+-- | same than `keep`but do not initiate the asynchronous keyboard input.
+-- Useful for debugging
+keep' :: TransIO () -> IO()
+keep' mx  = do
    forkIO $ runTransient mx  >> return ()
    stay
 
