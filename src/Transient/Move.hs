@@ -136,7 +136,7 @@ streamFrom node remoteProc= logged $ Transient $ do
             Connection _ bufSize <- getSessionData `onNothing` return (Connection Nothing 8192)
             h <- assign bufSize node
             liftIO $ hSetBuffering h LineBuffering
-            liftIO $ hPutStrLn h ( show $ SMore $ reverse fulLog) {- >> hFlush h -} !> "CALLTO LOCAL" -- send "++ show  log
+            liftIO $ hPutStrLn h ( show $ SLast $ reverse fulLog) {- >> hFlush h -} !> "CALLTO LOCAL" -- send "++ show  log
 
 
             let log'= WaitRemote:tail log
@@ -237,7 +237,7 @@ listen  (Node _  port _) = do
 
    mlog <- parallel $ readHandler h
 
-   case  mlog of
+   case  mlog  of
          SError e -> do
              liftIO $ do
                 hClose h
@@ -258,7 +258,7 @@ listen  (Node _  port _) = do
 
 -- | init a Transient process in a interactive as well as in a replay mode.
 -- It is intended for twin processes that interact among them in different nodes.
-beamInit :: Node  -> TransIO a -> IO b
+beamInit :: Node  -> TransIO a -> IO a
 beamInit  node program=  keep $ do
     listen  node   <|> return ()
     program

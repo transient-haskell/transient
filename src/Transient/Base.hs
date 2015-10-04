@@ -728,6 +728,7 @@ stay=  takeMVar rexit
 -- | keep the main thread running, initiate the asynchronous keyboard input and execute
 -- the transient computation. It also read a slash separated list of string that are interpreted by
 -- `option` and `input` as if they were entered by the keyboard
+keep :: TransIO a -> IO a
 keep mx = do
    forkIO $ inputLoop
    forkIO $ runTransient mx  >> return ()
@@ -741,7 +742,7 @@ keep mx = do
 
 -- | same than `keep`but do not initiate the asynchronous keyboard input.
 -- Useful for debugging
-keep' :: TransIO () -> IO()
+keep' :: TransIO a -> IO a
 keep' mx  = do
    forkIO $ runTransient mx  >> return ()
    stay

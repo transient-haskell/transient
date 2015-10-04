@@ -1,61 +1,53 @@
-{-# LANGUAGE MonadComprehensions, TypeSynonymInstances, ExistentialQuantification #-}
+{-# LANGUAGE  ExistentialQuantification, DeriveDataTypeable #-}
+
+module Main where
 import Transient.Base
 import Transient.Move
-import Transient.Indeterminism
 import Transient.Logged
-import Network
-import Data.IORef
+import Transient.DDS
 import Control.Applicative
 import System.Random
 import Control.Monad.IO.Class
-import GHC.Conc
+
 import System.IO
 import Control.Monad
 import Data.Monoid
+
+import Data.Typeable
+import Data.List
+import Control.Exception
+--import System.Environment
 import System.Directory
 
-data CloudArray a= Loggable a => CloudArray (TransIO [Elem a])
-data Elem a= Ref Node Path | Local [a]
-en caso de fallo de Node, se lanza un clustered en busca del path
-   si solo uno lo tiene, se copia a otro
-   se pone ese nodo de referencia en Ref
+main= do
+ do
+   createDirectoryIfMissing True "DDS"
+   let numNodes= 5
+       ports= [2000.. 2000+ numNodes -1]
+       createLocalNode p= createNode "localhost"  p
+       nodes= map createLocalNode ports
+--   args <- getArgs
+--   let ports= [ 2000,  2001]
+--
+--   let [port1, port2]= if null args  then ports else reverse ports
+--       local= "localhost"
+--   print [port1, port2]
+--   let mynode= createNode local port1
+--   let node = createNode local port2
+--   let nodes= [mynode,node]
+--   putStrl "press ENTER to start"
+--   getChar
 
-logging en fichero para recovery
-como a¤adir al procesamiento remoto una parte del paso de reduce?
-
-runAt node x >>= runAt node y ->  runAt node x>>=y
-
-
-type Path=String
-
-instance Functor  CloudArray where
-   fmap f (CloudArray mx)= CloudArray $ do
-        xs <- mx
-        let rss = map (process f) xs
-        return rss
-
-process f (Local xs)= Local $ return $ map f xs
-process f (Ref node path)= Ref node $ runAt node $ f1 path
-    where
-    f1 path=liftIO $ do
-        str <- readFile path
-        let cont= read str
-        temp <- getTemporaryDirectory
-        writeFile temp $ show $ fmap f cont
-
-clusterPartition :: Loggable b => (a -> b) ->  [a] -> TransIO [b]
-clusterPartition  f xs=do
-   nodes <- getNodes
-   let size= length xs `div` length nodes
-   let chunks = partition size xs
-   foldl (<>) mempty $ [ runAt node $ return $ map f chunk| (node,chunk) <- zip nodes chunks]
+   addNodes nodes
+   keep $  do
+        foldl (<|>) empty (map listen nodes) <|> return()
 
 
-partition :: Int -> [e] -> [[e]]
-partition i ls = map (take i) (build (splitter ls)) where
-  splitter :: [e] -> ([e] -> a -> a) -> a -> a
-  splitter [] _ n = n
-  splitter l c n  = l `c` splitter (drop i l) c n
+        let cdata = distribute [1..10000  :: Int]
 
-build :: ((a -> [a] -> [a]) -> [a] -> [a]) -> [a]
-build g = g (:) []
+        let cdata' = cmap (*2) cdata
+        r <- reduce (+) cdata'
+        liftIO $ print r
+        exit
+
+
