@@ -6,14 +6,13 @@ import Transient.Move
 import Transient.Logged
 import Transient.DDS
 import Control.Applicative
-import System.Random
 import Control.Monad.IO.Class
 
-import System.IO
-import Control.Monad
-import Data.Monoid
 
-import Data.Typeable
+
+
+
+
 import Data.List
 import Control.Exception
 --import System.Environment
@@ -40,8 +39,7 @@ main= do
 
    addNodes nodes
    keep $  do
-        foldl (<|>) empty (map listen nodes) <|> return()
-
+        runNodes nodes
 
         let cdata = distribute [1..10000  :: Int]
 
@@ -50,4 +48,5 @@ main= do
         liftIO $ print r
         exit
 
+runNodes nodes= foldl (<|>) empty (map listen nodes) <|> return()
 
