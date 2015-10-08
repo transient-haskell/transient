@@ -13,7 +13,7 @@
 -----------------------------------------------------------------------------
 {-# LANGUAGE BangPatterns #-}
 module Transient.Indeterminism (
-choose, choose', collect, group
+choose, choose', collect, collect', group, groupByTime
 ) where
 
 import Transient.Base
@@ -56,6 +56,18 @@ group num proc =  do
       then stop
       else liftIO $ atomicModifyIORef v $ \(n,xs) ->  ((0,[]),xs)
 
+groupByTime :: Integer -> TransientIO a -> TransientIO [a]
+groupByTime time proc =  do
+    v  <- liftIO $ newIORef (0,[])
+    t  <- liftIO getCurrentTime
+    x  <- proc
+    n  <- liftIO $ atomicModifyIORef' v $ \(n,xs) -> let !n'=n +1 in ((n', x:xs),n')
+    t' <- liftIO getCurrentTime
+    if diffUTCTime t' t < fromIntegral time
+      then stop
+      else liftIO $ atomicModifyIORef v $ \(n,xs) ->  ((0,[]),xs)
+
+
 -- | alternative definition with more parallelism
 choose' :: [a] -> TransientIO a
 choose'  xs = foldl (<|>) empty $ map (\x -> parallel (return (SLast x)) >>= return . toData) xs
@@ -75,11 +87,16 @@ choose'  xs = foldl (<|>) empty $ map (\x -> parallel (return (SLast x)) >>= ret
 -- It works monitoring the solutions found and the number of active threads.
 -- If the first parameter is 0, collect will return all the results
 collect ::  Int -> TransientIO a -> TransientIO [a]
-collect n search=  do
+collect n = collect' n 1000 0
+
+-- | search also between two time intervals. If the first interval has passed and there is no result, it stop
+-- after the second interval, it stop unconditionally. It stops as soon as it has enoug result.
+collect' :: Int -> NominalDiffTime -> NominalDiffTime -> TransientIO a -> TransientIO [a]
+collect' n t1 t2 search=  do
   rv <- liftIO $ atomically $ newTVar (0,[]) !> "NEWMVAR"
   endflag <- liftIO $ newTVarIO False
   st <- get
-  t <- liftIO $ getCurrentTime
+  t <- liftIO getCurrentTime
   let any1 = do
         r <- search   !> "ANY"
         liftIO $ atomically $ do
@@ -88,15 +105,15 @@ collect n search=  do
         stop
 
       monitor= freeThreads $ do
-          xs <- async $ do
---             threadDelay 1000 -- to allow some activity before monitoring it
-             atomically $ do
-                (n',xs) <- readTVar rv
-                ns <- readTVar $ children st
-                t' <- unsafeIOToSTM getCurrentTime
-                if (n > 0 && n' >= n)  ||   (null ns && (diffUTCTime t t' > 1000))   !> show (n,n', length ns)
-                  then return xs
-                  else retry
+          xs <- async $ atomically $
+                          do (n', xs) <- readTVar rv
+                             ns <- readTVar $ children st
+                             t' <- unsafeIOToSTM getCurrentTime
+                             if
+                               (n > 0 && n' >= n) ||
+                                 (null ns && (diffUTCTime t' t > t1)) || -- !> show (n, n', length ns)
+                                 (t2 > 0 && diffUTCTime t' t > t2)
+                               then return xs else retry
 
           th <- liftIO $ myThreadId !> "KILL"
           stnow <- get
@@ -105,6 +122,7 @@ collect n search=  do
           return  xs
 
   monitor <|> any1
+
 
 
 

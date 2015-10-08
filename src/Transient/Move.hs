@@ -45,10 +45,7 @@ import qualified Network.BSD as BSD
 
 import qualified Data.ByteString.Char8 as BS
 import System.IO
---import Foreign.Ptr
---import Foreign.Storable
---import Data.ByteString.Internal
---import Foreign.ForeignPtr.Safe
+
 
 import Control.Concurrent
 
@@ -64,13 +61,14 @@ installService (node@(Node _ port _)) servport package= do
          runCommand $ "git clone "++ package
          runCommand $ "cd "++ packagename
          runCommand "cabal install"
-         createProcess $ shell $ "./dist/build/"++ packagename++"/"++packagename
+         return ()
+     createProcess $ shell $ "./dist/build/"++ packagename++"/"++packagename
                                        ++ " " ++ show port
-         return()
+     return()
   where
   name path=
      let x= dropWhile (/= '/') path
-     in if x== "" then tail path else name $ tail    x
+     in if x== "" then tail path else name $ tail x
 
 -- | continue the execution in a new node
 -- all the previous actions from `listen` to this statement must have been logged
@@ -339,10 +337,17 @@ getMyNode= Transient $ liftIO $ readIORef myNode
 getNodes :: MonadIO m => m [Node]
 getNodes  = liftIO $ atomically $ readTVar  nodeList
 
+addNodes :: MonadIO m => [Node] -> m ()
 addNodes   nodes=  liftIO . atomically $ do
   prevnodes <- readTVar nodeList
   writeTVar nodeList $ nub $ nodes ++ prevnodes
 
+shuffleNodes :: MonadIO m => m [Node]
+shuffleNodes=  liftIO . atomically $ do
+  nodes <- readTVar nodeList
+  let nodes'= tail nodes ++ [head nodes]
+  writeTVar nodeList nodes'
+  return nodes'
 
 --getInterfaces :: TransIO TransIO HostName
 --getInterfaces= do
@@ -381,6 +386,12 @@ clustered proc= logged $ do
 clustered' proc= logged $ do
      nodes <-  getNodes
      logged $ mapM (\node -> callTo' node proc) $ nodes
+
+-- A variant of clustered that wait for all the responses and `mappend` them
+mclustered :: (Monoid a, Loggable a)  => TransIO a -> TransIO a
+mclustered proc= logged $ do
+     nodes <- step getNodes
+     logged $ foldr (<>) mempty $ map (\node -> callTo node proc) nodes !> "fold"
 
 -- | Initiates the transient monad, initialize it as a new node (first parameter) and connect it
 -- to an existing node (second parameter).

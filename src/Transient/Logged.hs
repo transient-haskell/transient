@@ -56,7 +56,7 @@ logged= step
 
 
 
--- | write the result of the computation in the log and return it.
+-- | write the result of the computation in  the log and return it.
 -- but if there is data in the internal log, it read the data from the log and
 -- do not execute the computation.
 --

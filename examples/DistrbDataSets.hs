@@ -1,17 +1,16 @@
+{-# LANGUAGE  ExistentialQuantification, DeriveDataTypeable #-}
 
-
-module Main where
+module DistrbDataSets where
 import Transient.Base
 import Transient.Move
-import Transient.Logged
+import Transient.Indeterminism
 import Transient.DDS
 import Control.Applicative
 import Control.Monad.IO.Class
-import Data.List
-import Control.Exception
---import System.Environment
-import System.Directory
+import Data.Monoid
 
+-- Calculates separately the number od odd and even numbers in a list using
+-- Distributed Data Sets (DDS's)
 main= do
      let numNodes = 5
          ports = [2000 .. 2000 + numNodes - 1]
@@ -35,4 +34,7 @@ sumIt :: (Int,Int) -> (Int,Int) -> (Int,Int)
 sumIt (o,e) (o',e')= (o+o',e+e')
 
 runNodes nodes= foldl (<|>) empty (map listen nodes) <|> return()
+
+
+
 
