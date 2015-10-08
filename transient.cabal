@@ -1,5 +1,5 @@
 name: transient
-version: 0.1.0.7
+version: 0.1.0.8
 cabal-version: >=1.10
 build-type: Simple
 license: GPL-3
