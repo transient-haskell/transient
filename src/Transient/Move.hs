@@ -13,8 +13,9 @@
 {-# LANGUAGE DeriveDataTypeable , ExistentialQuantification
     ,ScopedTypeVariables, StandaloneDeriving, RecordWildCards #-}
 module Transient.Move where
-import Transient.Base
+import Transient.Base hiding (onNothing)
 import Transient.Logged
+import Transient.EVars
 import Data.Typeable
 import Control.Applicative
 import Network
@@ -26,8 +27,8 @@ import System.IO
 import Control.Exception
 import Data.Maybe
 import Unsafe.Coerce
-import System.Process
-import System.Directory
+
+--import System.Directory
 import Control.Monad
 import Network.Info
 import System.IO.Unsafe
@@ -43,32 +44,14 @@ import qualified Network.Socket as NS
 import qualified Network.BSD as BSD
 
 
-import qualified Data.ByteString.Char8 as BS
+import qualified Data.ByteString.Lazy.Char8 as BS
 import System.IO
-
 
 import Control.Concurrent
 
+import Data.TCache
+import Data.TCache.DefaultPersistence
 
--- | install in a remote node a haskell package with an executable transient service initialized with `listen`
--- the package, the git repository and the main exectable must have the same name
-installService (node@(Node _ port _)) servport package= do
-  beamTo node
-  liftIO $ do
-     let packagename= name package
-     exist <- doesDirectoryExist  packagename
-     when (not exist) $ do
-         runCommand $ "git clone "++ package
-         runCommand $ "cd "++ packagename
-         runCommand "cabal install"
-         return ()
-     createProcess $ shell $ "./dist/build/"++ packagename++"/"++packagename
-                                       ++ " " ++ show port
-     return()
-  where
-  name path=
-     let x= dropWhile (/= '/') path
-     in if x== "" then tail path else name $ tail x
 
 -- | continue the execution in a new node
 -- all the previous actions from `listen` to this statement must have been logged
@@ -76,21 +59,24 @@ beamTo :: Node -> TransientIO ()
 beamTo node =  do
   Log rec log _ <- getSData <|> return (Log False [][])
   if rec then return () else do
-      Connection _ bufSize <- getSData <|> return (Connection Nothing 8192)
+      Connection{bufferSize=bufSize}
+        <- getSData
+              <|> return (Connection beamToErr Nothing 8192 beamToErr)
       h <-  assign bufSize node
       liftIO $ hPutStrLn h (show $ SMore $ reverse log) >> hFlush h
       release node h
       let log'= WaitRemote: log
       setSData $ Log rec log' log'
       stop
-
+  where
+  beamToErr= error "beamTo does not set some necessary params use setMyNode and listen"
 -- | execute in the remote node a process with the same execution state
 -- all the previous actions from `listen` to this statement must have been logged
 forkTo  :: Node -> TransientIO ()
 forkTo node= do
   Log rec log _<- getSData <|> return (Log False [][])
   if rec then return () else do
-      Connection _ bufSize <- getSData <|> return (Connection Nothing 8192)
+      Connection {bufferSize=bufSize}  <- getSData <|> return (Connection undefined Nothing 8192 undefined)
       h <-assign bufSize node
       liftIO $ hPutStrLn h (show $ SMore $ reverse log)  >> hFlush h
       release node h
@@ -117,7 +103,7 @@ streamFrom node remoteProc= logged $ Transient $ do
          then
           runTrans $ do
             rnum <- liftIO $ newMVar (0 :: Int)
-            Connection (Just (_, h, sock, blocked)) _ <- getSData  <|> error "callTo: no hander"
+            Connection _(Just (ConnectionData _ h sock blocked )) _ _ <- getSData  <|> error "callTo: no hander"
             r <- remoteProc                       !> "executing remoteProc" !> "CALLTO REMOTE" -- LOg="++ show fulLog
             n <- liftIO $ do
 --                modifyMVar_ rnum $ \n -> return (n+1)
@@ -131,7 +117,7 @@ streamFrom node remoteProc= logged $ Transient $ do
             stop
 
          else do
-            Connection _ bufSize <- getSessionData `onNothing` return (Connection Nothing 8192)
+            Connection _ _ bufSize _<- getSessionData `onNothing` return (Connection undefined Nothing 8192 undefined)
             h <- assign bufSize node
             liftIO $ hSetBuffering h LineBuffering
             liftIO $ hPutStrLn h ( show $ SLast $ reverse fulLog) {- >> hFlush h -} !> "CALLTO LOCAL" -- send "++ show  log
@@ -165,6 +151,7 @@ streamFrom node remoteProc= logged $ Transient $ do
 
 
 -- | A connectionless version of callTo for long running remote calls
+-- myNode should be set with `setMyNode`
 callTo' :: (Show a, Read a,Typeable a) => Node -> TransIO a -> TransIO a
 callTo' node remoteProc= logged $ do
     mynode <- logged getMyNode
@@ -175,16 +162,28 @@ callTo' node remoteProc= logged $ do
 
 type Blocked= MVar ()
 type BuffSize = Int
-data Connection= Connection (Maybe(PortID, Handle, Socket, Blocked)) BuffSize
+data ConnectionData= ConnectionData{port :: PortID
+                                   ,handle :: Handle
+                                   ,socket ::Socket
+                                   ,blocked :: Blocked}
+
+
+
+
+data Connection= Connection{myNode :: DBRef MyNode
+                           ,connData :: (Maybe(ConnectionData))
+                           ,bufferSize ::BuffSize
+                           ,comEvent :: EVar(Node,Service)}
                   deriving Typeable
 
 setBufSize :: Int -> TransIO ()
 setBufSize size= Transient $ do
-   Connection c _ <- getSessionData `onNothing` return (Connection Nothing  size)
-   setSessionData $ Connection c size
+   Connection n c _ ev <- getSessionData `onNothing`
+              return (Connection (error "myNode not set: use setMyNode") Nothing  size (error "accessing network events out of listen"))
+   setSessionData $ Connection n c size ev
    return $ Just ()
-
-
+getBuffSize=
+  (do Connection _ _ bufSize _ <- getSData ; return bufSize) <|> return  8192
 readHandler h= do
     line <- hGetLine h -- {-  readIORef leftover <> -} unsafeInterleaveIO (hGetLine h)
 --    liftIO $ print (line, show h)
@@ -219,17 +218,22 @@ connectTo' bufSize hostname (PortNumber port) = do
 
 -- | Wait for messages and replay the rest of the monadic sequence with the log received.
 listen ::  Node ->  TransIO ()
-listen  (Node _  port _) = do
+listen  (Node _  port _ _) = do
    addThreads 1
+
    setSData $ Log False [] []
-   Connection _ bufSize <- getSData <|> return (Connection Nothing 8192)
+
+   Connection node _ bufSize events
+        <- getSData
+              <|>  do events <- newEVar
+                      return (Connection (error "nyNode not set: use setMyNode") Nothing 8192 events)
    sock <- liftIO $ withSocketsDo $ listenOn  port
    liftIO $ do NS.setSocketOption sock NS.RecvBuffer bufSize
                NS.setSocketOption sock NS.SendBuffer bufSize
    SMore(h,host,port1) <- parallel $ SMore <$> accept sock
                           `catch` (\(e::SomeException) -> print "socket exception" >> sClose sock >> throw e)
 
-   setSData $ Connection (Just (port, h, sock, unsafePerformIO $ newMVar ())) bufSize -- !> "setdata port=" ++ show port
+   setSData $ Connection node (Just (ConnectionData port h sock (unsafePerformIO $ newMVar ()))) bufSize events -- !> "setdata port=" ++ show port
 
    liftIO $  hSetBuffering h LineBuffering -- !> "LISTEN in "++ show (h,host,port1)
 
@@ -249,20 +253,12 @@ listen  (Node _  port _) = do
 
 
 
-
-
-
-
-
 -- | init a Transient process in a interactive as well as in a replay mode.
 -- It is intended for twin processes that interact among them in different nodes.
 beamInit :: Node  -> TransIO a -> IO a
 beamInit  node program=  keep $ do
     listen  node   <|> return ()
     program
-
-
-
 
 instance Read PortNumber where
   readsPrec n str= let [(n,s)]=   readsPrec n str in [(fromIntegral n,s)]
@@ -274,10 +270,18 @@ deriving instance Typeable PortID
 
 
 data Pool=  Pool{free :: [Handle], pending :: Int}
+type Package= String
+type Program= String
+type Service= (Package, Program, Int)
 
-data Node= Node{host :: HostName, port :: PortID, connection :: IORef Pool} deriving Typeable
+data Node= Node{ nodeHost   :: HostName
+               , nodePort   :: PortID
+               , connection :: IORef Pool
+               , services   :: [Service]}
+               deriving Typeable
 
-release (Node h p rpool) hand= liftIO $ do
+
+release (Node h p rpool _) hand= liftIO $ do
   mhs <- atomicModifyIORef rpool $
             \(Pool hs pend) ->
                if pend==0
@@ -288,7 +292,7 @@ release (Node h p rpool) hand= liftIO $ do
     Just hs  -> mapM_ hClose hs
 
 
-assign bufSize (Node h p pool)= liftIO $ do
+assign bufSize (Node h p  pool _)= liftIO $ do
     mh <- atomicModifyIORef pool $
             \(Pool hs p) ->  if null hs then (Pool hs p, Nothing)
                                         else (Pool (tail hs) p, Just(head hs)) !> "REUSED"
@@ -310,29 +314,50 @@ emptyPool :: MonadIO m => m (IORef Pool)
 emptyPool= liftIO $ newIORef $ Pool [] 0
 
 createNode :: HostName -> Integer -> Node
-createNode h p= Node h ( PortNumber $ fromInteger p) (unsafePerformIO emptyPool)
+createNode h p= Node h ( PortNumber $ fromInteger p) (unsafePerformIO emptyPool) []
 
 instance Eq Node where
-    Node h p _ ==Node h' p' _= h==h' && p==p'
+    Node h p _ _ ==Node h' p' _ _= h==h' && p==p'
 
-instance Show Node where show (Node h p _)= show (h,p)
+instance Show Node where show (Node h p _ servs)= show (h,p,servs)
 
 instance Read Node where
      readsPrec _ s=
-          let [((h,p),s')]= readsPrec 0 s
-          in [(Node h p empty,s')]
+          let [((h,p,ss),s')]= readsPrec 0 s
+          in [(Node h p empty ss,s')]
           where
           empty= unsafePerformIO  emptyPool
+
+newtype MyNode= MyNode Node deriving(Read,Show,Typeable)
+instance Indexable MyNode where key (MyNode Node{nodePort=port}) =  "MyNode "++ show port
+
+instance Serializable MyNode where
+    serialize= BS.pack . show
+    deserialize= read . BS.unpack
 
 nodeList :: TVar  [Node]
 nodeList = unsafePerformIO $ newTVarIO []
 
 deriving instance Ord PortID
 
-myNode= unsafePerformIO $ newIORef Nothing
+--myNode :: Int -> DBRef  MyNode
+--myNode= getDBRef $ key $ MyNode undefined
 
-setMyNode node= liftIO $ writeIORef  myNode $ Just node
-getMyNode= Transient $ liftIO $ readIORef myNode
+
+
+getMyNode :: TransIO Node
+getMyNode = do
+    Connection{myNode=rnode} <- getSData <|> error "getMyNode: Node not set. Use setMynode"
+    MyNode node <- liftIO $ atomically $ readDBRef rnode `onNothing` error "getMyNode: Node not set. Use setMynode"
+    return node
+
+setMyNode :: Node -> TransIO ()
+setMyNode node= do
+        events <- newEVar
+        rnode <- liftIO $ atomically $ newDBRef $ MyNode node
+        let conn= Connection rnode Nothing 8192 events
+        setSData conn
+        return ()
 
 getNodes :: MonadIO m => m [Node]
 getNodes  = liftIO $ atomically $ readTVar  nodeList
@@ -399,7 +424,7 @@ mclustered proc= logged $ do
 -- all the nodes connected to him. this new connected node will receive the list of nodes
 -- the local list of nodes then is updated with this list. it can be retrieved with `getNodes`
 connect ::  Node ->  Node -> TransientIO ()
-connect  (node@(Node h port _))  remotenode=  do
+connect  (node@(Node h port _ _))  remotenode=  do
     listen node <|> return ()
     logged $ do
         logged $ do

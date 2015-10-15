@@ -1,5 +1,5 @@
 {-# LANGUAGE ScopedTypeVariables, DeriveDataTypeable, MonadComprehensions  #-}
-module MainStreamFiles where
+module Main where
 import Transient.Base
 import Transient.Stream.Resource
 import Data.Char

@@ -1,6 +1,6 @@
 {-# LANGUAGE  ExistentialQuantification, DeriveDataTypeable #-}
 
-module Transient.DDS where
+module Transient.DDS(distribute, cmap, reduce) where
 import Transient.Base
 import Transient.Move
 import Transient.Logged
@@ -22,7 +22,7 @@ import Data.Time.Clock
 
 import Data.TCache
 import Data.TCache.Defs
---import Data.TCache.DefaultPersistence
+
 import Data.ByteString.Lazy.Char8 (pack,unpack)
 import Control.Monad.STM
 
@@ -42,15 +42,6 @@ instance Loggable a => IResource (Partition a) where
         else defaultReadByKey k >>= return . fmap ( read . unpack)
     writeResource (s@(Part _ _ save _))= if not save then return ()
         else defaultWrite (defPath s ++ key s) (pack$ show s)
---instance Loggable a => Serializable (Partition a) where
---    serialize = pack . show
---    deserialize = read . unpack
---    setPersist (Part _ _ persist _) =
---      Just Persist
---        {readByKey= if persist then defaultReadByKey else const $ return Nothing
---        ,write    =  if persist then defaultWrite else const $  const $ return ()
---        ,delete   = defaultDelete}
-
 
 instance Loggable a => Monoid (DDS a) where
    mempty= DDS mempty

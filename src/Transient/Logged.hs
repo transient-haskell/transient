@@ -21,15 +21,24 @@ import Control.Applicative
 import Control.Monad.IO.Class
 
 
---newtype Logged m a =  Logged {runLogged :: m a}
---
+newtype TransLIO  a =  TransLIO {runLogged :: TransIO a}
+
 --data RLogged= forall a.(Read a, Show a) => RLogged  a
---
---instance Monad m => Monad (Logged m)  where
---   return  x=  Logged $ return x
---   Logged x >>= f =  Logged $ do
---         r <- x
---         runLogged $ f r
+
+instance Functor TransLIO  where
+--   fmap f mx=  mx >>= \(TransLIO x) ->  TransLIO (f x)
+instance Applicative TransLIO where
+--   pure= return
+--   f <*> g= TransLIO $ do
+--         x <- f
+--         y <- g
+--         return $ x y
+
+instance  Monad TransLIO  where
+   return  x=  TransLIO $ return x
+   TransLIO x >>= f =  TransLIO $  do
+         r <- x
+         runLogged $ f r
 
 --data IDynamic= IDyns String | forall a.(Read a, Show a,Typeable a) => IDynamic a
 
