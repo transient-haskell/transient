@@ -56,6 +56,7 @@ group num proc =  do
       then stop
       else liftIO $ atomicModifyIORef v $ \(n,xs) ->  ((0,[]),xs)
 
+-- | group result for a time interval, measured with `diffUTCTime
 groupByTime :: Integer -> TransientIO a -> TransientIO [a]
 groupByTime time proc =  do
     v  <- liftIO $ newIORef (0,[])
@@ -89,8 +90,10 @@ choose'  xs = foldl (<|>) empty $ map (\x -> parallel (return (SLast x)) >>= ret
 collect ::  Int -> TransientIO a -> TransientIO [a]
 collect n = collect' n 1000 0
 
--- | search also between two time intervals. If the first interval has passed and there is no result, it stop
--- after the second interval, it stop unconditionally. It stops as soon as it has enoug result.
+-- | search also between two time intervals. If the first interval has passed and there is no result,
+--it stops.
+-- After the second interval, it stop unconditionally and return the current results.
+-- It also stops as soon as there are enough results.
 collect' :: Int -> NominalDiffTime -> NominalDiffTime -> TransientIO a -> TransientIO [a]
 collect' n t1 t2 search=  do
   rv <- liftIO $ atomically $ newTVar (0,[]) !> "NEWMVAR"

@@ -21,67 +21,13 @@ import Control.Concurrent (threadDelay)
 import Data.Typeable
 import Data.IORef
 
--- some tests for distributed computing
-
---main= do
---      let port1 = PortNumber 2000
---          port2 = PortNumber 2001
---
---
---      keep $  do
---        conn port1 port1 <|> conn port2 port1
---
---        examples' host port2
---      where
---      host= "localhost"
-----      delay = liftIO $ threadDelay 1000000
---      conn p p'=  connect host p host p'
---
 
 
 
-main = do
-   args <- getArgs
-   let ports= [ 2000,  2001]
-
-   let [port1, port2]= if null args  then ports else reverse ports
-       local= "localhost"
-   print [port1, port2]
-   let mynode= createNode local port1
-   let node = createNode local port2
-   addNodes [mynode,node]
-   beamInit  mynode $ do
-        logged $ option "call" "call"
-
-
- --       (logged $ async $ return (1:: Int))  <|> (logged $ async $ return 2)
-        rs <- streamFrom node $ do
-                   liftIO $ print "hello"
-                   x <-  choose[1..5] :: TransIO Int
-                   liftIO $ putStrLn $ "remote creating chunk of" ++ show x
-                   return  . SMore $ replicate 10 x
-
-
-        liftIO $ putStrLn $ "packet arrived of "++ show rs
-
---       r <-   callTo node [(x,y)| x <- choose[1..4], y <- choose[1..(4 ::Int)] , x-y == 1]
---
---       liftIO $ print r
-
---      roundtrip 5 node   <|> roundtrip 5 node
---      where
---      roundtrip 0 _ = return ()
---      roundtrip n (node@(Node _ port2 _))=  do
---           beamTo node
---           step $ liftIO $ print "PING"
---
---           beamTo node
---           step $ liftIO $ print "PONG"
---           roundtrip (n - 1) node
 
 
 -- to be executed with two or more nodes
-two = do
+main = do
   args <- getArgs
   if length args < 2
     then do

@@ -1,4 +1,4 @@
-{-# LANGUAGE RecordWildCards, ScopedTypeVariables #-}
+test.hs{-# LANGUAGE RecordWildCards, ScopedTypeVariables #-}
 
 module Main where
 

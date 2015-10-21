@@ -424,7 +424,7 @@ mclustered proc= logged $ do
 -- all the nodes connected to him. this new connected node will receive the list of nodes
 -- the local list of nodes then is updated with this list. it can be retrieved with `getNodes`
 connect ::  Node ->  Node -> TransientIO ()
-connect  (node@(Node h port _ _))  remotenode=  do
+connect  node  remotenode=  do
     listen node <|> return ()
     logged $ do
         logged $ do
@@ -432,14 +432,14 @@ connect  (node@(Node h port _ _))  remotenode=  do
              addNodes [node]
              liftIO $ putStrLn $ "connecting to: "++ show remotenode
         newnode <- logged $ return node -- must pass my node the remote node or else it will use his own
-        port <- logged $ return port
+--        port <- logged $ return port
         nodes <- callTo remotenode $ do
-                   clustered $  addNodes [newnode]
-                   r <- getNodes
-                   liftIO $ putStrLn $ "Connected to modes: " ++ show r
-                   return r
+                   mclustered $  addNodes [newnode]
+                   getNodes
 
+        liftIO $ putStrLn $ "Connected to modes: " ++ show nodes
         logged $ addNodes nodes
+
 
 
 
