@@ -12,37 +12,32 @@ import           Transient.Indeterminism
 import           Transient.Logged
 import           Transient.Move
 import           Transient.Stream.Resource
-import           Control.Applicative
-
 
 main = do
   args  <- getArgs
-  let (self : master : _) = node <$> args
+  let (mainNode : nodes) = node <$> args
       numCalcsNode = 5000
+
 
   rresults <- liftIO $ newIORef (0,0)
 
   keep $ do
-    connect self master
-    logged $ do
-        option  "start"  "Start the calculation"
-        nodes <- getNodes
-        liftIO $ putStrLn $ "receiving from nodes: " ++ show nodes
-
+    mapM_ (connect mainNode) nodes
+    logged $ option  "start"  "Start the calculation"
 
     r <- clustered $ do
-          r <- group numCalcsNode $ do
-            n <- liftIO  getNumCapabilities
-            threads n $ spawn $ do
-              x <- randomIO :: IO Double
-              y <- randomIO
-              return $ if x * x + y * y < 1 then 1 else (0 :: Int)
-          return $ sum r
+      r <- group numCalcsNode $ do
+        n <- liftIO  getNumCapabilities
+        threads n $ spawn $ do
+          x <- randomIO :: IO Double
+          y <- randomIO
+          return $ if x * x + y * y < 1 then 1 else (0 :: Int)
+      return $ sum r
 
     (n,c) <- liftIO $ atomicModifyIORef' rresults $ \(num, count) ->
-              let num' = num + r
-                  count'= count + numCalcsNode
-              in ((num', count'),(num',count'))
+      let num' = num + r
+          count'= count + numCalcsNode
+      in ((num', count'),(num',count'))
 
     when ( c `rem` 100000 == 0) $ liftIO $ do
       th <- myThreadId

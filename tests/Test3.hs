@@ -20,37 +20,22 @@ main = do
   let (local, remote)= if length args > 0 then (createNode "localhost" 2000, createNode "localhost" 2001)
                                      else (createNode "localhost" 2001, createNode "localhost" 2000)
   addNodes [local, remote]
-  let    numCalcsNode = 5000
+  let    numCalcsNode = 500
 
   rresults <- liftIO $ newIORef (0,0)
 
   keep $ do
+
     listen local <|> return  ()
-    logged $ do
-        option  "start"  "Start the calculation"
-        nodes <- getNodes
-        liftIO $ putStrLn $ "receiving from nodes: " ++ show nodes
+    logged $  option  "start"  "Start the calculation"
+    nodes <- logged getNodes
+    logged $ liftIO $ putStrLn $ "receiving from nodes: " ++ show nodes
 
+    r <- clustered  $ threads 0 $ do
+                      node <- getMyNode
+                      async $ return node
 
-    r <- clustered $ do
-      r <- group numCalcsNode $ do
-        n <- liftIO  getNumCapabilities
-        threads n $ spawn $ do
-          x <- randomIO :: IO Double
-          y <- randomIO
-          return $ if x * x + y * y < 1 then 1 else (0 :: Int)
-      return $ sum r
-
-    (n,c) <- liftIO $ atomicModifyIORef' rresults $ \(num, count) ->
-      let num' = num + r
-          count'= count + numCalcsNode
-      in ((num', count'),(num',count'))
-
-    when ( c `rem` 100000 == 0) $ liftIO $ do
-      th <- myThreadId
-      putStrLn $ "Samples: " ++ show c ++ " -> " ++
-        show( 4.0 * fromIntegral n / fromIntegral c) ++ "\t" ++ show th
-
+    liftIO $ print r
 
 node addr = let (h:p:_) = splitOn ':' addr in createNode h (read p)
 
