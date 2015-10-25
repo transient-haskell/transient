@@ -27,6 +27,7 @@ newtype TransLIO  a =  TransLIO {runLogged :: TransIO a}
 
 instance Functor TransLIO  where
 --   fmap f mx=  mx >>= \(TransLIO x) ->  TransLIO (f x)
+
 instance Applicative TransLIO where
 --   pure= return
 --   f <*> g= TransLIO $ do

@@ -69,7 +69,7 @@ beamTo node =  do
       setSData $ Log rec log' log'
       stop
   where
-  beamToErr= error "beamTo does not set some necessary params use setMyNode and listen"
+  beamToErr= error "beamTo: some connection param has not been set. Use setMyNode and listen"
 -- | execute in the remote node a process with the same execution state
 -- all the previous actions from `listen` to this statement must have been logged
 forkTo  :: Node -> TransientIO ()
@@ -102,9 +102,10 @@ streamFrom node remoteProc= logged $ Transient $ do
       if rec
          then
           runTrans $ do
-            rnum <- liftIO $ newMVar (0 :: Int)
+--            rnum <- liftIO $ newMVar (0 :: Int)
             Connection _(Just (ConnectionData _ h sock blocked )) _ _ <- getSData  <|> error "callTo: no hander"
-            r <- remoteProc                       !> "executing remoteProc" !> "CALLTO REMOTE" -- LOg="++ show fulLog
+
+            r <- remoteProc         !> "executing remoteProc" !> "CALLTO REMOTE" -- LOg="++ show fulLog
             n <- liftIO $ do
 --                modifyMVar_ rnum $ \n -> return (n+1)
                 withMVar blocked $ const $ hPutStrLn   h (show r)  `catch` (\(e::SomeException) -> sClose sock)
@@ -113,6 +114,9 @@ streamFrom node remoteProc= logged $ Transient $ do
 
  --           adjustSenderThreads n
 
+            setSData WasRemote
+            stop
+          <|> do
             setSData WasRemote
             stop
 
@@ -179,16 +183,16 @@ data Connection= Connection{myNode :: DBRef MyNode
 setBufSize :: Int -> TransIO ()
 setBufSize size= Transient $ do
    Connection n c _ ev <- getSessionData `onNothing`
-              return (Connection (error "myNode not set: use setMyNode") Nothing  size (error "accessing network events out of listen"))
+              return (Connection (errorMyNode "setBufSize") Nothing  size (error "accessing network events out of listen"))
    setSessionData $ Connection n c size ev
    return $ Just ()
 getBuffSize=
   (do Connection _ _ bufSize _ <- getSData ; return bufSize) <|> return  8192
 readHandler h= do
-    line <- hGetLine h -- {-  readIORef leftover <> -} unsafeInterleaveIO (hGetLine h)
---    liftIO $ print (line, show h)
+    line <- hGetLine h
+
     let [(v,left)]= readsPrec 0 line
---    length v `seq` writeIORef leftover left
+
     return  v
 
   `catch` (\(e::SomeException) -> do
@@ -218,20 +222,22 @@ connectTo' bufSize hostname (PortNumber port) = do
 
 -- | Wait for messages and replay the rest of the monadic sequence with the log received.
 listen ::  Node ->  TransIO ()
-listen  (Node _  port _ _) = do
+listen  (node@(Node _  port _ _)) = do
    addThreads 1
-
+   setMyNode node
    setSData $ Log False [] []
 
-   Connection node _ bufSize events
-        <- getSData
-              <|>  do events <- newEVar
-                      return (Connection (error "nyNode not set: use setMyNode") Nothing 8192 events)
-   sock <- liftIO $ withSocketsDo $ listenOn  port
+   Connection node _ bufSize events  <- getSData
+
+   sock <- liftIO $  listenOn  port
    liftIO $ do NS.setSocketOption sock NS.RecvBuffer bufSize
                NS.setSocketOption sock NS.SendBuffer bufSize
-   SMore(h,host,port1) <- parallel $ SMore <$> accept sock
-                          `catch` (\(e::SomeException) -> print "socket exception" >> sClose sock >> throw e)
+   SMore(h,host,port1) <- parallel $ (SMore <$> accept sock)
+                          `catch` (\(e::SomeException) -> do
+                               print "socket exception"
+                               sClose sock
+                               return SDone)
+
 
    setSData $ Connection node (Just (ConnectionData port h sock (unsafePerformIO $ newMVar ()))) bufSize events -- !> "setdata port=" ++ show port
 
@@ -323,8 +329,10 @@ instance Show Node where show (Node h p _ servs)= show (h,p,servs)
 
 instance Read Node where
      readsPrec _ s=
-          let [((h,p,ss),s')]= readsPrec 0 s
-          in [(Node h p empty ss,s')]
+          let r= readsPrec 0 s
+          in case r of
+            [] -> []
+            [((h,p,ss),s')] ->  [(Node h p empty ss,s')]
           where
           empty= unsafePerformIO  emptyPool
 
@@ -344,15 +352,17 @@ deriving instance Ord PortID
 --myNode= getDBRef $ key $ MyNode undefined
 
 
+errorMyNode f= error $ f ++ ": Node not set. Use setMynode before listen"
 
 getMyNode :: TransIO Node
 getMyNode = do
-    Connection{myNode=rnode} <- getSData <|> error "getMyNode: Node not set. Use setMynode"
-    MyNode node <- liftIO $ atomically $ readDBRef rnode `onNothing` error "getMyNode: Node not set. Use setMynode"
+    Connection{myNode=rnode} <- getSData <|> errorMyNode "getMyNode"
+    MyNode node <- liftIO $ atomically $ readDBRef rnode `onNothing` errorMyNode "getMyNode"
     return node
 
 setMyNode :: Node -> TransIO ()
 setMyNode node= do
+        addNodes [node]
         events <- newEVar
         rnode <- liftIO $ atomically $ newDBRef $ MyNode node
         let conn= Connection rnode Nothing 8192 events
@@ -404,13 +414,13 @@ shuffleNodes=  liftIO . atomically $ do
 -- >    createLocalNode n= createNode "localhost" (PortNumber n)
 clustered :: Loggable a  => TransIO a -> TransIO a
 clustered proc= logged $ do
-     nodes <- step getNodes
+     nodes <-  getNodes
      logged $ foldr (<|>) empty $ map (\node -> callTo node proc) nodes !> "fold"
 
 -- | a connectionless version of clustered for long running remote computations. Not tested
 clustered' proc= logged $ do
      nodes <-  getNodes
-     logged $ mapM (\node -> callTo' node proc) $ nodes
+     logged $ mapM (\node -> callTo' node proc) nodes
 
 -- A variant of clustered that wait for all the responses and `mappend` them
 mclustered :: (Monoid a, Loggable a)  => TransIO a -> TransIO a
@@ -428,16 +438,14 @@ connect  node  remotenode=  do
     listen node <|> return ()
     logged $ do
         logged $ do
-             setMyNode node
-             addNodes [node]
              liftIO $ putStrLn $ "connecting to: "++ show remotenode
         newnode <- logged $ return node -- must pass my node the remote node or else it will use his own
---        port <- logged $ return port
+
         nodes <- callTo remotenode $ do
                    mclustered $  addNodes [newnode]
                    getNodes
 
-        liftIO $ putStrLn $ "Connected to modes: " ++ show nodes
+        liftIO $ putStrLn $ "Connected to nodes: " ++ show nodes
         logged $ addNodes nodes
 
 

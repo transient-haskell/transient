@@ -223,14 +223,14 @@ instance  Alternative TransientIO where
 --         x <-   g
 --         return $ k <|> x
 
-data RemoteStatus=  WasRemote | NoRemote deriving (Typeable, Eq)
+data RemoteStatus=  WasRemote | NoRemote deriving (Typeable, Eq, Show)
 
 instance MonadPlus TransientIO where
     mzero= empty
     mplus  x y=  Transient $ do
          mx <- runTrans x    -- !> "RUNTRANS11111"
          was <- getSessionData `onNothing` return NoRemote
-         if was== WasRemote
+         if was== WasRemote !> ("WASREMOTE= "++ show was)
            then return Nothing
            else case mx of
              Nothing -> runTrans y   --  !> "RUNTRANS22222"
@@ -456,14 +456,14 @@ waitEvents' io= do
    SMore r <- parallel (SMore <$> io)
    return r
 
--- | variant of + parallel` that execute the IO computation once, and kill the previous child threads
+-- | variant of `parallel` that execute the IO computation once, and kill the previous child threads
 async  ::  IO b -> TransientIO b
 async io= do
    SLast r <- parallel  (SLast <$>io)
    killChilds
    return r
 
--- | variant that spawn free threads. Since there is not thread control, this is faster
+-- | variant that spawn free threads. Since there is no thread control, this is faster
 spawn ::  IO b -> TransientIO b
 spawn io= freeThreads $ do
 
@@ -474,16 +474,20 @@ spawn io= freeThreads $ do
 
 
 
--- |  return empty to the current thread and launch the IO action in a new thread and attaches the continuation after it.
--- if the result of the action is `Right` the process is repeated. if not, it finish.
+-- |  return empty to the current thread, in new thread, execute the IO action,
+-- this IO action modify an internal buffer. then, executes the closure where `parallel` is located
+-- In this new execution, since the buffer is filled, `paralle¤` return the content of this buffer.
+-- Then it launch the continuation after it with this new value returned by the closure.
 --
 -- If the maximum number of threads, set with `threads` has been reached  `parallel` perform
 -- the work sequentially, in the current thread.
+-- So `parallel` means that 'it can be parallelized if there are thread available'
 --
--- When `parallel`finish, increase the counter of threads available, if there is a limitation of them.
+-- if there is a limitation of threads, when a thread finish, the counter of threads available
+-- is increased so another `parallel` can make use of it.
 --
--- The behaviour of `parallel` depend on `StreamData` if `SMore`, `parallel` will excute again the
--- IO action. with `SLast`, `SDone` and `SError`, `parallel` will execute the continuation and will stop.
+-- The behaviour of `parallel` depend on `StreamData`; If `SMore`, `parallel` will excute again the
+-- IO action. with `SLast`, `SDone` and `SError`, `parallel` will not repeat the IO action anymore.
 parallel  ::    IO (StreamData b) -> TransientIO (StreamData b)
 parallel  ioaction= Transient $   do
     cont <- getCont                    -- !> "PARALLEL"
@@ -495,7 +499,7 @@ parallel  ioaction= Transient $   do
         liftIO $ loop cont ioaction
         return Nothing
 
--- executes the an IO action and then the continuation included in the first parameter
+-- executes the IO action and then the continuation included in the first parameter
 loop :: EventF -> IO (StreamData t) -> IO ()
 loop (cont'@(EventF e x fs a b c d peers childs g))  rec  =  do
   chs <- liftIO $ newTVarIO []

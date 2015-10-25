@@ -20,6 +20,7 @@ import Control.Exception
 import Control.Concurrent (threadDelay)
 import Data.Typeable
 import Data.IORef
+import Data.List((\\))
 
 
 
@@ -62,8 +63,10 @@ examples =  do
 data Environ= Environ (IORef String) deriving Typeable
 
 callExample = do
-   nodes <- logged getNodes
-   let node=  head $ tail nodes -- the first connected node
+   node <- logged $ do
+         nodes <-  getNodes
+         myNode <- getMyNode
+         return . head $ nodes \\ [myNode]
 
    logged $ putStrLnhp  node "asking for the remote data"
    s <- callTo node $  do
@@ -77,9 +80,10 @@ callExample = do
 environ= unsafePerformIO $ newIORef "Not Changed"
 
 moveExample = do
-   nodes <- logged getNodes
-   let node=  head $ tail nodes
-
+   node <- logged $ do
+         nodes <-  getNodes
+         myNode <- getMyNode
+         return . head $ nodes \\ [myNode]
    putStrLnhp  node "enter a string. It will be inserted in the other node by a migrating program"
    name <- logged $ input (const True)
    beamTo node
@@ -100,9 +104,12 @@ chat  = do
 
 
 networkEvents = do
-     nodes <- logged getNodes
-     let node=  head $ tail nodes
-     logged $ putStrLnhp  node "write \"fire\" in the other node"
+     node <- logged $ do
+         nodes  <- getNodes
+         myNode <- getMyNode
+         return . head $ nodes \\ [myNode]
+
+     logged $ putStrLnhp  node "<- write \"fire\" in this other node"
 
      r <- callTo node $ do
                          option "fire"  "fire event"
