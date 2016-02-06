@@ -51,10 +51,14 @@ group :: Int -> TransientIO a -> TransientIO [a]
 group num proc =  do
     v <- liftIO $ newIORef (0,[])
     x <- proc
-    n <- liftIO $ atomicModifyIORef' v $ \(n,xs) -> let !n'=n +1 in ((n', x:xs),n')
-    if n < num
-      then stop
-      else liftIO $ atomicModifyIORef v $ \(n,xs) ->  ((0,[]),xs)
+    mn <- liftIO $ atomicModifyIORef' v $ \(n,xs) -> 
+            let !n'=n +1 
+            in  if n'== num  
+              then ((0,[]), Just xs)
+              else ((n', x:xs),Nothing)
+    case mn of
+      Nothing -> stop
+      Just xs -> return xs 
 
 -- | group result for a time interval, measured with `diffUTCTime
 groupByTime :: Integer -> TransientIO a -> TransientIO [a]
