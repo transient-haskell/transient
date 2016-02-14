@@ -476,7 +476,7 @@ spawn io= freeThreads $ do
 
 -- |  return empty to the current thread, in new thread, execute the IO action,
 -- this IO action modify an internal buffer. then, executes the closure where `parallel` is located
--- In this new execution, since the buffer is filled, `paralle¤` return the content of this buffer.
+-- In this new execution, since the buffer is filled, `parallel` return the content of this buffer.
 -- Then it launch the continuation after it with this new value returned by the closure.
 --
 -- If the maximum number of threads, set with `threads` has been reached  `parallel` perform
