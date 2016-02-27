@@ -4,7 +4,9 @@ A lot of things:
 
 browser nodes running transient programs compiled with ghcjs are
 integrated with server nodes. Just compile the program with ghcjs and
-point the browser to http://server:port.
+point the browser to the server node:
+
+> http://server:port.
 
 Browser nodes integrate Hplayground (package ghcjs-hplay) they can create
 widgets and control the server nodes. A computation can move from browser
