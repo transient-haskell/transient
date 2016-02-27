@@ -20,7 +20,7 @@ import Transient.Base
 import Control.Applicative
 import Control.Monad.IO.Class
 
-
+{-
 newtype TransLIO  a =  TransLIO {runLogged :: TransIO a}
 
 --data RLogged= forall a.(Read a, Show a) => RLogged  a
@@ -41,6 +41,8 @@ instance  Monad TransLIO  where
          r <- x
          runLogged $ f r
 
+-}
+
 --data IDynamic= IDyns String | forall a.(Read a, Show a,Typeable a) => IDynamic a
 
 --instance Show IDynamic where
@@ -56,13 +58,38 @@ instance (Show a, Read a,Typeable a) => Loggable a
 fromIDyn :: (Read a, Show a, Typeable a) => IDynamic -> a
 fromIDyn (IDynamic x)= unsafeCoerce x
 
-fromIDyn (IDyns s)=r where r= read s !> "read " ++ s ++ "to type "++ show (typeOf r)
+fromIDyn (IDyns s)=r where r= read s  -- !!> "read " ++ s ++ "to type "++ show (typeOf r)
 
 toIDyn x= IDynamic x
 
 -- | synonymous of `step`
 logged :: (Show a, Read a, Typeable a) => TransientIO a -> TransientIO a
 logged= step
+
+step' mx act=  Transient $ do
+   Log recover rs full <- getSessionData `onNothing` return ( Log False  [][])
+   runTrans $
+    case (recover,rs) of
+      (True, Step x: rs') -> do
+            setSData $ Log True rs' full
+            (return $ fromIDyn x)              -- !!>  "read in step:" ++ show x
+
+      (True, Exec:rs') -> do
+            setSData $ Log True  rs' full
+            mx                                 -- !!> "step True Exec"
+
+      (True, WaitRemote:rs') -> do
+            setSData (Log True  rs' full)      -- !!> "waitRemote2"
+            empty
+
+      (True, Wormhole:rs') -> do
+            setSData (Log True  rs' full)      -- !!> "waitRemote2"
+            mx
+
+      _ -> act full mx
+
+
+
 
 
 
@@ -86,28 +113,33 @@ logged= step
 --  but when `thatOther` is executed the log is: [Exec,(), ()]
 --
 step :: (Show a, Read a, Typeable a) => TransientIO a -> TransientIO a
-step mx=  do
-    Log recover rs full <- getSData <|> return ( Log False  [][])
-
-    case (recover,rs) of
-      (True, Step x: rs') -> do
-            setSData $ Log recover rs' full
-            return $ fromIDyn x  !>  "read in step:" ++ show x
-
-      (True,Exec:rs') -> do
-            setSData $ Log recover rs' full
-            mx
-
-      (True, WaitRemote:rs') -> do
-            setSData (Log recover rs' full) !> "waitRemote2"
-            empty
-
-      _ -> do
-            let add= Exec:  full
+step mx = step' mx $ \full mx -> do
+            let add= Exec: full
             setSData $ Log False add add
+
             r <-  mx
+
             let add= Step (toIDyn r): full
-            setSData $ Log False add add
+            (setSData $ Log False add add)     -- !!> "AFTER STEP"
             return  r
 
 
+
+
+
+{-
+necesario indicar Exec/ByPass
+  Exec - ejecutar
+  PassTrough - ejecutar argumento
+  Skip - WaitRemote
+  Step
+
+alternativa: a¤adir un tag especial para wormhole y detectar que es el ultimo
+
+tres estados:
+local- Exec remoto -> PassTrough -
+step
+
+exigiria cambiar de Exec a passtrough en fullLog como?
+a¤adir tag Wormhole
+-}

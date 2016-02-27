@@ -33,13 +33,13 @@ import Data.TCache hiding(onNothing)
 -- for the example
 import System.Environment
 
-startServices :: TransIO ()
+startServices :: Cloud ()
 startServices= do
   node <- getMyNode
-  liftIO $ print node
+  cexec . liftIO $ print node
   mapM_ start $ services node
   where
-  start (package,program,port)= liftIO $ do
+  start (package,program,port)= cexec . liftIO $ do
           let prog= pathExe (name package) program port
           liftIO $ print prog
           createProcess $ shell prog
@@ -48,11 +48,11 @@ startServices= do
 pathExe package program port= package++"/dist/build/"++package++"/"++program
                                        ++ " " ++ show port
 
-install :: String  -> String -> Int -> TransIO ()
-install package program port = logged $ do
+install :: String  -> String -> Int -> Cloud ()
+install package program port =  do
      let packagename = name package
-     exist <-  logged $ liftIO $ doesDirectoryExist  packagename
-     when (not exist) $ logged $ liftIO $ do
+     exist <-  local $ liftIO $ doesDirectoryExist  packagename
+     when (not exist) $ local $ liftIO $ do
          callProcess  "git" ["clone",package]
          liftIO $ print "GIT DONE"
          setCurrentDirectory packagename
@@ -60,21 +60,21 @@ install package program port = logged $ do
          setCurrentDirectory ".."
          return()
      let prog= pathExe packagename program port
-     logged $ liftIO $ do
+     local $ liftIO $ do
            createProcess $ shell program
            return ()
 
      let service= (package, program,  port)
 
-     Connection{myNode= rnode} <- getSData <|> error "Mynode not set: use setMyNode"
-     logged $ liftIO $ do
+     Connection{myNode= rnode} <- cexec getSData <|> error "Mynode not set: use setMyNode"
+     local $ liftIO $ do
        atomically $ do
         MyNode( Node h p c servs) <- readDBRef rnode
                   `onNothing` error "install: myNode: not set with setMyNode"
         writeDBRef rnode $ MyNode $ Node h p c $ service:servs
        liftIO syncCache
-     node <- logged getMyNode
-     clustered $ notifyService node service
+     node <-  getMyNode
+     notifyService node service
      return()
 
 name url= do
@@ -99,32 +99,31 @@ rfreePort = unsafePerformIO $ newMVar  3000
 freePort :: MonadIO m => m Int
 freePort= liftIO $ modifyMVar rfreePort $ \ n -> return (n+1,n)
 
-initService node package program= logged $
+initService node package program= loggedc $
     case   find  (\(package', program',_) -> package==package' && program== program') $ services node of
        Just (_,_,port) -> return port
        Nothing -> do
             beamTo node
-            port <- logged freePort
+            port <- cexec freePort
             install package program  port
-            stop
+            empty
           <|> do
-            Connection _ _ _ ev<- getSData
-            (node', (package', program',port)) <- readEVar ev
+            Connection{comEvent=ev} <- cexec getSData
+            (node', (package', program',port)) <- getMailBox
             if node'== node && package' == package && program'== program
                  then return port
-                 else stop
+                 else empty
 
-notifyService :: Node -> Service -> TransIO ()
-notifyService node service=  logged $ do
-     liftIO $ atomically $ do
+notifyService :: Node -> Service -> Cloud ()
+notifyService node service=  clustered $ do
+     cexec . liftIO $ atomically $ do
         nodes <- readTVar nodeList
         let ([nod], nodes')= span (== node) nodes
         let nod' = nod{services=service:services nod}
         writeTVar nodeList $ nod' : nodes'
         return ()
 
-     Connection _ _ _ ev<- getSData
-     writeEVar ev (node,service)
+     putMailBox (node,service)
      return ()
 
 
@@ -135,15 +134,16 @@ main= do
     args <-getArgs
     let [localNode,remoteNode]= if null args then [node1,node2] else [node2,node1]
 
-    addNodes [localNode, remoteNode]
-    keep $ do
-      setMyNode localNode
-      listen localNode <|> return ()
-      step $ option "start" "start"
 
-      logged startServices
+    runCloud $ do
+      cexec $ addNodes [localNode, remoteNode]
+      cexec $ setMyNode localNode
+      listen localNode <|> return ()
+      local $ option "start" "start"
+
+      startServices
       port <-initService remoteNode "http://github.com/agocorona/transient" "MainStreamFiles"
-      liftIO $ putStrLn $ "installed at" ++ show port
+      cexec . liftIO $ putStrLn $ "installed at" ++ show port
 --      nodes <- getNodes
 --      liftIO $ print nodes
 --      liftIO syncCache

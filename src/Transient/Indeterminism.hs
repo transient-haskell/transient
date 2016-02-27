@@ -38,7 +38,7 @@ choose   xs = do
     r <- parallel $ do
            es <- atomicModifyIORef' evs $ \es -> let !tes= tail es in (tes,es)
            case es of
-            [x]  -> return $ SLast $ head es
+            [x]  -> return $ SLast x
             x:_  -> return $ SMore x
     return $ toData r
 
@@ -51,27 +51,34 @@ group :: Int -> TransientIO a -> TransientIO [a]
 group num proc =  do
     v <- liftIO $ newIORef (0,[])
     x <- proc
-    n <- liftIO $ atomicModifyIORef' v $ \(n,xs) -> let !n'=n +1 in ((n', x:xs),n')
-    if n < num
-      then stop
-      else liftIO $ atomicModifyIORef v $ \(n,xs) ->  ((0,[]),xs)
+    mn <- liftIO $ atomicModifyIORef' v $ \(n,xs) ->
+            let !n'=n +1
+            in  if n'== num
+              then ((0,[]), Just xs)
+              else ((n', x:xs),Nothing)
+    case mn of
+      Nothing -> stop
+      Just xs -> return xs
 
--- | group result for a time interval, measured with `diffUTCTime
+-- | group result for a time interval, measured with `diffUTCTime`
 groupByTime :: Integer -> TransientIO a -> TransientIO [a]
 groupByTime time proc =  do
     v  <- liftIO $ newIORef (0,[])
     t  <- liftIO getCurrentTime
     x  <- proc
-    n  <- liftIO $ atomicModifyIORef' v $ \(n,xs) -> let !n'=n +1 in ((n', x:xs),n')
     t' <- liftIO getCurrentTime
-    if diffUTCTime t' t < fromIntegral time
-      then stop
-      else liftIO $ atomicModifyIORef v $ \(n,xs) ->  ((0,[]),xs)
+    mn <- liftIO $ atomicModifyIORef' v $ \(n,xs) -> let !n'=n +1
+            in
+            if diffUTCTime t' t < fromIntegral time
+             then ((n', x:xs),Nothing)
+             else   ((0,[]), Just xs)
+    case mn of
+      Nothing -> stop
+      Just xs -> return xs
 
-
--- | alternative definition with more parallelism
+-- | alternative definition with more parallelism, as the composition of n `parallel` sentences
 choose' :: [a] -> TransientIO a
-choose'  xs = foldl (<|>) empty $ map (\x -> parallel (return (SLast x)) >>= return . toData) xs
+choose' xs = foldl (<|>) empty $ map (\x -> parallel (return (SLast x)) >>= return . toData) xs
 
 
 --newtype Collect a= Collect (MVar (Int, [a])) deriving Typeable
@@ -82,49 +89,50 @@ choose'  xs = foldl (<|>) empty $ map (\x -> parallel (return (SLast x)) >>= ret
 --
 
 
--- | execute a process and get the first n solutions.
+-- | execute a process and get at least the first n solutions (they could be more).
 -- if the process end without finding the number of solutions requested, it return the found ones
 -- if he find the number of solutions requested, it kill the non-free threads of the process and return
 -- It works monitoring the solutions found and the number of active threads.
 -- If the first parameter is 0, collect will return all the results
 collect ::  Int -> TransientIO a -> TransientIO [a]
-collect n = collect' n 1000 0
+collect n = collect' n 0.01 0
 
 -- | search also between two time intervals. If the first interval has passed and there is no result,
 --it stops.
 -- After the second interval, it stop unconditionally and return the current results.
--- It also stops as soon as there are enough results.
+-- It also stops as soon as there are enough results specified in the first parameter.
 collect' :: Int -> NominalDiffTime -> NominalDiffTime -> TransientIO a -> TransientIO [a]
-collect' n t1 t2 search=  do
-  rv <- liftIO $ atomically $ newTVar (0,[]) !> "NEWMVAR"
+collect' n t1 t2 search= hookedThreads $  do
+  rv <- liftIO $ atomically $ newTVar (0,[]) -- !> "NEWMVAR"
   endflag <- liftIO $ newTVarIO False
-  st <- get
+  st <- Transient $ Just <$> get
   t <- liftIO getCurrentTime
-  let any1 = do
-        r <- search   !> "ANY"
+  let worker = do
+        r <- search    -- !> "ANY"
         liftIO $ atomically $ do
             (n1,rs) <- readTVar rv
-            writeTVar  rv (n1+1,r:rs) !> "MODIFY"
+            writeTVar  rv (n1+1,r:rs)  -- !> "MODIFY"
         stop
 
-      monitor= freeThreads $ do
+      monitor=  freeThreads $ do
           xs <- async $ atomically $
                           do (n', xs) <- readTVar rv
                              ns <- readTVar $ children st
                              t' <- unsafeIOToSTM getCurrentTime
                              if
                                (n > 0 && n' >= n) ||
-                                 (null ns && (diffUTCTime t' t > t1)) || -- !> show (n, n', length ns)
+                                 (null ns && (diffUTCTime t' t > t1))    ||
                                  (t2 > 0 && diffUTCTime t' t > t2)
+                                      -- !!> show (diffUTCTime t' t, n', length ns)
                                then return xs else retry
 
-          th <- liftIO $ myThreadId !> "KILL"
-          stnow <- get
+          th <- liftIO $ myThreadId   -- !> "KILL"
+          stnow <- Transient $ Just <$> get
           liftIO $ killChildren st
-          liftIO $ addThread st stnow
+          liftIO $ hangThread st stnow
           return  xs
 
-  monitor <|> any1
+  monitor <|> worker
 
 
 

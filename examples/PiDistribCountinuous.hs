@@ -91,7 +91,6 @@ mainDistributed= do
 
        logged $ option  "start"  "start the calculation once all the nodes have been started"  :: TransIO String
 
-
        r <- clustered $ do
                --Connection (Just (_,h,_,_)) _ <- getSData <|> error "no connection"
                --liftIO $ hSetBuffering h $ BlockBuffering Nothing
