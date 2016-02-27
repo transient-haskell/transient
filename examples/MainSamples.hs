@@ -35,7 +35,7 @@ main= keep $ do
       nonDeterminsm <|> trans <|>
              colors <|> app   <|>
             futures <|> server <|>
-            distributed <|> pubSub
+            distrib <|> pubSub
 
 solveConstraint=  do
       x <- choose  [1,2,3]
@@ -117,7 +117,7 @@ find' s d = do
 
 fileSearch=   do
     option "file" "example of file search"
-    r<- threads 3 $ collect 10 $ find' "Main.hs"  "."
+    r<- threads 3 $ collect 10 $ find' "MainSamples.hs"  "."
     liftIO $ putStrLn $ "SOLUTION= "++ show  r
 --    exit
 
@@ -187,7 +187,7 @@ app= do
        number= do
           counter <- liftIO $ newMVar (0 :: Int)
           waitEvents $ do
-              threadDelay $  1000000
+              threadDelay  1000000
               n <- takeMVar counter
               putMVar counter (n+1)
               return n
@@ -249,12 +249,13 @@ msg = "HTTP/1.0 200 OK\r\nContent-Length: 5\r\n\r\nPong!\r\n"
 
 -- distributed computing
 
-distributed= do
-      option "distr" "examples of distributed computing"
-      let port1 =  2000
+distrib = do
+    option "distr" "examples of distributed computing"
+    let port1 =  2000
 
-      let node =createNode host port1
-      addNodes [node]
+    let node =createNode host port1
+    addNodes [node]
+    distributed $ do
       listen  node <|> return ()-- conn port1 port1 <|> conn port2 port1
 
       examples' node
@@ -263,8 +264,8 @@ distributed= do
 
 
 examples' node= do
-   logged $ option "maind"  "to see this menu" <|> return ""
-   r <-logged    $ option "move" "move to another node"
+   local $ option "maind"  "to see this menu" <|> return ""
+   r <-local    $ option "move" "move to another node"
                <|> option "call" "call a function in another node"
                <|> option "chat" "chat"
                <|> option "netev" "events propagating trough the network"
@@ -276,45 +277,45 @@ examples' node= do
 
 
 callExample node= do
-   logged $ putStrLnhp  node "asking for the remote data"
-   s <- callTo node $ liftIO $ do
+   local $ putStrLnhp  node "asking for the remote data"
+   s <- callTo node $ cexec $ liftIO $ do
                        putStrLnhp  node "remote callTo request"
                        readIORef environ
 
 
-   liftIO $ putStrLn $ "resp=" ++ show s
+   cexec . liftIO $ putStrLn $ "resp=" ++ show s
 
 {-# NOINLINE environ #-}
 environ= unsafePerformIO $ newIORef "Not Changed"
 
 moveExample node= do
-   putStrLnhp  node "enter a string. It will be inserted in the other node by a migrating program"
-   name <- logged $ input (const True)
+   cexec $ putStrLnhp  node "enter a string. It will be inserted in the other node by a migrating program"
+   name <- local $ input (const True)
    beamTo node
-   putStrLnhp  node "moved!"
-   putStrLnhp  node $ "inserting "++ name ++" as new data in this node"
-   liftIO $ writeIORef environ name
+   cexec $ liftIO $ putStrLnhp  node "moved!"
+   cexec $ liftIO $ putStrLnhp  node $ "inserting "++ name ++" as new data in this node"
+   cexec $ liftIO $ writeIORef environ name
    return()
 
 
-chat ::  TransIO ()
+chat ::  Cloud ()
 chat  = do
-    name  <- logged $ do liftIO $ putStrLn "Name?" ; input (const True)
-    text <- logged $  waitEvents  $ putStr ">" >> hFlush stdout >> getLine' (const True)
+    name  <- local $ do liftIO $ putStrLn "Name?" ; input (const True)
+    text <- local $  waitEvents  $ putStr ">" >> hFlush stdout >> getLine' (const True)
     let line= name ++": "++ text
-    clustered $   liftIO $ putStrLn line
+    clustered $   cexec $ liftIO $ putStrLn line
 
 
 networkEvents node= do
-     logged $  do
+     local $  do
        putStrLnhp  node "callTo is not  a simple remote call. it stablish a connection"
        putStrLnhp  node "between transient processes in different nodes"
        putStrLnhp  node "in this example, events are piped back from a remote node to the local node"
 
      r <- callTo node $ do
-                         option "fire"  "fire event"
+                         local $ option "fire"  "fire event"
                          return "event fired"
-     putStrLnhp node $ r ++ " in remote node"
+     cexec $ putStrLnhp node $ r ++ " in remote node"
 
 putStrLnhp p msg= liftIO $ putStr (show p) >> putStr " ->" >> putStrLn msg
 
