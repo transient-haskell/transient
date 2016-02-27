@@ -31,17 +31,18 @@ clone and install perch:
     > cd ghcjs-perch
     > cabal install --ghcjs -f ghcjs
 
+clone and install this branch (ghcjs) of transient:
+
+    > git clone https://github.com/agocorona/transient
+    > cd transient
+    > git checkout ghcjs
+
 clone and install hplay
 
     > git clone https://github.com/agocorona/ghcjs-hplay
     > cd ghcjs-hplay
     > cabal install --ghcjs -f ghcjs
 
-clone and install this branch (ghcjs) of transient:
-
-    > git clone https://github.com/agocorona/transient
-    > cd transient
-    > git checkout ghcjs
 
 for fast development interactions. use the script
 
