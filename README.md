@@ -26,24 +26,26 @@ Don't worry: as always, everithing is composable. All the previous distributed p
 How to run the new example ghcjs code:
 
 clone and install perch:
-> git clone https://github.com/geraldus/ghcjs-perch
-> cd ghcjs-perch
-> cabal install --ghcjs -f ghcjs
+
+    > git clone https://github.com/geraldus/ghcjs-perch
+    > cd ghcjs-perch
+    > cabal install --ghcjs -f ghcjs
 
 clone and install hplay
-> git clone https://github.com/agocorona/ghcjs-hplay
-> cd ghcjs-hplay
-> cabal install --ghcjs -f ghcjs
+
+    > git clone https://github.com/agocorona/ghcjs-hplay
+    > cd ghcjs-hplay
+    > cabal install --ghcjs -f ghcjs
 
 clone and install this branch (ghcjs) of transient:
 
-> git clone https://github.com/agocorona/transient
-> cd transient
-> git checkout ghcjs
+    > git clone https://github.com/agocorona/transient
+    > cd transient
+    > git checkout ghcjs
 
 for fast development interactions. use the script
 
-> buildrun
+    > buildrun
 
 This will compile tests/test.hs for ghcjs and run it interpreted with runghc
 
