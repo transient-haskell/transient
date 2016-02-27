@@ -1,4 +1,4 @@
-New: GHCJS integration and improved map-reduce, wormholes and teleporting of computations
+New: GHCJS integration and improved map-reduce (and wormholes and teleporting of computations)
 ======================
 A lot of things:
 
@@ -14,6 +14,12 @@ compose with others. browser nodes can control many server nodes.
 map-reduce (Transient.DDS module) now has a true shuffle stage. Not tested
 yet.
 
+`teleport` is a new primitive that translates computations back and forth reusing an
+already opened connection. 
+
+A `wormhole` open a connection with another node anywhere in a computation.
+
+Don't worry: as always, everithing is composable. All the previous distributed primitives are rewritten in terms of these two new ones.
 
 How to run the new example ghcjs code:
 
