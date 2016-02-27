@@ -1,3 +1,48 @@
+New: GHCJS integration and improved map-reduce, wormholes and teleporting of computations
+======================
+A lot of things:
+
+browser nodes running transient programs compiled with ghcjs are
+integrated with server nodes. Just compile the program with ghcjs and
+point the browser to http://server:port.
+
+Browser nodes integrate Hplayground (package ghcjs-hplay) they can create
+widgets and control the server nodes. A computation can move from browser
+to server and back.  Widgets with code running in browser and servers can
+compose with others. browser nodes can control many server nodes.
+
+map-reduce (Transient.DDS module) now has a true shuffle stage. Not tested
+yet.
+
+
+How to run the new example ghcjs code:
+
+clone and install perch:
+> git clone https://github.com/geraldus/ghcjs-perch
+> cd ghcjs-perch
+> cabal install --ghcjs -f ghcjs
+
+clone and install hplay
+> git clone https://github.com/agocorona/ghcjs-hplay
+> cd ghcjs-hplay
+> cabal install --ghcjs -f ghcjs
+
+clone and install this branch (ghcjs) of transient:
+
+> git clone https://github.com/agocorona/transient
+> cd transient
+> git checkout ghcjs
+
+for fast development interactions. use the script
+
+> buildrun
+
+This will compile tests/test.hs for ghcjs and run it interpreted with runghc
+
+then point a browser to: http:localhost:2020
+
+EVERITHING NEW IS IN AN ALPHA STAGE.
+
 transient
 =========
 
