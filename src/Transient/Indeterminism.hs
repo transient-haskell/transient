@@ -17,7 +17,6 @@ choose, choose', collect, collect', group, groupByTime
 ) where
 
 import Transient.Base
-import Control.Monad.IO.Class
 import Data.IORef
 import Control.Applicative
 import Data.Monoid
