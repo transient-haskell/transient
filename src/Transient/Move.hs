@@ -46,7 +46,7 @@ import           GHCJS.Foreign.Callback.Internal (Callback(..))
 import qualified GHCJS.Foreign.Callback          as CB
 #endif
 
-import Control.Monad.IO.Class
+
 import Control.Monad.State
 import System.IO
 import Control.Exception
