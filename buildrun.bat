@@ -1,3 +1,3 @@
-ghcjs -isrc -i../ghcjs-hplay/src tests/test
-runghc -isrc -i../ghcjs-hplay/src tests/test 2000 2000
+ghcjs -isrc -i../ghcjs-hplay/src tests/Test
+runghc -isrc -i../ghcjs-hplay/src tests/Test
 
