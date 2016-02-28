@@ -8,7 +8,6 @@ import Data.Typeable
 import Control.Concurrent
 import Control.Applicative
 import Data.IORef
-import Control.Monad.IO.Class
 import Control.Monad.State
 import Data.List(nub)
 
