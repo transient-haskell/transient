@@ -18,7 +18,7 @@ import GHCJS.HPlay.View
 import Transient.Move
 import Transient.Logged
 import Transient.Stream.Resource
-import Control.Monad.IO.Class
+
 import Control.Applicative
 
 import System.Environment
