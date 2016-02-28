@@ -19,7 +19,6 @@ import Transient.Base hiding (loop)
 import Transient.EVars
 import Control.Exception
 import Control.Applicative
-import Control.Monad.IO.Class
 import Data.Typeable
 import Data.Char
 import System.IO
