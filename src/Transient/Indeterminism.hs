@@ -16,17 +16,16 @@ module Transient.Indeterminism (
 choose, choose', collect, collect', group, groupByTime
 ) where
 
-import           Control.Applicative
-import           Control.Concurrent
-import           Control.Concurrent.STM as STM
-import           Control.Monad.IO.Class
-import           Control.Monad.State
-import           Data.IORef
-import           Data.Monoid
-import           Data.Time.Clock
-import           Data.Typeable
-import           GHC.Conc
-import           Transient.Base
+import Transient.Base
+import Data.IORef
+import Control.Applicative
+import Data.Monoid
+import Control.Concurrent
+import Data.Typeable
+import Control.Monad.State
+import Control.Concurrent.STM as STM
+import GHC.Conc
+import Data.Time.Clock
 
 
 -- | slurp a list of values and process them in parallel . To limit the number of processing
