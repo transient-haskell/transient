@@ -2,19 +2,21 @@ New: GHCJS integration and improved map-reduce (and wormholes and teleporting of
 ======================
 A lot of things:
 
-browser nodes running transient programs compiled with ghcjs are
-integrated with server nodes. Just compile the program with ghcjs and
-point the browser to the server node:
+Browser nodes, running transient programs compiled with ghcjs are
+integrated with server nodes using websockets communnications. 
+Just compile the program with ghcjs and point the browser to http://server:port.  
+The server nodes have a HTTP server that will send the compiled program to
+the browser.
 
-> http://server:port.
-
-Browser nodes integrate HPlayground (package ghcjs-hplay) they can create
+Browser nodes integrate Hplayground (package ghcjs-hplay) they can create
 widgets and control the server nodes. A computation can move from browser
-to server and back.  Widgets with code running in browser and servers can
-compose with others. Browser nodes can control many server nodes.
+to server and back at runtime despite the different architecture.  
+Widgets with code running in browser and servers cancompose with others. 
+A Browser node can access to many server nodes using `clustered` primitives.
 
 map-reduce (Transient.DDS module) now has a true shuffle stage. Not tested
 yet.
+
 
 `teleport` is a new primitive that translates computations back and forth reusing an
 already opened connection. 
@@ -52,7 +54,11 @@ This will compile tests/test.hs for ghcjs and run it interpreted with runghc
 
 then point a browser to: http:localhost:2020
 
+The test program run two copies of a widget that start, stop and display a counter that run in the server.
+
 EVERYTHING NEW IS IN AN ALPHA STAGE.
+
+In particular, there are problems in rendering of widgets that run  both in server and browser
 
 transient
 =========
