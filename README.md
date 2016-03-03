@@ -1,6 +1,5 @@
 New: GHCJS integration and improved map-reduce (and wormholes and teleporting of computations)
 ======================
-A lot of things:
 
 Browser nodes, running transient programs compiled with ghcjs are
 integrated with server nodes using websockets communnications. 
@@ -25,7 +24,9 @@ A `wormhole` opens a connection with another node anywhere in a computation.
 
 Don't worry: as always, everything is composable. All the previous distributed primitives are rewritten in terms of these two new ones.
 
-How to run the new example ghcjs code:
+How to run the new example with ghcjs code:
+
+You nee ghc and ghcjs installed.
 
 clone and install perch:
 
