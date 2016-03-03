@@ -10,7 +10,7 @@ the browser.
 Browser nodes integrate Hplayground (package ghcjs-hplay) they can create
 widgets and control the server nodes. A computation can move from browser
 to server and back at runtime despite the different architecture.  
-Widgets with code running in browser and servers cancompose with others. 
+Widgets with code running in browser and servers cancompose with other widgets. 
 A Browser node can access to many server nodes using `clustered` primitives.
 
 map-reduce (Transient.DDS module) now has a true shuffle stage. Not tested
