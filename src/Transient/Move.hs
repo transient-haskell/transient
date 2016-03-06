@@ -104,8 +104,8 @@ runCloud (Cloud mx)= keep mx
 
 distributed (Cloud mx)= mx
 
-cexec ::  TransIO a -> Cloud a
-cexec =  Cloud
+onAll ::  TransIO a -> Cloud a
+onAll =  Cloud
 
 loggedc (Cloud mx)= Cloud $ logged mx
 
@@ -128,8 +128,8 @@ loggedc (Cloud mx)= Cloud $ logged mx
 -- all the previous actions from `listen` to this statement must have been logged
 beamTo :: Node -> Cloud ()
 beamTo node =  do
-  Log rec log _ <- cexec getSData <|> return (Log False [][])
-  if rec then return () else cexec $ do
+  Log rec log _ <- onAll getSData <|> return (Log False [][])
+  if rec then return () else onAll $ do
       msendToNode node $ SLast $ reverse log
       let log'= WaitRemote: log
       setSData $ Log rec log' log'
@@ -140,8 +140,8 @@ beamTo node =  do
 -- all the previous actions from `listen` to this statement must have been logged
 forkTo  :: Node -> Cloud ()
 forkTo node= do
-  Log rec log _<- cexec getSData <|> return (Log False [][])
-  if rec then return () else cexec $ do
+  Log rec log _<- onAll getSData <|> return (Log False [][])
+  if rec then return () else onAll $ do
       msendToNode node $ SLast $ reverse log
       let log'= WaitRemote: log
       setSData $ Log rec log' log'
@@ -212,7 +212,7 @@ wsRead :: Loggable a => WebSocket  -> TransIO  a
 wsRead ws= do
   dat <- react (hsonmessage ws) (return ())
   case getData dat of
-    StringData str  ->  return (read $ JS.unpack str)   -- !!> show ("WSREAD RECEIVED ", str)
+    StringData str  ->  return (read $ JS.unpack str)  --  !!> ("WSREAD RECEIVED " ++ show str)
     BlobData   blob -> error " blob"
     ArrayBufferData arrBuffer -> error "arrBuffer"
 
@@ -309,16 +309,14 @@ mread (Connection node  (Just (Node2Web sconn )) bufSize events blocked _ _ )=
 
 
 
-
-
 wormhole :: Loggable a => Node -> Cloud a -> Cloud a
 wormhole node (Cloud comp) = local $ Transient $ do
-   oldconn <- getSessionData `onNothing` error "wormhole: no connection set"
+   moldconn <- getSessionData --`onNothing` error "wormhole: no connection set"
 
    Log rec log fulLog <- getSessionData `onNothing` return (Log False [][])
-
+--   initState
    let lengthLog= length fulLog
-   if not rec  -- !!> show rec
+   if not rec                           -- !!> show rec
             then runTrans $ do
                 conn <- mconnect node  -- !!> ("connecting node " ++ show node)           -- !!> "wormhole local"
 
@@ -326,37 +324,56 @@ wormhole node (Cloud comp) = local $ Transient $ do
 
                 setSData $ conn{calling= True,offset= lengthLog} -- WormHole conn True  lengthLog
                 (mread conn >>= check fulLog) <|> return ()   -- !!> "MREAD"
-
-                comp <** setSData oldconn
-
+--                putState    !!> "PUTSTATE"
+                r <- comp
+                when (isJust moldconn) $ setSData (fromJust moldconn)
+                return r
 
 
             else do
+               let oldconn = fromMaybe (error "wormhole: no connection in remote node") moldconn
+--             if null log    -- has recovered state already
 
-             if null log    -- !!> ("WORM LOG="++ show log)
-
-              then do
-
+--              then do
                setSessionData $ oldconn{calling= False,offset= lengthLog}
 
                runTrans $ do
                   mlog <- mread oldconn    -- !!> "MREAD"
                   check  fulLog mlog
-                  r <- comp   <** setSData oldconn    -- !!> "RESET RESET RESETSSSSSS")
-
+                  r <- comp
+                  setSData  oldconn
                   setSData WasRemote
                   return r
 
-              else do
-
-               setSessionData $ oldconn{calling= False,offset= lengthLog}
-               runTrans $ comp  <** setSData oldconn    -- !!> "RESET RESET RESETSSSSSS"
+--              else do
+--                  setSessionData $ oldconn{calling= False,offset= lengthLog}
+--                  r <- runTrans comp                 --  !!> "????????????????"
+--                  setSData oldconn
+--                  return r
 
   where
+--  initState= do
+--       rstat <-liftIO $ newIORef undefined
+--       setSData rstat
+--       stat <- gets mfData
+--       liftIO $ writeIORef rstat stat
+--
+--  putState = do
+--        rstate <- getSData <|> error "rstate not defined" :: TransIO (IORef(M.Map TypeRep SData))
+--        st <- get
+--        log@(Log _ _ l) <- getSData :: TransIO Log
+--        con <-getSData :: TransIO Connection
+--        mfDat <- liftIO $ readIORef rstate -- !!> show ("LOG BEFORe",  l)
+--        put st {mfData= mfDat}
+--        setSData log
+--        setSData con
+--
+
+
 
 
   check fulLog mlog =
-   case  mlog of  -- !!> "RECEIVED "++ show mlog  of
+   case  mlog  of          -- !!> "RECEIVED "++ show mlog  of
              SError e -> do
                  finish $ Just e
                  empty
@@ -381,19 +398,34 @@ wormhole node (Cloud comp) = local $ Transient $ do
 
 teleport :: Cloud ()
 teleport =  local $ Transient $ do
-    conn@Connection{calling= calling,offset= n} <- getSessionData `onNothing` error "teleport: No connection defined: use wormhole"
+    conn@Connection{calling= calling,offset= n} <- getSessionData
+           `onNothing` error "teleport: No connection defined: use wormhole"
     Log rec log fulLog <- getSessionData `onNothing` return (Log False [][])    -- !!> "TELEPORT"
     if not rec
       then  do
-         liftIO $ msend conn $ SMore $ drop n $ reverse fulLog    -- !!> ("TELEPORT LOCAL sending" ++ show (drop n $ reverse fulLog))
+         liftIO $ msend conn $ SMore $ drop n $ reverse fulLog
+              -- !!> ("TELEPORT LOCAL sending" ++ show (drop n $ reverse fulLog))
                  -- will be read by wormhole remote
          when (not calling) $ setSessionData WasRemote
+--         getState   !!> "GETSTAT"
          return Nothing
       else do  delSData WasRemote
 
                return (Just ())   -- !!> "TELEPORT remote"
+--   where
+--   getState = do
+--        rstate <- getSessionData `onNothing` error "rstate not defined"
+--        stnew <- get
+--        liftIO $ writeIORef rstate $ mfData stnew
 
 
+-- | copy session data variable from the local to the remote node.
+-- The parameter is the default value if there is none set in the local node.
+-- Then the default value is also set in the local node.
+copySData def = do
+  r <- local getSData <|> return def
+  onAll $ setSData r
+  return r
 
 streamFrom :: Loggable a => Node -> Cloud (StreamData a) -> Cloud  (StreamData a)
 streamFrom node  remoteProc= wormhole node $ do
@@ -701,7 +733,7 @@ readHandler h= do
 --         SLast log -> setSData $ Log True log (reverse log)
 
 listen ::  Node ->  Cloud ()
-listen  (node@(Node _  (PortNumber port) _ _)) = cexec $ do
+listen  (node@(Node _  (PortNumber port) _ _)) = onAll $ do
    addThreads 1
    setMyNode node
    setSData $ Log False [] []
@@ -800,6 +832,8 @@ emptyPool= liftIO $ newIORef  []
 
 createNode :: HostName -> Integer -> Node
 createNode h p= Node h ( PortNumber $ fromInteger p) (unsafePerformIO emptyPool) []
+
+createWebNode= WebNode  (unsafePerformIO emptyPool)
 
 instance Eq Node where
     Node h p _ _ ==Node h' p' _ _= h==h' && p==p'
@@ -930,7 +964,7 @@ shuffleNodes=  liftIO . atomically $ do
 -- >    createLocalNode n= createNode "localhost" (PortNumber n)
 clustered :: Loggable a  => Cloud a -> Cloud a
 clustered proc= loggedc $ do
-     nodes <-  cexec getNodes
+     nodes <-  onAll getNodes
      foldr (<|>) empty $ map (\node -> callTo node proc) nodes  -- !!> "fold"
 
 
@@ -938,7 +972,7 @@ clustered proc= loggedc $ do
 -- A variant of `clustered` that wait for all the responses and `mappend` them
 mclustered :: (Monoid a, Loggable a)  => Cloud a -> Cloud a
 mclustered proc= loggedc $ do
-     nodes <-  cexec getNodes
+     nodes <-  onAll getNodes
      foldl (<>) mempty $ map (\node -> runAt node proc) nodes  -- !!> "fold"
 
 -- | Initiates the transient monad, initialize it as a new node (first parameter) and connect it
@@ -949,24 +983,24 @@ mclustered proc= loggedc $ do
 
 connect ::  Node ->  Node -> Cloud ()
 connect  node  remotenode =   do
-    listen1 node remotenode
+    listen node <|> return () -- listen1 node remotenode
     local $ liftIO $ putStrLn $ "connecting to: "++ show remotenode
     newnode <- local $ return node -- must pass my node to the remote node or else it will use his own
 
     nodes <- runAt remotenode $  do
-                   mclustered $ cexec $ addNodes [newnode]
-                   cexec $ do
+                   mclustered $ onAll $ addNodes [newnode]
+                   onAll $ do
                       liftIO $ putStrLn $ "Connected node: " ++ show node
                       getNodes
 
-    cexec $ liftIO $ putStrLn $ "Connected to nodes: " ++ show nodes
-    cexec $ addNodes nodes
+    onAll $ liftIO $ putStrLn $ "Connected to nodes: " ++ show nodes
+    onAll $ addNodes nodes
 
-
+{-
 #ifndef ghcjs_HOST_OS
 listen1 node remotenode = listen node <|> return ()
 #else
-listen1 node remotenode = cexec $ do
+listen1 node remotenode = onAll $ do
        conn <- mconnect remotenode
        release remotenode conn
        setSData conn                    -- !!>  "OPENED in listen1"
@@ -994,7 +1028,7 @@ listen1 node remotenode = cexec $ do
 
 
 #endif
-
+-}
 
 --------------------------------------------
 
@@ -1132,7 +1166,7 @@ parse split= do
 #ifdef ghcjs_HOST_OS
 isBrowserInstance= True
 
-listen = error "listen not implemented in browser"
+listen _ = return () -- error "listen not implemented in browser"
 #else
 isBrowserInstance= False
 #endif

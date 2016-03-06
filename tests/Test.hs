@@ -3,6 +3,7 @@
 
 module Main where
 
+import Prelude hiding (div)
 import Transient.Base
 #ifdef ghcjs_HOST_OS
    hiding ( option,runCloud)
@@ -15,7 +16,7 @@ import GHCJS.HPlay.View
 #endif
 
 
-import Transient.Move
+import  Transient.Move  hiding(teleport)
 import Transient.Logged
 import Transient.Stream.Resource
 
@@ -36,57 +37,58 @@ import Control.Concurrent
 
 import System.IO.Unsafe
 
+import Control.Concurrent.STM
+
+
 
 
 
 main = runCloud $  do
-    args <- cexec $ liftIO getArgs
+    args <- onAll $ liftIO getArgs
 
-    let localPort =  2020 -- read (args !! 0)
-        serverPort  = 2020 -- read (args !! 1)
+    let serverPort =  2020 -- read (args !! 0)
 
---
         serverNode  = createNode "localhost" serverPort
         mynode    = if isBrowserInstance
-                       then  WebNode  (unsafePerformIO emptyPool)
-                       else createNode "localhost" localPort
+                       then  createWebNode
+                       else createNode "localhost" serverPort
 
 --    connect mynode serverNode
 
-    listen1 mynode serverNode
+    listen mynode
 
 
+    wormhole serverNode $ do
+       widget  <|> widget
 
 
-    render $   widget  <|>  widget
 
 
 widget =  do
-         local addPrefix
-         op <-  local  $ option "fire" "fire"   <|>  option "cancel" "cancel"
-
-         teleport          -- translates the execution to the server
-
+         op <-   local $ render $  ( inputSubmit "start"  `fire` OnClick)
+                               <|> ( inputSubmit "cancel" `fire` OnClick) <++ br
+         teleport          -- translates the computation to the server
          context <- get
          r <- local $ case op of
-                   "fire" ->    stopContext context >> sequ
+                   "start"  ->  sequ
                    "cancel" ->  stopContext context >> empty
 
          teleport          -- back to the browser again
 
-         local $ rawHtml $ h1 r
+
+         local  $ render $ rawHtml $ h1 r
 
 stopContext cont= liftIO $ killChildren cont
 
 
 -- generates a sequence of numbers
 sequ= do
-
      counter <- liftIO $ newIORef (0 :: Int)
      waitEvents $ do
           n <- atomicModifyIORef counter $ \r -> (r +1,r)
           threadDelay 1000000
           putStr "generating: " >> print n
           return  n
+
 
 

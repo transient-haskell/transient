@@ -62,11 +62,29 @@ fromIDyn (IDyns s)=r where r= read s  -- !!> "read " ++ s ++ "to type "++ show (
 
 toIDyn x= IDynamic x
 
--- | synonymous of `step`
-logged :: (Show a, Read a, Typeable a) => TransientIO a -> TransientIO a
-logged= step
 
-step' mx act=  Transient $ do
+
+-- | write the result of the computation in  the log and return it.
+-- but if there is data in the internal log, it read the data from the log and
+-- do not execute the computation.
+--
+-- It accept nested step's. The effect is that if the outer step is executed completely
+-- the log of the inner steps are erased. If it is not the case, the inner steps are logged
+-- this reduce the log of large computations to the minimum. That is a feature not present
+-- in the package Workflow.
+--
+-- >  r <- logged $ do
+-- >          logged this :: TransIO ()
+-- >          logged that :: TransIO ()
+-- >          logged thatOther
+-- >  liftIO $ print r
+--
+--  when `print` is executed, the log is just the value of r.
+--
+--  but at the `thatOther` execution the log is: [Exec,(), ()]
+--
+logged :: (Show a, Read a, Typeable a) => TransientIO a -> TransientIO a
+logged mx =  Transient $ do
    Log recover rs full <- getSessionData `onNothing` return ( Log False  [][])
    runTrans $
     case (recover,rs) of
@@ -82,42 +100,22 @@ step' mx act=  Transient $ do
             setSData (Log True  rs' full)      -- !!> "waitRemote2"
             empty
 
-      (True, Wormhole:rs') -> do
-            setSData (Log True  rs' full)      -- !!> "waitRemote2"
-            mx
-
-      _ -> act full mx
+--      (True, Wormhole:rs') -> do
+--            setSData (Log True  rs' full)      -- !!> "waitRemote2"
+--            mx
 
 
-
-
-
-
--- | write the result of the computation in  the log and return it.
--- but if there is data in the internal log, it read the data from the log and
--- do not execute the computation.
---
--- It accept nested step's. The effect is that if the outer step is executed completely
--- the log of the inner steps are erased. If it is not the case, the inner steps are logged
--- this reduce the log of large computations to the minimum. That is a feature not present
--- in the package Workflow.
---
--- >  r <- step $ do
--- >          step this :: TransIO ()
--- >          step that :: TransIO ()
--- >          step thatOther
--- >  liftIO $ print r
---
---  when `print` is executed, the log is just the value of r.
---
---  but when `thatOther` is executed the log is: [Exec,(), ()]
---
-step :: (Show a, Read a, Typeable a) => TransientIO a -> TransientIO a
-step mx = step' mx $ \full mx -> do
+      _ -> do
             let add= Exec: full
             setSData $ Log False add add
 
-            r <-  mx
+            r <-  mx <*** ( do  -- para evitar que   p1 <|> p2   ejecute p1 cuando p1 espera input  ejecutando p2
+                            r <- getSData <|> return NoRemote
+                            case r of WasParallel ->
+                                         let add= WaitRemote: full
+                                         in setSData $ Log False add add
+                                      _ -> return ())
+
 
             let add= Step (toIDyn r): full
             (setSData $ Log False add add)     -- !!> "AFTER STEP"
@@ -127,19 +125,19 @@ step mx = step' mx $ \full mx -> do
 
 
 
-{-
-necesario indicar Exec/ByPass
-  Exec - ejecutar
-  PassTrough - ejecutar argumento
-  Skip - WaitRemote
-  Step
 
-alternativa: a¤adir un tag especial para wormhole y detectar que es el ultimo
 
-tres estados:
-local- Exec remoto -> PassTrough -
-step
+--step :: (Show a, Read a, Typeable a) => TransientIO a -> TransientIO a
+--step mx = step' mx $ \full mx -> do
+--            let add= Exec: full
+--            setSData $ Log False add add
+--
+--            r <-  mx
+--
+--            let add= Step (toIDyn r): full
+--            (setSData $ Log False add add)     -- !!> "AFTER STEP"
+--            return  r
+--
+--
 
-exigiria cambiar de Exec a passtrough en fullLog como?
-a¤adir tag Wormhole
--}
+
