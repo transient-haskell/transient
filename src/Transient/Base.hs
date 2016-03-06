@@ -40,12 +40,12 @@ import           Data.List
 import           Data.IORef
 import           System.Environment
 
-{-# INLINE (!>) #-}
-(!>) :: Show a => b -> a -> b
-(!>) x y=   x !!> show y
-infixr 0 !>
-(!!>) =   flip trace
-infixr 0 !!>
+--{-# INLINE (!>) #-}
+--(!>) :: Show a => b -> a -> b
+--(!>) x y=   x !!> show y
+--infixr 0 !>
+--(!!>) =   flip trace
+--infixr 0 !!>
 
 data TransIO  x = Transient  {runTrans :: StateT EventF IO (Maybe x)}
 type SData= ()
@@ -231,7 +231,7 @@ instance Read IDynamic where
 type Recover= Bool
 type CurrentPointer= [LogElem]
 type LogEntries= [LogElem]
-data LogElem=  Wormhole | WaitRemote | Exec | Step IDynamic deriving (Read,Show)
+data LogElem=   WaitRemote | Exec | Step IDynamic deriving (Read,Show)
 data Log= Log Recover  CurrentPointer LogEntries deriving Typeable
 
 
@@ -264,23 +264,27 @@ instance MonadPlus TransIO where
 stop :: TransIO a
 stop= Control.Applicative.empty
 
-infixr 1  **>  ,  <**
+infixr 1  <**  ,  <***
 
 -- | forces the execution of the second operand even if the first fails. Return the first result
 (<**) ma mb= Transient $ do
               EventF _ _ _ fs _ _ _ _ _ _ _  <- get
---              setContinuation ma (\x -> mb >> return x) fs
+              setContinuation ma (\x -> mb >> return x)  fs
+              rest
+          where
+          rest= do
               a <- runTrans ma
               b <- runTrans mb
               return $ a <* b
 
--- | forces the execution of the second operand even if the first fails. Return the sencond result
-(**>) ma mb= Transient $ do
-              EventF _ _ _ fs _ _ _ _ _ _ _  <- get
-              setContinuation mb (\x -> ma >> return x) fs
+-- | forces the execution of the second operand  if the first fails only if the first operand
+-- is executed normally, that is , it is not a reexecution consequence of an internal event on it.
+-- Return the first result
+(<***) ma mb= Transient $ do
+
               a <- runTrans ma
               b <- runTrans mb
-              return $ a *> b
+              return $ a <* b
 
 instance Monoid a => Monoid (TransIO a) where
   mappend x y = mappend <$> x <*> y
@@ -443,7 +447,10 @@ getSData ::  Typeable a => TransIO  a
 getSData= Transient getSessionData
 
 
--- | set session data for this type. retrieved with getSessionData orr getSData
+-- | set session data for this type. retrieved with getSessionData or getSData
+-- Note that this is data in a state monad, that means that the update only affect downstream
+-- in the monad execution. it is not a global state neither a per user or per thread state
+-- it is a monadic state like the one of a state monad.
 setSessionData ::  (MonadState EventF m, Typeable a) => a -> m ()
 setSessionData  x=
   let t= typeOf x in  modify $ \st -> st{mfData= M.insert  t (unsafeCoerce x) (mfData st)}
@@ -474,14 +481,16 @@ delSData= delSessionData
 -- | generator of identifiers that are unique withing the current monadic sequence
 -- They are not unique in the whole program.
 genId :: MonadState EventF m =>  m Int
-genId=
-   do
-          st <- get
-          let n= mfSequence st
-          put st{mfSequence= n+1}
-          return n
+genId= do
+      st <- get
+      let n= mfSequence st
+      put st{mfSequence= n+1}
+      return n
 
-
+getPrevId :: MonadState EventF m =>  m Int
+getPrevId= do
+      n <- gets mfSequence
+      return n
 
 instance Read SomeException where
    readsPrec n str=
@@ -700,6 +709,7 @@ react setHandler iob= Transient $ do
             liftIO $ setHandler $ \dat ->do
               runStateT (setSessionData dat >> runCont cont) cont
               iob
+            setSData WasParallel
             return Nothing
           Just dat -> do
              delSessionData dat

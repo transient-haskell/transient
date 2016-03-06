@@ -36,10 +36,10 @@ import System.Environment
 startServices :: Cloud ()
 startServices= do
   node <- getMyNode
-  cexec . liftIO $ print node
+  onAll . liftIO $ print node
   mapM_ start $ services node
   where
-  start (package,program,port)= cexec . liftIO $ do
+  start (package,program,port)= onAll . liftIO $ do
           let prog= pathExe (name package) program port
           liftIO $ print prog
           createProcess $ shell prog
@@ -66,7 +66,7 @@ install package program port =  do
 
      let service= (package, program,  port)
 
-     Connection{myNode= rnode} <- cexec getSData <|> error "Mynode not set: use setMyNode"
+     Connection{myNode= rnode} <- onAll getSData <|> error "Mynode not set: use setMyNode"
      local $ liftIO $ do
        atomically $ do
         MyNode( Node h p c servs) <- readDBRef rnode
@@ -104,11 +104,11 @@ initService node package program= loggedc $
        Just (_,_,port) -> return port
        Nothing -> do
             beamTo node
-            port <- cexec freePort
+            port <- onAll freePort
             install package program  port
             empty
           <|> do
-            Connection{comEvent=ev} <- cexec getSData
+            Connection{comEvent=ev} <- onAll getSData
             (node', (package', program',port)) <- getMailBox
             if node'== node && package' == package && program'== program
                  then return port
@@ -116,7 +116,7 @@ initService node package program= loggedc $
 
 notifyService :: Node -> Service -> Cloud ()
 notifyService node service=  clustered $ do
-     cexec . liftIO $ atomically $ do
+     onAll . liftIO $ atomically $ do
         nodes <- readTVar nodeList
         let ([nod], nodes')= span (== node) nodes
         let nod' = nod{services=service:services nod}
@@ -136,14 +136,14 @@ main= do
 
 
     runCloud $ do
-      cexec $ addNodes [localNode, remoteNode]
-      cexec $ setMyNode localNode
+      onAll $ addNodes [localNode, remoteNode]
+      onAll $ setMyNode localNode
       listen localNode <|> return ()
       local $ option "start" "start"
 
       startServices
       port <-initService remoteNode "http://github.com/agocorona/transient" "MainStreamFiles"
-      cexec . liftIO $ putStrLn $ "installed at" ++ show port
+      onAll . liftIO $ putStrLn $ "installed at" ++ show port
 --      nodes <- getNodes
 --      liftIO $ print nodes
 --      liftIO syncCache

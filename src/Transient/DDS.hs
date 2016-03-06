@@ -88,10 +88,10 @@ reduce red  (DDS mx)= loggedc $ do
      dat <- getPartitionData ref
 
      let lengthdat= M.size dat
-     count <- cexec . liftIO $ newMVar 0
+     count <- onAll . liftIO $ newMVar 0
      parallelize shuffle (M.assocs dat)
 
-     count <- cexec . liftIO $ modifyMVar count (\c ->return(c +1,c+1))
+     count <- onAll . liftIO $ modifyMVar count (\c ->return(c +1,c+1))
      when (count== lengthdat) . clustered $ putMailBox (EndReduce `asTypeOf` paramOf (DDS mx)) --finish
      empty
     <|> do
@@ -106,19 +106,19 @@ reduce red  (DDS mx)= loggedc $ do
 --     groupByKey = M.fromListWith (++) . map (second return)
 
      reducers = do
-       reduceResults <- cexec . liftIO $ newMVar M.empty
+       reduceResults <- onAll . liftIO $ newMVar M.empty
 
        minput <- getMailBox
 
        case minput of
          Reduce (k,input) -> do
-              cexec . liftIO $ withMVar reduceResults $ \r -> return (M.insert k (red input) r)
+              onAll . liftIO $ withMVar reduceResults $ \r -> return (M.insert k (red input) r)
               empty
-         EndReduce    -> cexec . liftIO $ readMVar reduceResults
+         EndReduce    -> onAll . liftIO $ readMVar reduceResults
 
      shuffle :: (Loggable xs, Loggable k, Enum k) => (k,xs) -> Cloud ()
      shuffle (k,ds) = do
-           nodes <- cexec getNodes
+           nodes <- onAll getNodes
            let i=  fromEnum k `rem` length nodes
            beamTo  (nodes !! i)
            putMailBox  (k,ds)
@@ -148,7 +148,7 @@ getPartitionData (Ref node path save)  = do
 --   se pone ese nodo de referencia en Part
 runAtP :: Loggable a => Node  -> (Path -> IO a) -> Path -> Cloud a
 runAtP node f uuid= do
-   r <- streamFrom node $ cexec . liftIO $ (SLast <$> f uuid) `catch` sendAnyError
+   r <- streamFrom node $ onAll . liftIO $ (SLast <$> f uuid) `catch` sendAnyError
    case r of
      SLast r -> return r
      SError e -> do
@@ -160,9 +160,9 @@ search uuid= error $ "chunk failover not yet defined. Lookin for: "++ uuid
 
 asyncDuplicate node uuid= do
     forkTo node
-    nodes <- cexec getNodes
+    nodes <- onAll getNodes
     let node'= head $ nodes \\ [node]
-    content <- cexec . liftIO $ readFile uuid
+    content <- onAll . liftIO $ readFile uuid
     runAt node' $ local $ liftIO $ writeFile uuid content
 
 sendAnyError :: SomeException -> IO (StreamData a)
@@ -185,7 +185,7 @@ distribute' xs= loggedc $  do
 
 distribute'' :: Loggable a => [V.Vector a] -> [Node] -> Cloud (PartRef (V.Vector a))
 distribute'' xss nodes =
-   parallelize  move $ zip nodes xss   !> show xss
+   parallelize  move $ zip nodes xss   -- !> show xss
    where
    move (node, xs)=  runAt node $ do
                         par <- generateRef node xs
@@ -195,14 +195,14 @@ distribute'' xss nodes =
 
 
 textFile name= DDS $ loggedc $ do
-   lines <- cexec . liftIO $ liftM  lines (readFile name)
+   lines <- onAll . liftIO $ liftM  lines (readFile name)
    distribute' $ V.fromList lines
 
 
 
 
 generateRef :: Loggable a => Node -> a -> Cloud (PartRef a)
-generateRef node x= cexec . liftIO $ do
+generateRef node x= onAll . liftIO $ do
        temp <- getTempName
        let reg=  Part node temp False  x
        atomically $ newDBRef reg
