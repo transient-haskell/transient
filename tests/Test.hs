@@ -1,4 +1,4 @@
-{-# LANGUAGE ScopedTypeVariables, DeriveDataTypeable,  CPP #-}
+{-# LANGUAGE   CPP #-}
 
 
 module Main where
@@ -37,11 +37,7 @@ main = runCloud $  do
 
     listen mynode
 
-
     wormhole serverNode $  widget  <|> widget
-
-
-
 
 widget =  do
          op <-   local $ render $  ( inputSubmit "start"  `fire` OnClick)
@@ -54,11 +50,7 @@ widget =  do
 
          teleport          -- back to the browser again
 
-
          local  $ render $ rawHtml $ h1 r
-
-
-
 
 -- generates a sequence of numbers
 sequ= do
