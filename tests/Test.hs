@@ -25,7 +25,7 @@ import Control.Monad.IO.Class
 
 
 main = do
-  let serverAddr= "127.0.0.1"
+  let serverAddr= "localhost"
       serverPort =  2020
       serverNode  = createNode serverAddr serverPort
       mynode    = if isBrowserInstance
