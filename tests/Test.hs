@@ -22,11 +22,10 @@ import Data.Typeable
 import Data.IORef
 import Control.Concurrent (threadDelay)
 import Control.Monad.IO.Class
-import System.Environment
+
 
 main = do
-  args <- getArgs
-  let serverAddr= if length args > 0 then  read (args !! 0) else "localhost"
+  let serverAddr= "localhost"
       serverPort =  2020
       serverNode  = createNode serverAddr serverPort
       mynode    = if isBrowserInstance
