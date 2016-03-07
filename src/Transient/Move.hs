@@ -257,7 +257,7 @@ wsRead1 ws= do
 
 wsOpen :: JS.JSString -> TransIO WebSocket
 wsOpen url= do
-   ws <-  liftIO $ js_createDefault url   -- !!> "wsopen"
+   ws <-  liftIO $ js_createDefault url   !> ("wsopen",url)
    react (hsopen ws) (return ())    -- !!> "react"
    return ws               -- !!> "AFTER ReACT"
 
@@ -1069,7 +1069,7 @@ httpMode (method,uri, headers) conn  = do
 
           content <- liftIO $ BL.readFile $ "tests/Test.jsexe/"++ BC.unpack file
 
-          n <- liftIO $ SBS.sendMany conn $ -- "HTTP/1.0 200 OK\rContent-Type: text/html\r\r" ++
+          n <- liftIO $ SBS.sendMany conn $ -- ["HTTP/1.0 200 OK\rContent-Type: text/html\r\r"] ++
                                   (BL.toChunks content )
 
           empty
