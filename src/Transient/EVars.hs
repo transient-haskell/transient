@@ -35,9 +35,9 @@ data EVar a= EVar Int (IORef (Maybe a)) deriving Typeable
 
 newEVar ::  TransientIO (EVar a)
 newEVar  = Transient $ do
-   getSessionData `onNothing`  do -- initialize EVars
+   getData `onNothing`  do -- initialize EVars
                             ref <- liftIO $ newIORef M.empty
-                            setSessionData $ EVars ref
+                            setData $ EVars ref
                             return  (EVars ref)
    id <- genId
    ref <- liftIO $ newIORef Nothing
@@ -46,7 +46,7 @@ newEVar  = Transient $ do
 -- | delete al the subscriptions for an evar.
 delEVar :: EVar a -> TransIO ()
 delEVar (EVar id _)= Transient $ do
-   EVars ref <- getSessionData `onNothing` error "No Events context"
+   EVars ref <- getData `onNothing` error "No Events context"
    map <- liftIO $ readIORef ref
    liftIO $ writeIORef ref $ M.delete id map
    return $ Just ()
@@ -63,7 +63,7 @@ readEVar (EVar id ref1)= Transient $ do
      Just _ -> return mr
      Nothing -> do
          cont <- get
-         EVars ref <- getSessionData `onNothing` error "No Events context"
+         EVars ref <- getData `onNothing` error "No Events context"
          map <- liftIO $ readIORef ref
          let Just conts=  M.lookup id map <|> Just []
          liftIO $ writeIORef ref $  M.insert id (cont:conts) map
@@ -71,7 +71,7 @@ readEVar (EVar id ref1)= Transient $ do
 
 -- |  update the EVar and execute all readEVar blocks with last in - first out priority
 writeEVar (EVar id ref1) x= Transient $ do
-   EVars ref <- getSessionData `onNothing` error "No Events context"
+   EVars ref <- getData `onNothing` error "No Events context"
    liftIO $ writeIORef ref1 $ Just x   -- signal that the EVar continuations are being executed
    map <- liftIO $ readIORef ref
    let Just conts = M.lookup id map <|> Just []
@@ -97,7 +97,7 @@ writeEVar (EVar id ref1) x= Transient $ do
 
 -- | unsuscribe the last `readEVar` executed for this EVar
 unsubscribe (EVar id _)= Transient $ do
-   EVars ref <- getSessionData `onNothing` error "No Events context"
+   EVars ref <- getData `onNothing` error "No Events context"
    map <- liftIO $ readIORef ref
    let Just conts = M.lookup id map <|> Just []
    liftIO $ writeIORef ref $  M.insert id (tail conts) map

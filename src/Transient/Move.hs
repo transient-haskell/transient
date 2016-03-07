@@ -36,7 +36,7 @@ import Data.CaseInsensitive(mk)
 import Data.Char(isSpace)
 #else
 import  JavaScript.Web.WebSocket
-import JavaScript.Web.MessageEvent
+import  qualified JavaScript.Web.MessageEvent as JM
 import GHCJS.Prim (JSVal)
 import qualified Data.JSString as JS
 
@@ -99,6 +99,7 @@ local :: Loggable a => TransIO a -> Cloud a
 local =  Cloud . logged
 
 #ifndef ghcjs_HOST_OS
+runCloud :: Cloud a -> IO a
 runCloud (Cloud mx)= keep mx
 #endif
 
@@ -211,10 +212,10 @@ mread (Connection _ (Just (Web2Node sconn)) _ _ _ _ _)=  wsRead sconn
 wsRead :: Loggable a => WebSocket  -> TransIO  a
 wsRead ws= do
   dat <- react (hsonmessage ws) (return ())
-  case getData dat of
-    StringData str  ->  return (read $ JS.unpack str)  --  !!> ("WSREAD RECEIVED " ++ show str)
-    BlobData   blob -> error " blob"
-    ArrayBufferData arrBuffer -> error "arrBuffer"
+  case JM.getData dat of
+    JM.StringData str  ->  return (read $ JS.unpack str)  --  !!> ("WSREAD RECEIVED " ++ show str)
+    JM.BlobData   blob -> error " blob"
+    JM.ArrayBufferData arrBuffer -> error "arrBuffer"
 
 {-
 wsRead1 :: Loggable a => WebSocket  -> TransIO (StreamData a)
@@ -311,9 +312,9 @@ mread (Connection node  (Just (Node2Web sconn )) bufSize events blocked _ _ )=
 
 wormhole :: Loggable a => Node -> Cloud a -> Cloud a
 wormhole node (Cloud comp) = local $ Transient $ do
-   moldconn <- getSessionData --`onNothing` error "wormhole: no connection set"
+   moldconn <- getData --`onNothing` error "wormhole: no connection set"
 
-   Log rec log fulLog <- getSessionData `onNothing` return (Log False [][])
+   Log rec log fulLog <- getData `onNothing` return (Log False [][])
 --   initState
    let lengthLog= length fulLog
    if not rec                           -- !!> show rec
@@ -335,7 +336,7 @@ wormhole node (Cloud comp) = local $ Transient $ do
 --             if null log    -- has recovered state already
 
 --              then do
-               setSessionData $ oldconn{calling= False,offset= lengthLog}
+               setData $ oldconn{calling= False,offset= lengthLog}
 
                runTrans $ do
                   mlog <- mread oldconn    -- !!> "MREAD"
@@ -346,7 +347,7 @@ wormhole node (Cloud comp) = local $ Transient $ do
                   return r
 
 --              else do
---                  setSessionData $ oldconn{calling= False,offset= lengthLog}
+--                  setData $ oldconn{calling= False,offset= lengthLog}
 --                  r <- runTrans comp                 --  !!> "????????????????"
 --                  setSData oldconn
 --                  return r
@@ -398,15 +399,15 @@ wormhole node (Cloud comp) = local $ Transient $ do
 
 teleport :: Cloud ()
 teleport =  local $ Transient $ do
-    conn@Connection{calling= calling,offset= n} <- getSessionData
+    conn@Connection{calling= calling,offset= n} <- getData
            `onNothing` error "teleport: No connection defined: use wormhole"
-    Log rec log fulLog <- getSessionData `onNothing` return (Log False [][])    -- !!> "TELEPORT"
+    Log rec log fulLog <- getData `onNothing` return (Log False [][])    -- !!> "TELEPORT"
     if not rec
       then  do
          liftIO $ msend conn $ SMore $ drop n $ reverse fulLog
               -- !!> ("TELEPORT LOCAL sending" ++ show (drop n $ reverse fulLog))
                  -- will be read by wormhole remote
-         when (not calling) $ setSessionData WasRemote
+         when (not calling) $ setData WasRemote
 --         getState   !!> "GETSTAT"
          return Nothing
       else do  delSData WasRemote
@@ -414,7 +415,7 @@ teleport =  local $ Transient $ do
                return (Just ())   -- !!> "TELEPORT remote"
 --   where
 --   getState = do
---        rstate <- getSessionData `onNothing` error "rstate not defined"
+--        rstate <- getData `onNothing` error "rstate not defined"
 --        stnew <- get
 --        liftIO $ writeIORef rstate $ mfData stnew
 
@@ -422,7 +423,7 @@ teleport =  local $ Transient $ do
 -- | copy session data variable from the local to the remote node.
 -- The parameter is the default value if there is none set in the local node.
 -- Then the default value is also set in the local node.
-copySData def = do
+copyData def = do
   r <- local getSData <|> return def
   onAll $ setSData r
   return r
@@ -446,7 +447,7 @@ streamFrom node  remoteProc= wormhole node $ do
 streamFrom1 :: Loggable a => Node -> TransIO (StreamData a) -> TransIO  a -- (StreamData a)
 streamFrom1 node remoteProc= logged $ Transient $ do
       liftIO $ print "STREAMFROM"
-      Log rec log fulLog <- getSessionData `onNothing` return (Log False [][])
+      Log rec log fulLog <- getData `onNothing` return (Log False [][])
       if rec
          then
           runTrans $ do
@@ -468,7 +469,7 @@ streamFrom1 node remoteProc= logged $ Transient $ do
                 liftIO $ msend conn  (SLast $ reverse fulLog)  !> "CALLTO LOCAL" -- send "++ show  log
 
                 let log'= WaitRemote:tail log
-                setSessionData $ Log rec log' log'
+                setData $ Log rec log' log'
                 liftIO $ print "mread in callTO"
                 mread conn
 
@@ -495,7 +496,7 @@ streamFrom1 node remoteProc= logged $ Transient $ do
             liftIO $ msend conn  (SLast $ reverse fulLog)  !> "CALLTO LOCAL" -- send "++ show  log
 
             let log'= WaitRemote:tail log
-            setSessionData $ Log rec log' log'
+            setData $ Log rec log' log'
             liftIO $ print "mread in callTO"
             r <- mread conn
 --              adjustRecThreads h
@@ -639,7 +640,7 @@ remotePutMailBox node dat= runAt node $ putMailBox dat
 -- | updates the local mailbox.
 putMailBox :: Typeable a => a -> Cloud ()
 putMailBox dat= local $ Transient $ do
-   Connection{comEvent=comEvent}<- getSessionData
+   Connection{comEvent=comEvent}<- getData
       `onNothing` error "accessing network events out of listen"
    runTrans $ writeEVar comEvent $ toDyn dat
 
@@ -648,7 +649,7 @@ putMailBox dat= local $ Transient $ do
 -- following the `readEVar` order.
 getMailBox :: Loggable a => Cloud a
 getMailBox = local $ Transient $ do
-   Connection{comEvent=comEvent} <- getSessionData
+   Connection{comEvent=comEvent} <- getData
        `onNothing` error "accessing network events out of listen"
    d <- runTrans $ readEVar comEvent
    return $ cast d
@@ -673,8 +674,8 @@ defConnection size= Connection () Nothing  size
 #ifndef ghcjs_HOST_OS
 setBufSize :: Int -> TransIO ()
 setBufSize size= Transient $ do
-   conn<- getSessionData `onNothing` return (defConnection 8192)
-   setSessionData $ conn{bufferSize= size}
+   conn<- getData `onNothing` return (defConnection 8192)
+   setData $ conn{bufferSize= size}
    return $ Just ()
 
 getBuffSize=
@@ -899,7 +900,7 @@ setMyNode node= Transient $ do
         Just events <- runTrans newEVar
         rnode <- liftIO $ atomically $ newDBRef $ MyNode node
         let conn= Connection rnode Nothing 8192 events (unsafePerformIO $ newMVar ()) False 0  :: Connection
-        setSessionData conn
+        setData conn
         return $ Just ()
 #endif
 
@@ -918,7 +919,7 @@ addNodes   nodes=  do
 
 #ifndef ghcjs_HOST_OS
 verifyNode (WebNode pool)= do
-  r <- getSessionData `onNothing` error "adding web node without connection set"
+  r <- getData `onNothing` error "adding web node without connection set"
   case r of
    conn@(Connection{connData= Just( Node2Web ws)}) ->
             liftIO $ writeIORef pool [conn]

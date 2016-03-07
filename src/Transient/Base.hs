@@ -80,7 +80,7 @@ type Effects= forall a b c.TransIO a -> TransIO a -> (a -> TransIO b)
 
 
 instance MonadState EventF TransIO where
-  get=  Transient $ get >>= return . Just
+  get  = Transient $ get >>= return . Just
   put x= Transient $ put x >> return (Just ())
   state f =  Transient $ do
       s <- get
@@ -190,8 +190,8 @@ instance Applicative TransIO where
          setContinuation f appf fs
 
          k <- runTrans f
-         was <- getSessionData `onNothing` return NoRemote
-         setSessionData NoRemote
+         was <- getData `onNothing` return NoRemote
+         setData NoRemote
          if was== WasRemote  || was /= WasParallel  && isNothing k
            then  do
 
@@ -252,7 +252,7 @@ instance MonadPlus TransIO where
     mzero= empty
     mplus  x y=  Transient $ do
          mx <- runTrans x     -- !!> "RUNTRANS11111"
-         was <- getSessionData `onNothing` return NoRemote
+         was <- getData `onNothing` return NoRemote
          if was== WasRemote
            then return Nothing   -- !!> "WASREMOTE"
            else case mx of
@@ -424,9 +424,9 @@ killChilds= Transient $  do
 
 -- * extensible state: session data management
 
--- | Get the session data for the desired type if there is any.
-getSessionData ::  (MonadState EventF m,Typeable a) =>  m (Maybe a)
-getSessionData =  resp where
+-- | Get the state data for the desired type if there is any.
+getData ::  (MonadState EventF m,Typeable a) =>  m (Maybe a)
+getData =  resp where
  resp= gets mfData >>= \list  ->
     case M.lookup ( typeOf $ typeResp resp ) list  of
       Just x  -> return . Just $ unsafeCoerce x
@@ -434,7 +434,8 @@ getSessionData =  resp where
  typeResp :: m (Maybe x) -> x
  typeResp= undefined
 
--- | getSessionData specialized for the Transient monad. if Nothing, the
+
+-- | getData specialized for the Transient monad. if Nothing, the
 -- monadic computation does not continue.
 --
 -- If there is no such data, `getSData`  silently stop the computation.
@@ -444,20 +445,21 @@ getSessionData =  resp where
 -- >  getSData <|> error "no data"
 --
 getSData ::  Typeable a => TransIO  a
-getSData= Transient getSessionData
+getSData= Transient getData
 
 
--- | set session data for this type. retrieved with getSessionData or getSData
+
+-- | set session data for this type. retrieved with getData or getSData
 -- Note that this is data in a state monad, that means that the update only affect downstream
 -- in the monad execution. it is not a global state neither a per user or per thread state
 -- it is a monadic state like the one of a state monad.
-setSessionData ::  (MonadState EventF m, Typeable a) => a -> m ()
-setSessionData  x=
+setData ::  (MonadState EventF m, Typeable a) => a -> m ()
+setData  x=
   let t= typeOf x in  modify $ \st -> st{mfData= M.insert  t (unsafeCoerce x) (mfData st)}
 
--- | a shorter name for setSessionData
+-- | a shorter name for setData
 setSData ::  (MonadState EventF m, Typeable a) => a -> m ()
-setSData = setSessionData
+setSData = setData
 
 delSessionData x=
   modify $ \st -> st{mfData= M.delete (typeOf x ) (mfData st)}
@@ -556,7 +558,7 @@ parallel  ioaction= Transient $   do
         return $ unsafeCoerce j
      Nothing -> do
         liftIO $ loop cont ioaction
-        setSessionData WasParallel
+        setData WasParallel
         return Nothing
 
 
@@ -703,11 +705,11 @@ react
   -> TransIO eventdata
 react setHandler iob= Transient $ do
         cont    <- get
-        mEvData <- getSessionData
+        mEvData <- getData
         case mEvData of
           Nothing -> do
             liftIO $ setHandler $ \dat ->do
-              runStateT (setSessionData dat >> runCont cont) cont
+              runStateT (setData dat >> runCont cont) cont
               iob
             setSData WasParallel
             return Nothing

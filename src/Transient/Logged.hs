@@ -85,7 +85,7 @@ toIDyn x= IDynamic x
 --
 logged :: (Show a, Read a, Typeable a) => TransientIO a -> TransientIO a
 logged mx =  Transient $ do
-   Log recover rs full <- getSessionData `onNothing` return ( Log False  [][])
+   Log recover rs full <- getData `onNothing` return ( Log False  [][])
    runTrans $
     case (recover,rs) of
       (True, Step x: rs') -> do
