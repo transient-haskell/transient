@@ -1067,10 +1067,10 @@ httpMode (method,uri, headers) conn  = do
           let uri'= BC.tail $ uriPath uri              -- !!> "HTTP REQUEST"
               file= if BC.null uri' then "index.html" else uri'
 
-          content <- liftIO $ readFile $ "tests/Test.jsexe/"++ BC.unpack file
+          content <- liftIO $ BL.readFile $ "tests/Test.jsexe/"++ BC.unpack file
 
-          liftIO $ NS.send conn $ -- "HTTP/1.0 200 OK\rContent-Type: text/html\r\r" ++
-                                   content
+          n <- liftIO $ SBS.sendMany conn $ -- "HTTP/1.0 200 OK\rContent-Type: text/html\r\r" ++
+                                  (BL.toChunks content )
 
           empty
 
