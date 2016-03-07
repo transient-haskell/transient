@@ -40,12 +40,13 @@ import           Data.List
 import           Data.IORef
 import           System.Environment
 
---{-# INLINE (!>) #-}
---(!>) :: Show a => b -> a -> b
---(!>) x y=   x !!> show y
---infixr 0 !>
---(!!>) =   flip trace
---infixr 0 !!>
+{-# INLINE (!>) #-}
+(!>) :: Show a => b -> a -> b
+(!>) x y=   x !!> show y
+infixr 0 !>
+{-# INLINE (!!>) #-}
+(!!>) =   flip trace
+infixr 0 !!>
 
 data TransIO  x = Transient  {runTrans :: StateT EventF IO (Maybe x)}
 type SData= ()
@@ -64,17 +65,15 @@ data EventF  = forall a b . EventF{effects     :: Effects
                                   ,freeTh      :: Bool
                                   ,parent      :: Maybe EventF
                                   ,children    :: TVar[EventF]
-                                  ,maxThread   :: Maybe (P Int)
+                                  ,maxThread   :: Maybe (IORef Int)
                                   }
                                   deriving Typeable
 
 
-type P= IORef
-newp= newIORef
+
 
 type Effects= forall a b c.TransIO a -> TransIO a -> (a -> TransIO b)
      -> StateIO (StateIO (Maybe c) -> StateIO (Maybe c), Maybe a)
-
 
 
 
@@ -90,10 +89,6 @@ instance MonadState EventF TransIO where
 
 type StateIO= StateT EventF  IO
 
---type TransIO= Transient StateIO
-
---runTrans ::  TransIO x -> StateT EventF  IO (Maybe x)
---runTrans (Transient mx) = mx
 
 
 runTransient :: TransIO x -> IO (Maybe x, EventF)
@@ -843,7 +838,7 @@ keep' mx  = do
    stay
 
 -- | force the finalization of the main thread and thus, all the application
-exit :: TransIO a
+exit :: TransIO ()
 exit= do
   liftIO $ putMVar rexit   True
   stop

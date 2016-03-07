@@ -41,16 +41,17 @@ main= do
        createLocalNode p= createNode "localhost"  p
        nodes= map createLocalNode ports
 
-   addNodes nodes
-   keep $ do
---     logged $ option "start" "start"
-     xs <- collect numSamples $ do
-             foldl (<|>) empty (map listen nodes) <|> return()
-             clustered[if x * x + y * y < 1 then 1 else (0 :: Int)| x <- random, y <-random]
 
-     liftIO $ print (4.0 * (fromIntegral $ sum xs) / (fromIntegral numSamples) :: Double)
-     exit
-     
+   runCloud $ do
+     local $ addNodes nodes
+--     local $ option "start" "start"
+     foldl (<|>) empty (map listen nodes) <|> return()
+     xs <- local $ collect numSamples $ unlift $
+             clustered[if x * x + y * y < (1 :: Double) then 1 else (0 :: Int)| x <- random, y <-random]
+
+     local $ liftIO $ print (4.0 * (fromIntegral $ sum xs) / (fromIntegral numSamples) :: Double)
+     local exit
+
      where
-     random=  waitEvents' $ liftIO  randomIO :: TransIO Double
-
+     random=  local $ waitEvents' randomIO :: Cloud Double
+     unlift (Cloud mx)= mx
