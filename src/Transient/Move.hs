@@ -1039,7 +1039,7 @@ httpMode (method,uri, headers) conn  = do
    if isWebSocketsReq headers
      then  liftIO $ do
 
-         stream <- makeStream                    -- !!> "WEBSOCKETS request"
+         stream <- makeStream                  -- !!> "WEBSOCKETS request"
             (do
                 bs <- SBS.recv conn  4096
                 return $ if BC.null bs then Nothing else Just bs)
@@ -1067,7 +1067,8 @@ httpMode (method,uri, headers) conn  = do
           let uri'= BC.tail $ uriPath uri              -- !!> "HTTP REQUEST"
               file= if BC.null uri' then "index.html" else uri'
 
-          content <- liftIO $ BL.readFile $ "tests/Test.jsexe/"++ BC.unpack file
+          content <- liftIO $  BL.readFile ( "tests/Test.jsexe/"++ BC.unpack file)
+                            `catch` (\(e:: SomeException) -> return "NOT FOUND")
 
           n <- liftIO $ SBS.sendMany conn $ -- ["HTTP/1.0 200 OK\rContent-Type: text/html\r\r"] ++
                                   (BL.toChunks content )
