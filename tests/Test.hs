@@ -22,21 +22,17 @@ import Data.Typeable
 import Data.IORef
 import Control.Concurrent (threadDelay)
 import Control.Monad.IO.Class
+import System.Environment
 
 main = do
   args <- getArgs
-  serverAddr= if length args > 0 then  read (args !! 0) else "localhost"
-
-
-
-  let serverPort =  2020
-
+  let serverAddr= if length args > 0 then  read (args !! 0) else "localhost"
+      serverPort =  2020
       serverNode  = createNode serverAddr serverPort
       mynode    = if isBrowserInstance
                      then createWebNode
                      else serverNode
   runCloud $  do
---    connect mynode serverNode
 
     listen mynode
 
