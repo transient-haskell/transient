@@ -88,6 +88,8 @@ checkFinalize v=
 
 data Finish= Finish (EVar FinishReason) deriving Typeable
 
+-- | initialize the event variable for finalization.
+-- all the following computations will share it
 initFinish :: TransIO Finish
 initFinish= do
       fin <-  newEVar
@@ -114,6 +116,8 @@ finish e= do
     Finish finish <- getSData
     writeEVar finish e
 
+-- | deregister all the finalization actions.
+-- A initFinish is needed to register actions again
 unFinish= do
     Finish fin <- getSData
     delEVar fin    -- !!> "DELEVAR"

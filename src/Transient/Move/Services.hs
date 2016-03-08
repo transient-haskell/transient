@@ -135,7 +135,7 @@ main= do
     let [localNode,remoteNode]= if null args then [node1,node2] else [node2,node1]
 
 
-    runCloud $ do
+    runCloud' $ do
       onAll $ addNodes [localNode, remoteNode]
       onAll $ setMyNode localNode
       listen localNode <|> return ()

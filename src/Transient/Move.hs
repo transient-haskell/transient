@@ -98,17 +98,23 @@ newtype Cloud a= Cloud (TransIO a) deriving (Functor, Applicative, Alternative, 
 local :: Loggable a => TransIO a -> Cloud a
 local =  Cloud . logged
 
+
+runCloud :: Cloud a -> TransIO a
+runCloud (Cloud mx)= mx
+
 #ifndef ghcjs_HOST_OS
-runCloud :: Cloud a -> IO a
-runCloud (Cloud mx)= keep mx
+runCloud' :: Cloud a -> IO a
+runCloud' (Cloud mx)= keep mx
 #endif
 
-distributed (Cloud mx)= mx
 
 onAll ::  TransIO a -> Cloud a
 onAll =  Cloud
 
 loggedc (Cloud mx)= Cloud $ logged mx
+
+lliftIO :: Loggable a => IO a -> Cloud a
+lliftIO= local . liftIO
 
 --remote :: Loggable a => TransIO a -> Cloud a
 --remote x= Cloud $ step' x $ \full x ->  Transient $ do
@@ -132,7 +138,7 @@ beamTo node =  do
   Log rec log _ <- onAll getSData <|> return (Log False [][])
   if rec then return () else onAll $ do
       msendToNode node $ SLast $ reverse log
-      let log'= WaitRemote: log
+      let log'= Wait: log
       setSData $ Log rec log' log'
       empty
 
@@ -144,7 +150,7 @@ forkTo node= do
   Log rec log _<- onAll getSData <|> return (Log False [][])
   if rec then return () else onAll $ do
       msendToNode node $ SLast $ reverse log
-      let log'= WaitRemote: log
+      let log'= Wait: log
       setSData $ Log rec log' log'
 
 -- | executes an action in another node.
@@ -257,9 +263,9 @@ wsRead1 ws= do
 
 wsOpen :: JS.JSString -> TransIO WebSocket
 wsOpen url= do
-   ws <-  liftIO $ js_createDefault url   !> ("wsopen",url)
-   react (hsopen ws) (return ())    -- !!> "react"
-   return ws               -- !!> "AFTER ReACT"
+   ws <-  liftIO $ js_createDefault url      --  !> ("wsopen",url)
+   react (hsopen ws) (return ())             -- !!> "react"
+   return ws                                 -- !!> "AFTER ReACT"
 
 
 
@@ -468,7 +474,7 @@ streamFrom1 node remoteProc= logged $ Transient $ do
 
                 liftIO $ msend conn  (SLast $ reverse fulLog)  !> "CALLTO LOCAL" -- send "++ show  log
 
-                let log'= WaitRemote:tail log
+                let log'= Wait:tail log
                 setData $ Log rec log' log'
                 liftIO $ print "mread in callTO"
                 mread conn
@@ -495,7 +501,7 @@ streamFrom1 node remoteProc= logged $ Transient $ do
 
             liftIO $ msend conn  (SLast $ reverse fulLog)  !> "CALLTO LOCAL" -- send "++ show  log
 
-            let log'= WaitRemote:tail log
+            let log'= Wait:tail log
             setData $ Log rec log' log'
             liftIO $ print "mread in callTO"
             r <- mread conn
@@ -524,9 +530,9 @@ streamFrom1 node remoteProc= logged $ Transient $ do
 --         | otherwise= return () >> liftIO(myThreadId >>= \th -> (putStrLn ("SEND "++ show th)))
 
 release (Node h p rpool _) hand= liftIO $ do
---    print "RELEASEDDDDDDDDDDDDDDDDDDD"
+--    print "RELEASED"
     atomicModifyIORef rpool $  \ hs -> (hand:hs,())
-      -- !!> "RELEASEDDDDDDDDDDDD"
+      -- !!> "RELEASED"
 
 mclose :: Connection -> IO ()
 #ifndef ghcjs_HOST_OS
@@ -544,7 +550,7 @@ mconnect  (Node host port  pool _)=  do
        [] -> ([],Nothing)
     case mh of
       Just handle ->
-          return handle   -- !!>   "REUSEDDDDDDDDDDDDDDDDDDDD!"
+          return handle   -- !!>   "REUSED!"
 
       Nothing ->
 
