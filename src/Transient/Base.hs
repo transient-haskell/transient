@@ -226,7 +226,7 @@ instance Read IDynamic where
 type Recover= Bool
 type CurrentPointer= [LogElem]
 type LogEntries= [LogElem]
-data LogElem=   WaitRemote | Exec | Step IDynamic deriving (Read,Show)
+data LogElem=   Wait | Exec | Step IDynamic deriving (Read,Show)
 data Log= Log Recover  CurrentPointer LogEntries deriving Typeable
 
 

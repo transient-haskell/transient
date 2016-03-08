@@ -255,7 +255,7 @@ distrib = do
 
     let node =createNode host port1
     addNodes [node]
-    distributed $ do
+    runCloud $ do
       listen  node <|> return ()-- conn port1 port1 <|> conn port2 port1
 
       examples' node
@@ -278,23 +278,23 @@ examples' node= do
 
 callExample node= do
    local $ putStrLnhp  node "asking for the remote data"
-   s <- callTo node $ cexec $ liftIO $ do
+   s <- callTo node $ onAll $ liftIO $ do
                        putStrLnhp  node "remote callTo request"
                        readIORef environ
 
 
-   cexec . liftIO $ putStrLn $ "resp=" ++ show s
+   onAll . liftIO $ putStrLn $ "resp=" ++ show s
 
 {-# NOINLINE environ #-}
 environ= unsafePerformIO $ newIORef "Not Changed"
 
 moveExample node= do
-   cexec $ putStrLnhp  node "enter a string. It will be inserted in the other node by a migrating program"
+   onAll $ putStrLnhp  node "enter a string. It will be inserted in the other node by a migrating program"
    name <- local $ input (const True)
    beamTo node
-   cexec $ liftIO $ putStrLnhp  node "moved!"
-   cexec $ liftIO $ putStrLnhp  node $ "inserting "++ name ++" as new data in this node"
-   cexec $ liftIO $ writeIORef environ name
+   onAll $ liftIO $ putStrLnhp  node "moved!"
+   onAll $ liftIO $ putStrLnhp  node $ "inserting "++ name ++" as new data in this node"
+   onAll $ liftIO $ writeIORef environ name
    return()
 
 
@@ -303,7 +303,7 @@ chat  = do
     name  <- local $ do liftIO $ putStrLn "Name?" ; input (const True)
     text <- local $  waitEvents  $ putStr ">" >> hFlush stdout >> getLine' (const True)
     let line= name ++": "++ text
-    clustered $   cexec $ liftIO $ putStrLn line
+    clustered $   onAll $ liftIO $ putStrLn line
 
 
 networkEvents node= do
@@ -315,7 +315,7 @@ networkEvents node= do
      r <- callTo node $ do
                          local $ option "fire"  "fire event"
                          return "event fired"
-     cexec $ putStrLnhp node $ r ++ " in remote node"
+     onAll $ putStrLnhp node $ r ++ " in remote node"
 
 putStrLnhp p msg= liftIO $ putStr (show p) >> putStr " ->" >> putStrLn msg
 

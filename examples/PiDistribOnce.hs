@@ -31,8 +31,6 @@ import System.Environment
 
 -- for more details look at the article: https://www.fpcomplete.com/tutorial-edit/streaming-transient-effects-vi
 --
--- there is a pending problem with the killing of the spawned threads in the remote nodes.
--- so I force the exit at the end of the calculation
 
 main= do
    let numNodes= 5
@@ -42,16 +40,17 @@ main= do
        nodes= map createLocalNode ports
 
 
-   runCloud $ do
-     local $ addNodes nodes
---     local $ option "start" "start"
-     foldl (<|>) empty (map listen nodes) <|> return()
-     xs <- local $ collect numSamples $ unlift $
-             clustered[if x * x + y * y < (1 :: Double) then 1 else (0 :: Int)| x <- random, y <-random]
+   keep $ do
+      addNodes nodes
+--     option "start" "start"
+      xs <- collect  numSamples $ runCloud $ do
+         foldl (<|>) empty (map listen nodes) <|> return()
+         local $ threads 2 $ runCloud $
+                 clustered[if x * x + y * y < (1 :: Double) then 1 else (0 :: Int)| x <- random, y <-random]
 
-     local $ liftIO $ print (4.0 * (fromIntegral $ sum xs) / (fromIntegral numSamples) :: Double)
-     local exit
+      liftIO $ print (4.0 * (fromIntegral $ sum xs) / (fromIntegral numSamples) :: Double)
+      exit
 
      where
      random=  local $ waitEvents' randomIO :: Cloud Double
-     unlift (Cloud mx)= mx
+

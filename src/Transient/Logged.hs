@@ -20,37 +20,7 @@ import Transient.Base
 import Control.Applicative
 import Control.Monad.IO.Class
 
-{-
-newtype TransLIO  a =  TransLIO {runLogged :: TransIO a}
 
---data RLogged= forall a.(Read a, Show a) => RLogged  a
-
-instance Functor TransLIO  where
---   fmap f mx=  mx >>= \(TransLIO x) ->  TransLIO (f x)
-
-instance Applicative TransLIO where
---   pure= return
---   f <*> g= TransLIO $ do
---         x <- f
---         y <- g
---         return $ x y
-
-instance  Monad TransLIO  where
-   return  x=  TransLIO $ return x
-   TransLIO x >>= f =  TransLIO $  do
-         r <- x
-         runLogged $ f r
-
--}
-
---data IDynamic= IDyns String | forall a.(Read a, Show a,Typeable a) => IDynamic a
-
---instance Show IDynamic where
---  show (IDynamic x)= show $ show x
---  show (IDyns s)= show s
---
---instance Read IDynamic where
---  readsPrec n str= map (\(x,s) -> (IDyns x,s)) $ readsPrec n str
 
 class (Show a, Read a,Typeable a) => Loggable a
 instance (Show a, Read a,Typeable a) => Loggable a
@@ -96,12 +66,12 @@ logged mx =  Transient $ do
             setSData $ Log True  rs' full
             mx                                 -- !!> "step True Exec"
 
-      (True, WaitRemote:rs') -> do
-            setSData (Log True  rs' full)      -- !!> "waitRemote2"
+      (True, Wait:rs') -> do
+            setSData (Log True  rs' full)      -- !!> "Wait2"
             empty
 
 --      (True, Wormhole:rs') -> do
---            setSData (Log True  rs' full)      -- !!> "waitRemote2"
+--            setSData (Log True  rs' full)      -- !!> "Wait2"
 --            mx
 
 
@@ -112,7 +82,7 @@ logged mx =  Transient $ do
             r <-  mx <*** ( do  -- para evitar que   p1 <|> p2   ejecute p1 cuando p1 espera input  ejecutando p2
                             r <- getSData <|> return NoRemote
                             case r of WasParallel ->
-                                         let add= WaitRemote: full
+                                         let add= Wait: full
                                          in setSData $ Log False add add
                                       _ -> return ())
 
