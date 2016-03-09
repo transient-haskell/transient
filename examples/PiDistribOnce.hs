@@ -1,5 +1,5 @@
 -- Distributed streaming using Transient
--- See the article: https://www.fpcomplete.com/tutorial-edit/streaming-transient-effects-vi
+-- See the article: https://www.fpcomplete.com/user/agocorona/streaming-transient-effects-vi
 
 {-# LANGUAGE ScopedTypeVariables, DeriveDataTypeable, MonadComprehensions  #-}
 module MainOnce where

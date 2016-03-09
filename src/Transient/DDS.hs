@@ -34,7 +34,7 @@ import Control.Monad.STM
 import qualified Data.Map as M
 import Control.Arrow (second)
 import qualified Data.Vector as V
-
+import Data.Hashable
 
 data DDS a= Loggable a => DDS  (Cloud (PartRef a))
 data PartRef a= Ref Node Path Save deriving (Typeable, Read, Show)
@@ -62,28 +62,35 @@ type Path=String
 
 
 
-cmap :: Loggable b => (a -> b) -> DDS a -> DDS b
+cmap :: (Loggable a,Loggable b,Loggable k,Ord k) => (a -> (k,b)) -> DDS  (V.Vector a) -> DDS (M.Map k(V.Vector b))
 cmap f (DDS mx)= DDS $  do
         refs <-  mx
         process refs
 
   where
 --  process ::  Partition a -> Cloud [Partition b]
-  process  (ref@(Ref node path sav))= runAt node $  do
+  process  (ref@(Ref node path sav))= runAt node $ do
               xs <- getPartitionData ref -- mx
-              ref <- generateRef node $ f   xs
-              return ref
+              generateRef node $ map1 f xs
 
-unlift :: Cloud a -> TransIO a
-unlift (Cloud mx)= mx
+
+  map1 :: Ord k => (a -> (k,b)) -> V.Vector a -> M.Map k(V.Vector b)
+  map1 f v=  foldl' f1  M.empty v
+     where
+     f1 map x=
+           let (k,r) = f x
+           in M.insertWith (V.++) k (V.singleton r) map
+
+
+
 
 
 
 data ReduceChunk a= EndReduce | Reduce a deriving (Typeable, Read, Show)
 
-reduce ::  (Enum k,Ord k, Loggable k, Loggable a,Loggable b)
-             => (V.Vector a -> b) -> DDS (M.Map k (V.Vector a)) ->Cloud (M.Map k b)
-reduce red  (DDS mx)= loggedc $ do
+reduce ::  (Hashable k,Ord k, Loggable k, Loggable a)
+             => (a -> a -> a) -> DDS (M.Map k (V.Vector a)) ->Cloud (M.Map k a)
+reduce red  (dds@(DDS mx))= loggedc $ do
      ref <- mx
      dat <- getPartitionData ref
 
@@ -95,10 +102,13 @@ reduce red  (DDS mx)= loggedc $ do
      when (count== lengthdat) . clustered $ putMailBox (EndReduce `asTypeOf` paramOf (DDS mx)) --finish
      empty
     <|> do
-     maps <-local . collect 0 $ unlift (clustered reducers)
+     maps <-local . collect 0 $ runCloud (clustered reducers)
      return $ mconcat maps
 
      where
+     atype ::DDS(M.Map k (V.Vector a)) -> V.Vector a
+     atype = undefined -- type level
+
      paramOf  :: DDS (M.Map k (V.Vector a)) -> ReduceChunk(M.Map k (V.Vector a))
      paramOf = undefined -- type level
 
@@ -112,14 +122,15 @@ reduce red  (DDS mx)= loggedc $ do
 
        case minput of
          Reduce (k,input) -> do
-              onAll . liftIO $ withMVar reduceResults $ \r -> return (M.insert k (red input) r)
+              onAll . liftIO $ withMVar reduceResults
+                             $ \r -> return (M.insert k (foldl1 red (input `asTypeOf` atype dds)) r)
               empty
          EndReduce    -> onAll . liftIO $ readMVar reduceResults
 
-     shuffle :: (Loggable xs, Loggable k, Enum k) => (k,xs) -> Cloud ()
+     shuffle :: (Loggable xs, Loggable k, Hashable k) => (k,xs) -> Cloud ()
      shuffle (k,ds) = do
            nodes <- onAll getNodes
-           let i=  fromEnum k `rem` length nodes
+           let i=  hash k `rem` length nodes
            beamTo  (nodes !! i)
            putMailBox  (k,ds)
 
