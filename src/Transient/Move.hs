@@ -14,7 +14,7 @@
     ,ScopedTypeVariables, StandaloneDeriving, RecordWildCards, FlexibleContexts, CPP
     ,GeneralizedNewtypeDeriving #-}
 module Transient.Move where
-import Transient.Base hiding (onNothing,stop)
+import Transient.Base hiding (stop)
 import Transient.Logged
 import Transient.EVars
 import Transient.Stream.Resource
@@ -71,9 +71,6 @@ import System.IO
 
 import Control.Concurrent
 
-
-import Data.TCache
-import Data.TCache.DefaultPersistence
 
 
 
@@ -622,7 +619,7 @@ data ConnectionData=
 
 
 #ifndef ghcjs_HOST_OS
-data Connection= Connection{myNode :: DBRef  MyNode
+data Connection= Connection{myNode :: TVar  MyNode
 #else
 data Connection= Connection{myNode :: ()
 #endif
@@ -665,7 +662,7 @@ defConnection :: Int -> Connection
 
 #ifndef ghcjs_HOST_OS
 defConnection size=
- Connection (unsafePerformIO $ atomically $ newDBRef $ MyNode  $ createNode "invalid" 0) Nothing  size
+ Connection (unsafePerformIO $  newTVarIO $ MyNode  $ createNode "invalid" 0) Nothing  size
                  (error "accessing network events out of listen")
                  (unsafePerformIO $ newMVar ())
                  False 0
@@ -864,11 +861,11 @@ instance Read Node where
 newtype MyNode= MyNode Node deriving(Read,Show,Typeable)
 
 
-instance Indexable MyNode where key (MyNode Node{nodePort=port}) =  "MyNode "++ show port
-
-instance Serializable MyNode where
-    serialize= BS.pack . show
-    deserialize= read . BS.unpack
+--instance Indexable MyNode where key (MyNode Node{nodePort=port}) =  "MyNode "++ show port
+--
+--instance Serializable MyNode where
+--    serialize= BS.pack . show
+--    deserialize= read . BS.unpack
 
 nodeList :: TVar  [Node]
 nodeList = unsafePerformIO $ newTVarIO []
@@ -895,7 +892,7 @@ setMyNode _ = return ()
 getMyNode :: Cloud Node
 getMyNode = local $ do
     Connection{myNode=rnode} <- getSData <|> errorMyNode "getMyNode"
-    MyNode node <- liftIO $ atomically $ readDBRef rnode `onNothing` errorMyNode "getMyNode"
+    MyNode node <- liftIO $ atomically $ readTVar rnode  -- `onNothing` errorMyNode "getMyNode"
     return node
 
 
@@ -904,7 +901,7 @@ setMyNode :: Node -> TransIO ()
 setMyNode node= Transient $ do
         addNodes [node]
         Just events <- runTrans newEVar
-        rnode <- liftIO $ atomically $ newDBRef $ MyNode node
+        rnode <- liftIO $ newTVarIO $ MyNode node
         let conn= Connection rnode Nothing 8192 events (unsafePerformIO $ newMVar ()) False 0  :: Connection
         setData conn
         return $ Just ()
