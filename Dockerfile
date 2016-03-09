@@ -13,5 +13,5 @@ RUN git clone https://github.com/agocorona/ghcjs-perch \
 
 RUN git clone https://github.com/agocorona/ghcjs-hplay  \
     && cd ghcjs-hplay \
-    && cabal install \
-    && cabal install --ghcjs
+    && cabal install --ghcjs \
+    && cabal install

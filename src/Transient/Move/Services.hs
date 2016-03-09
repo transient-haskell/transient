@@ -69,9 +69,9 @@ install package program port =  do
      Connection{myNode= rnode} <- onAll getSData <|> error "Mynode not set: use setMyNode"
      local $ liftIO $ do
        atomically $ do
-        MyNode( Node h p c servs) <- readDBRef rnode
-                  `onNothing` error "install: myNode: not set with setMyNode"
-        writeDBRef rnode $ MyNode $ Node h p c $ service:servs
+        MyNode( Node h p c servs) <- readTVar rnode
+
+        writeTVar rnode $ MyNode $ Node h p c $ service:servs
        liftIO syncCache
      node <-  getMyNode
      notifyService node service
