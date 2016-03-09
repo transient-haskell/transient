@@ -1,6 +1,6 @@
 name: transient
 version: 0.2
-cabal-version: >= 1.10
+cabal-version: >=1.10
 build-type: Simple
 license: GPL-3
 license-file: LICENSE
@@ -17,43 +17,40 @@ source-repository head
     type: git
     location: https://github.com/agocorona/transient
 
-
-
-
 library
 
-  if impl(ghcjs >= 0.1)
-    build-depends:  base  >4 && <5 , mtl , random , containers ,
-                   stm , transformers , process ,
-                   bytestring , time, TCache,
-                   ghcjs-base,ghcjs-prim
 
+    if impl(ghcjs >=0.1)
+        build-depends: base >4 && <5, mtl , random ,
+                       containers , stm , transformers , process ,
+                       bytestring , time , ghcjs-base , ghcjs-prim
+        exposed: True
+        buildable: True
+    else
+        build-depends: base >4 && <5, mtl , random ,
+                       containers , directory , filepath , stm ,
+                       HTTP , network , transformers , process ,
+                       network-info , bytestring , time , vector ,
+                       TCache , websockets , network-uri ,
+                       case-insensitive , hashable
+        exposed: True
+        buildable: True
 
+    if impl(ghcjs >=0.1)
+        exposed-modules: Transient.Indeterminism Transient.Base
+                         Transient.EVars Transient.Backtrack Transient.Move Transient.Logged
+                         Transient.Stream.Resource
+        exposed: True
+        buildable: True
+    else
+        exposed-modules: Transient.DDS Transient.Indeterminism
+                         Transient.Base Transient.EVars Transient.Backtrack Transient.Move
+                         Transient.Move.Services Transient.Logged Transient.Stream.Resource
+        exposed: True
+        buildable: True
     exposed: True
     buildable: True
-
-  else
-    build-depends: base  >4 && <5 , mtl , random , containers ,
-                   directory , filepath , stm , HTTP , network ,
-                   transformers , process , network-info ,
-                   bytestring , time ,  vector, TCache,
-                   websockets, network-uri, case-insensitive
-
-    exposed: True
-    buildable: True
-
-  if impl(ghcjs >= 0.1)
-    exposed-modules: Transient.Indeterminism
-                     Transient.Base Transient.EVars Transient.Backtrack Transient.Move
-                     Transient.Logged Transient.Stream.Resource
-  else
-    exposed-modules: Transient.DDS Transient.Indeterminism
-                     Transient.Base Transient.EVars Transient.Backtrack Transient.Move
-                     Transient.Move.Services Transient.Logged Transient.Stream.Resource
-
-  default-language: Haskell2010
-  hs-source-dirs: src .
-  other-modules:
-
+    default-language: Haskell2010
+    hs-source-dirs: src .
 
 
