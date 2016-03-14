@@ -1,7 +1,13 @@
 {-# LANGUAGE  ExistentialQuantification, DeriveDataTypeable #-}
+{- TODO: test it. class Distributable, Shuffle (Distributable for DDS)
+class Distributable a where
+   distibute a -> [b]
+ instance distributable (DDS (key,a) where
+   distribute= shuffle the data by key among the nodes
+ -}
 
 module Transient.DDS(distribute, cmap, reduce) where
-import Transient.Base
+import Transient.Base hiding (stop)
 import Transient.Move
 import Transient.Logged
 import Transient.Indeterminism
@@ -25,80 +31,135 @@ import Data.TCache.Defs
 
 import Data.ByteString.Lazy.Char8 (pack,unpack)
 import Control.Monad.STM
+import qualified Data.Map as M
+import Control.Arrow (second)
+import qualified Data.Vector as V
+import Data.Hashable
 
-
-data DDS a= Loggable a => DDS  (TransIO [PartRef a])
+data DDS a= Loggable a => DDS  (Cloud (PartRef a))
 data PartRef a= Ref Node Path Save deriving (Typeable, Read, Show)
-data Partition a=  Part Node Path Save [a] deriving (Typeable,Read,Show)
+data Partition a=  Part Node Path Save a deriving (Typeable,Read,Show)
 type Save= Bool
 
 instance Indexable (Partition a) where
-    key (Part _ string True _)= "PartP@"++string
-    key (Part _ string False _)= "PartT@"++string
+    key (Part _ string b _)= keyp string b
+
+
+keyp s True= "PartP@"++s
+keyp s False="PartT@"++s
 
 instance Loggable a => IResource (Partition a) where
     keyResource= key
     readResourceByKey k= if k!! 5 /= 'P' then return Nothing
         else defaultReadByKey k >>= return . fmap ( read . unpack)
-    writeResource (s@(Part _ _ save _))= if not save then return ()
-        else defaultWrite (defPath s ++ key s) (pack$ show s)
+    writeResource (s@(Part _ _ save _))=
+          unless (not save) $ defaultWrite (defPath s ++ key s) (pack $ show s)
 
-instance Loggable a => Monoid (DDS a) where
-   mempty= DDS mempty
-   mappend (DDS ta) (DDS tb)= DDS $ ta <> tb
 
 
 
 type Path=String
 
-cmap :: Loggable b => (a -> b) -> DDS a -> DDS b
-cmap f (DDS mx)= DDS $ logged $ do
-        refs <- logged mx
-        foldl (<>) mempty $  map process refs
+
+
+cmap :: (Loggable a,Loggable b,Loggable k,Ord k) => (a -> (k,b)) -> DDS  (V.Vector a) -> DDS (M.Map k(V.Vector b))
+cmap f (DDS mx)= DDS $  do
+        refs <-  mx
+        process refs
 
   where
---  process ::  Partition a -> TransIO [Partition b]
-  process  (ref@(Ref node path sav))= runAt node $  do
-              xs <- getPartitionData ref mx
-              ref <- generateRef node $ map f xs
-              return [ref]
+--  process ::  Partition a -> Cloud [Partition b]
+  process  (ref@(Ref node path sav))= runAt node $ do
+              xs <- getPartitionData ref -- mx
+              generateRef node $ map1 f xs
+
+
+  map1 :: Ord k => (a -> (k,b)) -> V.Vector a -> M.Map k(V.Vector b)
+  map1 f v=  foldl' f1  M.empty v
+     where
+     f1 map x=
+           let (k,r) = f x
+           in M.insertWith (V.++) k (V.singleton r) map
 
 
 
 
 
-reduce' :: (Loggable b, Monoid b) => ([a] -> b) -> DDS a -> TransientIO b
-reduce' f = reduce f mappend mempty
 
-reduce ::  Loggable b => ([a] -> b) -> (b -> b -> b)-> b -> DDS a ->TransientIO b
-reduce f f2 seed (DDS mx)= logged $ do
-     refs <- logged mx
-     logged $ foldl (\ x y -> f2 <$> x <*> y)(return seed) $  map process refs
+data ReduceChunk a= EndReduce | Reduce a deriving (Typeable, Read, Show)
+
+reduce ::  (Hashable k,Ord k, Loggable k, Loggable a)
+             => (a -> a -> a) -> DDS (M.Map k (V.Vector a)) ->Cloud (M.Map k a)
+reduce red  (dds@(DDS mx))= loggedc $ do
+     ref <- mx
+     dat <- getPartitionData ref
+
+     let lengthdat= M.size dat
+     count <- onAll . liftIO $ newMVar 0
+     parallelize shuffle (M.assocs dat)
+
+     count <- onAll . liftIO $ modifyMVar count (\c ->return(c +1,c+1))
+     when (count== lengthdat) . clustered $ putMailBox (EndReduce `asTypeOf` paramOf (DDS mx)) --finish
+     empty
+    <|> do
+     maps <-local . collect 0 $ runCloud (clustered reducers)
+     return $ mconcat maps
 
      where
+     atype ::DDS(M.Map k (V.Vector a)) -> V.Vector a
+     atype = undefined -- type level
 
---     process :: Partition a -> TransIO b
-     process (ref@(Ref node _ _))= runAt node $ do
-               xs <- getPartitionData ref mx
-               return $ f xs
+     paramOf  :: DDS (M.Map k (V.Vector a)) -> ReduceChunk(M.Map k (V.Vector a))
+     paramOf = undefined -- type level
 
-getPartitionData (Ref node path save) mx= do
-    Just (Part _ _ _ xs) <- liftIO $ atomically
+--     groupByKey :: Ord k2 => [(k2, v2)] -> M.Map k2 [v2]
+--     groupByKey = M.fromListWith (++) . map (second return)
+
+     reducers = do
+       reduceResults <- onAll . liftIO $ newMVar M.empty
+
+       minput <- getMailBox
+
+       case minput of
+         Reduce (k,input) -> do
+              onAll . liftIO $ withMVar reduceResults
+                             $ \r -> return (M.insert k (foldl1 red (input `asTypeOf` atype dds)) r)
+              empty
+         EndReduce    -> onAll . liftIO $ readMVar reduceResults
+
+     shuffle :: (Loggable xs, Loggable k, Hashable k) => (k,xs) -> Cloud ()
+     shuffle (k,ds) = do
+           nodes <- onAll getNodes
+           let i=  hash k `rem` length nodes
+           beamTo  (nodes !! i)
+           putMailBox  (k,ds)
+
+parallelize f xs= loggedc $ foldl (<|>) empty $ map  f xs
+
+
+
+
+
+
+
+getPartitionData :: Loggable a => PartRef a   -> Cloud  a
+getPartitionData (Ref node path save)  = do
+    Just (Part _ _ _ xs) <- local . liftIO $ atomically
                                        $ readDBRef
                                        $ getDBRef
-                                       $ keyResource((Part node path save undefined)
-                                                    `asTypeOf` getPartitionType mx)
+                                       $ keyp path save
+ --                                                   `asTypeOf` getPartitionType mx)
     return xs
     where
-    getPartitionType :: TransIO [PartRef a]-> Partition a
+    getPartitionType :: Cloud (PartRef a)-> Partition a
     getPartitionType = undefined -- type level only
 
 -- en caso de fallo de Node, se lanza un clustered en busca del path
 --   si solo uno lo tiene, se copia a otro
 --   se pone ese nodo de referencia en Part
-runAtP :: Loggable a => Node  -> (Path -> IO a) -> Path -> TransIO a
+runAtP :: Loggable a => Node  -> (Path -> IO a) -> Path -> Cloud a
 runAtP node f uuid= do
-   r <- streamFrom node $ liftIO $ (SLast <$> f uuid) `catch` sendAnyError
+   r <- streamFrom node $ onAll . liftIO $ (SLast <$> f uuid) `catch` sendAnyError
    case r of
      SLast r -> return r
      SError e -> do
@@ -110,67 +171,49 @@ search uuid= error $ "chunk failover not yet defined. Lookin for: "++ uuid
 
 asyncDuplicate node uuid= do
     forkTo node
-    nodes <- getNodes
+    nodes <- onAll getNodes
     let node'= head $ nodes \\ [node]
-    content <- liftIO $ readFile uuid
-    runAt node' $ liftIO $ writeFile uuid content
+    content <- onAll . liftIO $ readFile uuid
+    runAt node' $ local $ liftIO $ writeFile uuid content
 
 sendAnyError :: SomeException -> IO (StreamData a)
-sendAnyError e= return $ SError $ show e
+sendAnyError e= return $ SError  e
 
 
-distribute :: Loggable a => [a] -> DDS a
-distribute = DDS  . logged . distribute'
+distribute :: Loggable a => V.Vector a -> DDS (V.Vector a)
+distribute = DDS  .  distribute'
 
-distribute' xs=  do
-   nodes <- logged getNodes
+distribute' xs= loggedc $  do
+   nodes <- local getNodes
    let size= length xs `div` length nodes
        xss = split size xs
    distribute'' xss nodes
    where
-   split n []= []
+   split n xs | V.null xs = []
    split n xs=
-      let (h,t)= splitAt n xs
+      let (h,t)= V.splitAt n xs
       in h : split n t
 
-distribute'' :: Loggable a => [[a]] -> [Node] -> TransIO[PartRef a]
+distribute'' :: Loggable a => [V.Vector a] -> [Node] -> Cloud (PartRef (V.Vector a))
 distribute'' xss nodes =
-   foldl (<>) mempty $ zipWith move nodes xss   !> show xss
+   parallelize  move $ zip nodes xss   -- !> show xss
    where
-   move node xs=  runAt node $ do
+   move (node, xs)=  runAt node $ do
                         par <- generateRef node xs
-                        return  [par]
+                        return  par
 
 
 
 
-textFile name= DDS $ logged $ do
-   lines <- liftIO $ liftM lines (readFile name)
-   distribute' lines
-
---getId :: DDS a -> TransIO String
---getId (DDS mx)= do
---     ids <- mx
---     let ids' = map (\(Part _  path _ _) -> path) ids
---     return $ "DDS@"++ intercalate ":" ids'
+textFile name= DDS $ loggedc $ do
+   lines <- onAll . liftIO $ liftM  lines (readFile name)
+   distribute' $ V.fromList lines
 
 
---fromId :: String -> DDS a
---fromId ('D':'D':'S':'@':id)= do
---   let ids= wordsBy (==':') id
---   nodes <- clustered' $ mapM readDBRef ids
---   return
---
---   where
---   wordsBy :: (a -> Bool) -> [a] -> [[a]]
---   wordsBy f s = case dropWhile f s of
---        [] -> []
---        x:xs -> (x:w) : wordsBy f (drop1 z)
---            where (w,z) = break f xs
 
 
-generateRef :: Loggable a => Node -> [a] -> TransIO (PartRef a)
-generateRef node x= liftIO $ do
+generateRef :: Loggable a => Node -> a -> Cloud (PartRef a)
+generateRef node x= onAll . liftIO $ do
        temp <- getTempName
        let reg=  Part node temp False  x
        atomically $ newDBRef reg
@@ -187,20 +230,27 @@ getTempName=  ("DDS/" ++) <$> replicateM  5 (randomRIO ('a','z'))
 -- each interval of time,a new DDS is produced.
 streamDDS
   :: (Typeable a, Show a, Read a) =>
-     Integer -> IO (StreamData a) -> DDS a
+     Integer -> IO (StreamData a) -> DDS (V.Vector a)
 streamDDS time io= DDS $ do
-     xs <- groupByTime time $ do
+     xs <- local . groupByTime time $ do
                r <- parallel io
                case r of
-                    SDone -> stop
+                    SDone -> empty
                     SLast x -> return x
                     SMore x -> return x
-                    SError e -> error e
-     distribute'  xs
+                    SError e -> error $ show e
+     distribute'  $ V.fromList xs
 
 
 
 
-
+--data CloudArray a= Cloud [a]
+--
+--instance functor  CloudArray where
+--   fmap f mx= do
+--        xs <- mx
+--        xss <- partition xs
+--        rss <- clustered f xss
+--        return $ concat rss
 
 

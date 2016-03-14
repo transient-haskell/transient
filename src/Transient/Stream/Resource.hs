@@ -12,20 +12,21 @@
 --
 -----------------------------------------------------------------------------
 {-# LANGUAGE ScopedTypeVariables, DeriveDataTypeable  #-}
-module Transient.Stream.Resource(sourceFile, sinkFile, process, finish, onFinish) where
+module Transient.Stream.Resource(sourceFile, sinkFile, process, initFinish, finish,unFinish, onFinish) where
 
 
 import Transient.Base hiding (loop)
 import Transient.EVars
 import Control.Exception
 import Control.Applicative
-import Control.Monad.IO.Class
 import Data.Typeable
 import Data.Char
 import System.IO
 
+import Control.Concurrent
 
-
+import Control.Concurrent.STM
+import Control.Monad.State
 
 
 
@@ -33,9 +34,9 @@ import System.IO
 sinkFile :: TransIO String -> String -> TransIO ()
 sinkFile input file= process input (openFile file WriteMode)  hClose' hPutStrLn'
   where
-  hClose' h= putStr "closing " >> putStrLn file >> hClose h
+  hClose' h _= putStr "closing " >> putStrLn file >> hClose h
   hPutStrLn' h  x= liftIO $ (SMore <$>  hPutStrLn h x)
-                  `catch` (\(e::SomeException)-> return $ SError (show e))
+                  `catch` (\(e::SomeException)-> return $ SError e)
 
 -- | slurp input from a file a line at a time. It creates as much threads as possible.
 -- to allow single threaded processing, use it with `threads 0`
@@ -43,77 +44,82 @@ sourceFile :: String -> TransIO String
 sourceFile file= process (return ()) (openFile file ReadMode)  hClose' read'
       where
       hGetLine' h= (SMore <$> hGetLine h)
-                   `catch` (\(e::SomeException)-> return $ SError(show e))
+                   `catch` (\(e::SomeException)-> return $ SError e)
       read' h _ =  parallel $ hGetLine' h
 
 
-      hClose' h= putStr "closing ">> putStrLn file >> hClose h
+      hClose' h _= putStr "closing ">> putStrLn file >> hClose h
 
 -- | is the general operation for processing a streamed input, with opening  resources before
 -- processing and closing them when finish is called.  The process statements suscribe to the
--- EVar `Finish`.
+-- `Finish` EVar.
 --
--- when this variable is updated, the close section is called.
+-- When this variable is updated, the close procedure is called.
 --
 -- When the processing return `SDone` or `SError`, the `Finish` variable is updated so all the
--- subscribed code that close the resources are executed.
+-- subscribed code, that close the resources, is executed.
 process
-  :: TransIO a
-     -> IO handle
-     -> (handle -> IO ())
-     -> (handle -> a -> TransIO (StreamData b))
+  :: TransIO a       -- ^ input computation
+     -> IO handle    -- ^ open computation that gives resources to be used during the computation
+     -> (handle -> FinishReason -> IO ())   -- ^ close computation that frees the resources
+     -> (handle -> a -> TransIO (StreamData b))   -- ^ process to be done
      -> TransIO b
-process input open close process=do
+process input open close proc=do
    mh <- liftIO $ (Right <$> open)  `catch` (\(e::SomeException)-> return $ Left e)
    case mh of
-      Left e -> liftIO (putStr "process: " >> print e) >> finish  >> stop
+      Left e -> liftIO (putStr "process: " >> print e) >> finish  (Just e) >> stop
       Right h -> do
-       onFinish (liftIO (close h) >> killChilds >> stop) <|> return()
+       onFinish (liftIO . close h)
        some <- input
-       process' h  some
-       where
-       process' h something = do
-           v <- process h  something
-           checkFinalize v
+       v <- proc h  some
+       liftIO $ myThreadId >>= print
+       checkFinalize v
 
-
+type FinishReason= Maybe SomeException
 
 checkFinalize v=
            case v of
-              SDone ->  finish  >> stop
-              SLast x ->  finish >> return x
-              SError e -> liftIO ( putStrLn e) >> finish  >> stop
+              SDone ->  finish Nothing >> stop
+              SLast x ->  finish Nothing >> return x
+              SError e -> liftIO ( print e) >> finish Nothing >> stop
               SMore x -> return x
 
 
 
-newtype Finish= Finish (EVar Bool) deriving Typeable
+data Finish= Finish (EVar FinishReason) deriving Typeable
 
+-- | initialize the event variable for finalization.
+-- all the following computations will share it
 initFinish :: TransIO Finish
 initFinish= do
-      fin <- newEVar
+      fin <-  newEVar
       let f = Finish fin
       setSData  f
-      return f
+      return  f
+
 
 -- | suscribe a computation to be called when the finish event is triggered
-onFinish :: TransIO () -> TransIO a
+onFinish :: (FinishReason ->TransIO ()) -> TransIO ()
 onFinish  close= do
        Finish finish <- getSData <|> initFinish
-       readEVar finish
-       close
-       stop
 
--- | trigger the event for the closing of all the resources
-finish :: TransIO ()
-finish = do
+       e <- readEVar finish
+       unsubscribe finish
+       close e  -- !!> "CLOSE"
+       stop
+     <|> return()
+
+-- | trigger the event, so this closes all the resources
+finish :: FinishReason -> TransIO ()
+finish e= do
     liftIO $ putStrLn "finish Called"
     Finish finish <- getSData
-    writeEVar finish True
+    writeEVar finish e
 
-
-
-
-
-
+-- | deregister all the finalization actions.
+-- A initFinish is needed to register actions again
+unFinish= do
+    Finish fin <- getSData
+    delEVar fin    -- !!> "DELEVAR"
+   <|> return ()   -- !!> "NOT DELEVAR"
 
