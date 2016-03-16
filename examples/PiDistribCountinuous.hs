@@ -1,5 +1,5 @@
 -- Distributed streaming using Transient
--- See the article: https://www.fpcomplete.com/user/agocorona/streaming-transient-effects-vi
+-- See the article: https://www.fpcomplete.com/tutorial-edit/streaming-transient-effects-vi
 
 {-# LANGUAGE ScopedTypeVariables, DeriveDataTypeable, MonadComprehensions  #-}
 
@@ -38,15 +38,15 @@ main= do
        nodes= map createLocalNode ports
 
    rresults <- newIORef (0,0)
-   keep $ freeThreads $ threads 10 $ unlift $ do
+   keep $ freeThreads $ threads 1 $ do
      --setBufSize 1024
-     local $ addNodes nodes
+     addNodes nodes
      foldl (<|>) empty (map listen nodes) <|> return()
 
      r <- clustered $ do
                --Connection (Just (_,h,_,_)) _ <- getSData <|> error "no connection"
                --liftIO $ hSetBuffering h $ BlockBuffering Nothing
-               r <- local $ group numCalcsNode $ do
+               r <- group numCalcsNode $ do
                          n <- liftIO  getNumCapabilities
                          threads n .
                           spawn $ do
@@ -55,12 +55,12 @@ main= do
                            return $ if x * x + y * y < 1 then 1 else (0 :: Int)
                return $ sum r
 
-     (n,c) <- local $ liftIO $ atomicModifyIORef' rresults $ \(num, count) ->
+     (n,c) <- liftIO $ atomicModifyIORef' rresults $ \(num, count) ->
                 let num' = num + r
                     count'= count + numCalcsNode
                 in ((num', count'),(num',count'))
 
-     when ( c `rem` 1000 ==0) $ local $  liftIO $ do
+     when ( c `rem` 1000 ==0) $ liftIO $ do
            th <- myThreadId
            putStrLn $ "Samples: "++ show c ++ " -> " ++
              show( 4.0 * fromIntegral n / fromIntegral c)++ "\t" ++ show th
@@ -75,8 +75,6 @@ main= do
 --
 -- program myport  localhost myport
 
-unlift (Cloud mx)= mx
-
 mainDistributed= do
     args <- getArgs
     let localPort = read (args !! 0)
@@ -88,15 +86,16 @@ mainDistributed= do
         numCalcsNode= 100
     rresults <- liftIO $ newIORef (0,0)
 
-    runCloud' $ do
+    keep $ do
        connect mynode seedNode
 
-       local $ option  "start"  "start the calculation once all the nodes have been started"  :: Cloud String
+       logged $ option  "start"  "start the calculation once all the nodes have been started"  :: TransIO String
+
 
        r <- clustered $ do
                --Connection (Just (_,h,_,_)) _ <- getSData <|> error "no connection"
                --liftIO $ hSetBuffering h $ BlockBuffering Nothing
-               r <- local $ group numCalcsNode $ do
+               r <- group numCalcsNode $ do
                          n <- liftIO  getNumCapabilities
                          threads n .
                           spawn $ do
@@ -105,12 +104,12 @@ mainDistributed= do
                            return $ if x * x + y * y < 1 then 1 else (0 :: Int)
                return $ sum r
 
-       (n,c) <- local $ liftIO $ atomicModifyIORef' rresults $ \(num, count) ->
+       (n,c) <- liftIO $ atomicModifyIORef' rresults $ \(num, count) ->
                 let num' = num + r
                     count'= count + numCalcsNode
                 in ((num', count'),(num',count'))
 
-       when ( c `rem` 1000 ==0) $ local $ liftIO $ do
+       when ( c `rem` 1000 ==0) $ liftIO $ do
            th <- myThreadId
            putStrLn $ "Samples: "++ show c ++ " -> " ++
              show( 4.0 * fromIntegral n / fromIntegral c)++ "\t" ++ show th
