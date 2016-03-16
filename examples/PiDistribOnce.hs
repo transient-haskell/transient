@@ -1,5 +1,5 @@
 -- Distributed streaming using Transient
--- See the article: https://www.fpcomplete.com/user/agocorona/streaming-transient-effects-vi
+-- See the article: https://www.fpcomplete.com/tutorial-edit/streaming-transient-effects-vi
 
 {-# LANGUAGE ScopedTypeVariables, DeriveDataTypeable, MonadComprehensions  #-}
 module MainOnce where
@@ -31,6 +31,8 @@ import System.Environment
 
 -- for more details look at the article: https://www.fpcomplete.com/tutorial-edit/streaming-transient-effects-vi
 --
+-- there is a pending problem with the killing of the spawned threads in the remote nodes.
+-- so I force the exit at the end of the calculation
 
 main= do
    let numNodes= 5
@@ -39,18 +41,16 @@ main= do
        createLocalNode p= createNode "localhost"  p
        nodes= map createLocalNode ports
 
-
+   addNodes nodes
    keep $ do
-      addNodes nodes
---     option "start" "start"
-      xs <- collect  numSamples $ runCloud $ do
-         foldl (<|>) empty (map listen nodes) <|> return()
-         local $ threads 2 $ runCloud $
-                 clustered[if x * x + y * y < (1 :: Double) then 1 else (0 :: Int)| x <- random, y <-random]
+--     logged $ option "start" "start"
+     xs <- collect numSamples $ do
+             foldl (<|>) empty (map listen nodes) <|> return()
+             clustered[if x * x + y * y < 1 then 1 else (0 :: Int)| x <- random, y <-random]
 
-      liftIO $ print (4.0 * (fromIntegral $ sum xs) / (fromIntegral numSamples) :: Double)
-      exit
-
+     liftIO $ print (4.0 * (fromIntegral $ sum xs) / (fromIntegral numSamples) :: Double)
+     exit
+     
      where
-     random=  local $ waitEvents' randomIO :: Cloud Double
+     random=  waitEvents' $ liftIO  randomIO :: TransIO Double
 

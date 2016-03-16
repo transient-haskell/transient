@@ -8,6 +8,7 @@ import Data.Typeable
 import Control.Concurrent
 import Control.Applicative
 import Data.IORef
+import Control.Monad.IO.Class
 import Control.Monad.State
 import Data.List(nub)
 
@@ -35,21 +36,14 @@ data EVar a= EVar Int (IORef (Maybe a)) deriving Typeable
 
 newEVar ::  TransientIO (EVar a)
 newEVar  = Transient $ do
-   getData `onNothing`  do -- initialize EVars
+   getSessionData `onNothing`  do -- initialize EVars
                             ref <- liftIO $ newIORef M.empty
-                            setData $ EVars ref
+                            setSData $ EVars ref
                             return  (EVars ref)
-   id <- genId
+   id <- genNewId
    ref <- liftIO $ newIORef Nothing
    return . Just $ EVar id ref
 
--- | delete al the subscriptions for an evar.
-delEVar :: EVar a -> TransIO ()
-delEVar (EVar id _)= Transient $ do
-   EVars ref <- getData `onNothing` error "No Events context"
-   map <- liftIO $ readIORef ref
-   liftIO $ writeIORef ref $ M.delete id map
-   return $ Just ()
 
 -- | read the EVar. It only succeed when the EVar is being updated
 -- The continuation gets registered to be executed whenever the variable is updated.
@@ -58,12 +52,12 @@ delEVar (EVar id _)= Transient $ do
 -- To avoid multiple registrations, use `unsubscribe`
 readEVar :: EVar a -> TransIO a
 readEVar (EVar id ref1)= Transient $ do
-   mr <- liftIO $ readIORef ref1    -- !!> "READEVAR"
+   mr <- liftIO $ readIORef ref1 !> "READEVAR"
    case mr of
      Just _ -> return mr
      Nothing -> do
-         cont <- get
-         EVars ref <- getData `onNothing` error "No Events context"
+         cont <- getCont
+         EVars ref <- getSessionData `onNothing` error "No Events context"
          map <- liftIO $ readIORef ref
          let Just conts=  M.lookup id map <|> Just []
          liftIO $ writeIORef ref $  M.insert id (cont:conts) map
@@ -71,13 +65,13 @@ readEVar (EVar id ref1)= Transient $ do
 
 -- |  update the EVar and execute all readEVar blocks with last in - first out priority
 writeEVar (EVar id ref1) x= Transient $ do
-   EVars ref <- getData `onNothing` error "No Events context"
-   liftIO $ writeIORef ref1 $ Just x   -- signal that the EVar continuations are being executed
+   EVars ref <- getSessionData `onNothing` error "No Events context"
+   liftIO $ writeIORef ref1 $ Just x
    map <- liftIO $ readIORef ref
    let Just conts = M.lookup id map <|> Just []
        len= length conts
    runCont'  len id ref
-   liftIO $ writeIORef ref1 Nothing  -- signal finish executing
+   liftIO $ writeIORef ref1 Nothing
    return $ Just ()
 
    where
@@ -90,14 +84,12 @@ writeEVar (EVar id ref1) x= Transient $ do
        runCont current
        map' <- liftIO $ readIORef ref
        let Just conts'= M.lookup id map' <|> Just []
-       if (length conts /= length conts')
-          then return ()
-          else liftIO $ writeIORef ref $ M.insert id (nexts ++ [current]) map
+       if (length conts /= length conts') then return () else liftIO $ writeIORef ref $   M.insert id (nexts ++ [current]) map
        runCont'  (n - 1) id ref
 
 -- | unsuscribe the last `readEVar` executed for this EVar
 unsubscribe (EVar id _)= Transient $ do
-   EVars ref <- getData `onNothing` error "No Events context"
+   EVars ref <- getSessionData `onNothing` error "No Events context"
    map <- liftIO $ readIORef ref
    let Just conts = M.lookup id map <|> Just []
    liftIO $ writeIORef ref $  M.insert id (tail conts) map
