@@ -1,3 +1,4 @@
+![](https://raw.githubusercontent.com/agocorona/transient/master/logo.ico)
 New: GHCJS integration and improved map-reduce (and wormholes and teleporting of computations)
 ======================
 
