@@ -31,9 +31,7 @@ main = do
                      else serverNode
   runCloud' $  do
         listen mynode
-        local $ render $ render $ option "press" "press"
-        local $ render $ wprint "hi"
-        empty
+        
         wormhole serverNode $  widget  <|> widget
 
 widget =  do
