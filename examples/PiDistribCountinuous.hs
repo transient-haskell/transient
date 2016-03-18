@@ -38,7 +38,7 @@ main= do
        nodes= map createLocalNode ports
 
    rresults <- newIORef (0,0)
-   keep $ freeThreads $ threads 10 $ unlift $ do
+   keep $ freeThreads $ threads 10 $ runCloud $ do
      --setBufSize 1024
      local $ addNodes nodes
      foldl (<|>) empty (map listen nodes) <|> return()
@@ -75,7 +75,6 @@ main= do
 --
 -- program myport  localhost myport
 
-unlift (Cloud mx)= mx
 
 mainDistributed= do
     args <- getArgs

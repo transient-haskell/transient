@@ -71,7 +71,7 @@ import System.IO
 
 import Control.Concurrent
 
-
+import System.Random
 
 
 
@@ -131,31 +131,37 @@ lliftIO= local . liftIO
 -- | continue the execution in a new node
 -- all the previous actions from `listen` to this statement must have been logged
 beamTo :: Node -> Cloud ()
-beamTo node =  do
-  Log rec log _ <- onAll getSData <|> return (Log False [][])
-  if rec then return () else onAll $ do
-      msendToNode node $ SLast $ reverse log
-      let log'= Wait: log
-      setSData $ Log rec log' log'
+beamTo node =  local $ do
+  Log rec log _ <-  getSData <|> return (Log False [][])
+  if rec
+    then do
+      setSData WasRemote
+      return ()
+    else  do
+      msendToNode node $ SLast $ reverse log   !> "BEAMTO" -- !> ("beamto send", log)
       empty
 
 
 -- | execute in the remote node a process with the same execution state
 -- all the previous actions from `listen` to this statement must have been logged
 forkTo  :: Node -> Cloud ()
-forkTo node= do
-  Log rec log _<- onAll getSData <|> return (Log False [][])
-  if rec then return () else onAll $ do
+forkTo node= local $ do
+  Log rec log _<- getSData <|> return (Log False [][])
+  if rec
+    then do
+      setSData WasRemote
+      return ()
+    else  do
       msendToNode node $ SLast $ reverse log
-      let log'= Wait: log
-      setSData $ Log rec log' log'
 
 -- | executes an action in another node.
--- All the previous actions from `listen` to this statement must have been logged
 callTo :: Loggable a => Node -> Cloud a -> Cloud a
-callTo n p =  do
-    SLast r <- streamFrom n (SLast <$> p)
-    return r
+callTo node  remoteProc=
+   wormhole node $ do
+       teleport     -- !!> "TELEPORT to remote"
+       r <-  loggedc remoteProc
+       teleport     -- !!> "TELEPORT from remote"
+       return r
 
 
 -- | synonymous of `callTo`
@@ -181,7 +187,7 @@ msend (Connection _(Just (Node2Node _ h sock)) _ _ blocked _ _ ) r= liftIO $ do
                      hPutStrLn   h "LOG a b"
                      hPutStrLn   h ""
                      hPutStrLn h (show r)
-                     hFlush h                         -- !!> show ("sending: ", r)
+                     hFlush h                         -- !>  ("msend: ", r)
 --             `catch` (\(e::SomeException) -> sClose sock)
 
 
@@ -315,45 +321,46 @@ mread (Connection node  (Just (Node2Web sconn )) bufSize events blocked _ _ )=
 
 wormhole :: Loggable a => Node -> Cloud a -> Cloud a
 wormhole node (Cloud comp) = local $ Transient $ do
-   moldconn <- getData --`onNothing` error "wormhole: no connection set"
+
+   moldconn <- getData   -- !!> "wormhole"
+
 
    Log rec log fulLog <- getData `onNothing` return (Log False [][])
 --   initState
    let lengthLog= length fulLog
-   if not rec                           -- !!> show rec
-            then runTrans $ do
-                conn <- mconnect node  -- !!> ("connecting node " ++ show node)           -- !!> "wormhole local"
+   if not rec                             -- !> ("recovery", rec)
+            then runTrans $ (do
+                conn <- mconnect node     -- !> ("connecting node ", show node)   !!> "wormhole local"
 
-                liftIO $ msend conn $ SLast $ reverse fulLog   -- !!> ("sending "++ show fulLog) -- SLast will disengage  the previous wormhole/listen
+                liftIO $ msend conn $ SLast $ reverse fulLog     -- !> ("wh sending ", show fulLog) -- SLast will disengage  the previous wormhole/listen
 
-                setSData $ conn{calling= True,offset= lengthLog} -- WormHole conn True  lengthLog
-                (mread conn >>= check fulLog) <|> return ()   -- !!> "MREAD"
+                setSData $ conn{calling= True,offset= lengthLog}
+                (mread conn >>= check fulLog)  <|> return ()    -- !!> "MREAD local"
 --                putState    !!> "PUTSTATE"
-                r <- comp
-                when (isJust moldconn) $ setSData (fromJust moldconn)
-                return r
-
+                comp)
+               <** (when (isJust moldconn) $ setSData (fromJust moldconn))
+                    -- <*** is not enough
 
             else do
-               let oldconn = fromMaybe (error "wormhole: no connection in remote node") moldconn
---             if null log    -- has recovered state already
 
---              then do
+             let oldconn = fromMaybe (error "wormhole: no connection in remote node") moldconn
+
+             if null log    -- has recovered state already
+
+              then do
                setData $ oldconn{calling= False,offset= lengthLog}
 
                runTrans $ do
-                  mlog <- mread oldconn    -- !!> "MREAD"
+                  mlog <- mread oldconn      -- !!> "MREAD remote"
                   check  fulLog mlog
-                  r <- comp
-                  setSData  oldconn
-                  setSData WasRemote
-                  return r
+                  comp
+                 <*** do
+                      setSData  oldconn
+                      setSData WasRemote     -- !!> "RESET REMOTE OLD COMM"
 
---              else do
---                  setData $ oldconn{calling= False,offset= lengthLog}
---                  r <- runTrans comp                 --  !!> "????????????????"
---                  setSData oldconn
---                  return r
+              else do   -- it is recovering a wormhole in the middle of a chain of nested wormholes
+                  setData $ oldconn{calling= False,offset= lengthLog}
+                  runTrans $ comp  <** setSData oldconn
 
   where
 --  initState= do
@@ -408,14 +415,14 @@ teleport =  local $ Transient $ do
     if not rec
       then  do
          liftIO $ msend conn $ SMore $ drop n $ reverse fulLog
-              -- !!> ("TELEPORT LOCAL sending" ++ show (drop n $ reverse fulLog))
+                 -- !!> ("TELEPORT LOCAL sending" ++ show (drop n $ reverse fulLog))
                  -- will be read by wormhole remote
          when (not calling) $ setData WasRemote
 --         getState   !!> "GETSTAT"
          return Nothing
       else do  delSData WasRemote
 
-               return (Just ())   -- !!> "TELEPORT remote"
+               return (Just ())                             -- !!> "TELEPORT remote"
 --   where
 --   getState = do
 --        rstate <- getData `onNothing` error "rstate not defined"
@@ -431,21 +438,13 @@ copyData def = do
   onAll $ setSData r
   return r
 
-streamFrom :: Loggable a => Node -> Cloud (StreamData a) -> Cloud  (StreamData a)
-streamFrom node  remoteProc= wormhole node $ do
-
-       teleport     -- !!> "TELEPORT 1"
-
-       r <-  loggedc remoteProc
-
-       teleport     -- !!> "TELEPORT 2"
-
-       return r
-
-
 -- | `callTo` can stream data but can not inform the receiving process about the finalization. This call
 -- does it.
---
+streamFrom :: Loggable a => Node -> Cloud (StreamData a) -> Cloud  (StreamData a)
+streamFrom = callTo
+
+
+
 {- All the previous actions from `listen` to this statement must have been logged
 streamFrom1 :: Loggable a => Node -> TransIO (StreamData a) -> TransIO  a -- (StreamData a)
 streamFrom1 node remoteProc= logged $ Transient $ do
@@ -640,22 +639,34 @@ data Connection= Connection{myNode :: ()
 remotePutMailBox :: Loggable a => Node -> a -> Cloud ()
 remotePutMailBox node dat= runAt node $ putMailBox dat
 
+createNamedMailBox :: MonadIO m => m String
+createNamedMailBox= liftIO $ replicateM  10 (randomRIO ('a','z'))
+
+putNamedMailBox name dat= putMailBox (name, dat)
+getNamedMailBox name= do
+     (nam, dat) <- getMailBox
+     if nam /= name then empty else  return dat
+
 -- | updates the local mailbox.
 putMailBox :: Typeable a => a -> Cloud ()
 putMailBox dat= local $ Transient $ do
    Connection{comEvent=comEvent}<- getData
-      `onNothing` error "accessing network events out of listen"
+          `onNothing` error "accessing network events out of listen"
    runTrans $ writeEVar comEvent $ toDyn dat
+   !> "PUTMAILBOXX"
 
 -- | wait until a message of the type expected appears in the mailbox. Then executes the continuation
 -- When the message appears, all the waiting `getMailBox` are executed from newer to the older
 -- following the `readEVar` order.
-getMailBox :: Loggable a => Cloud a
-getMailBox = local $ Transient $ do
-   Connection{comEvent=comEvent} <- getData
-       `onNothing` error "accessing network events out of listen"
-   d <- runTrans $ readEVar comEvent
-   return $ cast d
+getMailBox :: Loggable a => TransIO a
+getMailBox = Transient $  do
+       Connection{comEvent=comEvent} <- getData `onNothing` error "accessing network events out of listen"
+       runTrans $ do
+         d <- readEVar comEvent
+         case fromDynamic d of
+          Nothing -> empty
+          Just x -> return x
+
 
 
 defConnection :: Int -> Connection
@@ -689,7 +700,7 @@ readHandler h= do
 
     let [(v,left)]= readsPrec 0 line
 
-    return  v     -- !!> (show $ typeOf v)
+    return  v        -- !>  ("READHANLER", line)
 
   `catch` (\(e::SomeException) -> return $ SError   e)
 --   where
@@ -753,7 +764,7 @@ listen  (node@(Node _  (PortNumber port) _ _)) = onAll $ do
    (conn,_) <- waitEvents $  NS.accept sock         -- !!> "BEFORE ACCEPT"
 
 
-   h <- liftIO $ NS.socketToHandle conn ReadWriteMode     -- !!> "NEW SOCKET CONNECTION"
+   h <- liftIO $ NS.socketToHandle conn ReadWriteMode      -- !!> "NEW SOCKET CONNECTION"
 
 --   let conn= Connection node  (Just (Node2Node port h sock )) bufSize events blocked
 --   setSData conn
@@ -777,7 +788,7 @@ listen  (node@(Node _  (PortNumber port) _ _)) = onAll $ do
 --               liftIO $ print ("WS RECEIVED: ", msg)
                return . read $ BC.unpack msg
 
---   liftIO $ putStr "LISTEN RECEIVED " >> print mlog
+   -- liftIO $ putStr "LISTEN RECEIVED " >> print mlog
 
    case  mlog  of
              SError e -> do
@@ -969,7 +980,7 @@ shuffleNodes=  liftIO . atomically $ do
 clustered :: Loggable a  => Cloud a -> Cloud a
 clustered proc= loggedc $ do
      nodes <-  onAll getNodes
-     foldr (<|>) empty $ map (\node -> callTo node proc) nodes  -- !!> "fold"
+     foldr (<|>) empty $ map (\node -> callTo node proc) nodes  -- !> ("clustered",nodes)
 
 
 
@@ -977,7 +988,7 @@ clustered proc= loggedc $ do
 mclustered :: (Monoid a, Loggable a)  => Cloud a -> Cloud a
 mclustered proc= loggedc $ do
      nodes <-  onAll getNodes
-     foldl (<>) mempty $ map (\node -> runAt node proc) nodes  -- !!> "fold"
+     foldl (<>) mempty $ map (\node -> runAt node proc) nodes  -- !> ("mclustered",nodes)
 
 -- | Initiates the transient monad, initialize it as a new node (first parameter) and connect it
 -- to an existing node (second parameter).

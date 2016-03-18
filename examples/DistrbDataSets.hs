@@ -10,6 +10,7 @@ import Transient.DDS
 import Control.Applicative
 import Control.Monad.IO.Class
 import Data.Monoid
+import Data.TCache
 import qualified Data.Vector as V
 
 -- Calculates separately the number od odd and even numbers in a list using
@@ -23,15 +24,11 @@ main= do
      runCloud' $ do
           local $ addNodes nodes
           runNodes nodes
-          let cdata = distribute $ V.fromList [1 .. 10000 :: Int]
-          let cdata' = cmap separate cdata
-          r <- reduce (+)  cdata'
-          lliftIO $ print r
-          local exit
 
+          r <- reduce  (+) . cmap separate . distribute $ V.fromList [1 .. 100 :: Int]
 
-sumIt :: (Int,Int) -> (Int,Int) -> (Int,Int)
-sumIt (o,e) (o',e')= (o+o',e+e')
+          lliftIO $  putStr "====================>" >> print r
+
 
 runNodes nodes= foldl (<|>) empty (map listen nodes) <|> return()
 

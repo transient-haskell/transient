@@ -289,12 +289,12 @@ callExample node= do
 environ= unsafePerformIO $ newIORef "Not Changed"
 
 moveExample node= do
-   onAll $ putStrLnhp  node "enter a string. It will be inserted in the other node by a migrating program"
+   local $ putStrLnhp  node "enter a string. It will be inserted in the other node by a migrating program"
    name <- local $ input (const True)
    beamTo node
-   onAll $ liftIO $ putStrLnhp  node "moved!"
-   onAll $ liftIO $ putStrLnhp  node $ "inserting "++ name ++" as new data in this node"
-   onAll $ liftIO $ writeIORef environ name
+   local $ liftIO $ putStrLnhp  node "moved!"
+   local $ liftIO $ putStrLnhp  node $ "inserting "++ name ++" as new data in this node"
+   local $ liftIO $ writeIORef environ name
    return()
 
 

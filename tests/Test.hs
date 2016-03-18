@@ -31,15 +31,13 @@ main = do
                      else serverNode
   runCloud' $  do
         listen mynode
-        local $ render $ render $ option "press" "press"
-        local $ render $ wprint "hi"
-        empty
+
         wormhole serverNode $  widget  <|> widget
 
 widget =  do
 
-         op <-  local $ render $   (render $ inputSubmit "start"  `fire` OnClick)
-                               <|> (render $ inputSubmit "cancel" `fire` OnClick) <++ br
+         op <-  local $ render $   (inputSubmit "start"  `fire` OnClick)
+                               <|> (inputSubmit "cancel" `fire` OnClick) <++ br
 
          teleport          -- translates the computation to the server
 

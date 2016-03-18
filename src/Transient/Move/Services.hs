@@ -109,7 +109,7 @@ initService node package program= loggedc $
             empty
           <|> do
             Connection{comEvent=ev} <- onAll getSData
-            (node', (package', program',port)) <- getMailBox
+            (node', (package', program',port)) <- local getMailBox
             if node'== node && package' == package && program'== program
                  then return port
                  else empty

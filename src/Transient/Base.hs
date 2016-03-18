@@ -140,12 +140,12 @@ runContinuation (EventF _ _ _ fs _ _ _ _  _ _ _) =
 
 
 setContinuation :: TransIO a -> (a -> TransIO b) -> [c -> TransIO c] -> StateIO ()
-setContinuation  b c fs= do
-    (EventF eff _ _ _ d e f g h i j) <- get
-    put $ EventF eff Nothing b (unsafeCoerce c:fs) d e f g h i j
+setContinuation  b c fs =  do
+    (EventF eff ev _ _ d e f g h i j) <- get
+    put $ EventF eff ev b ( unsafeCoerce c: fs) d e f g h i j
 
 -- | run a chain of continuations. It is up to the programmer to assure by construction that
---  each continuation type-check with the next and the parameter type match the input of the first
+--  each continuation type-check with the next, that the parameter type match the input of the first
 -- continuation and that the output is of the type intended.
 runContinuations :: [a -> TransIO b] -> c -> TransIO d
 runContinuations fs x= (compose $ unsafeCoerce fs)  x
@@ -186,8 +186,13 @@ instance Applicative TransIO where
 
          k <- runTrans f
          was <- getData `onNothing` return NoRemote
-         setData NoRemote
-         if was== WasRemote  || was /= WasParallel  && isNothing k
+         setData NoRemote                                    -- !>  ("was=",was)
+         Log recovery _ _ <- getData `onNothing` return (Log False [] [])
+         if was== WasRemote  || (not recovery && was == NoRemote  && isNothing k)
+         -- if the first operand was a remote request
+         -- (so this node is not master and hasn't to execute the whole expression)
+         -- or it was not an asyncronous term (a normal term without async or parallel
+         -- like primitives) and is nothing
            then  do
 
              restoreStack fs
@@ -205,8 +210,8 @@ instance Applicative TransIO where
              liftIO $ writeIORef rg  x
              restoreStack fs
              return $ k <*> x
-     where
-     restoreStack fs=
+
+restoreStack fs=
        modify $ \(EventF eff _ f _ a b c d parent children g1) ->
                EventF eff Nothing f fs a b c d parent children g1
 
@@ -246,12 +251,12 @@ data RemoteStatus=   WasRemote | WasParallel | NoRemote deriving (Typeable, Eq, 
 instance MonadPlus TransIO where
     mzero= empty
     mplus  x y=  Transient $ do
-         mx <- runTrans x     -- !!> "RUNTRANS11111"
+         mx <- runTrans x      -- !!> "RUNTRANS11111"
          was <- getData `onNothing` return NoRemote
-         if was== WasRemote
-           then return Nothing   -- !!> "WASREMOTE"
+         if was== WasRemote  -- !!> "check wasremote"
+           then return Nothing    -- !!> "WASREMOTEEEEEEEEEEEEEEEEEEEEEEEEEEE"
            else case mx of
-             Nothing -> runTrans y     -- !!> "RUNTRANS22222"
+             Nothing -> runTrans y      -- !!> "RUNTRANS22222"
              justx -> return justx
 
 -- | a sinonym of empty that can be used in a monadic expression. it stop the
@@ -262,19 +267,20 @@ stop= Control.Applicative.empty
 infixr 1  <**  ,  <***
 
 -- | forces the execution of the second operand even if the first fails. Return the first result
+(<**) :: TransIO a -> TransIO b -> TransIO a
 (<**) ma mb= Transient $ do
               EventF _ _ _ fs _ _ _ _ _ _ _  <- get
               setContinuation ma (\x -> mb >> return x)  fs
-              rest
-          where
-          rest= do
+
               a <- runTrans ma
-              b <- runTrans mb
-              return $ a <* b
+              runTrans mb
+              restoreStack fs
+              return  a
 
 -- | forces the execution of the second operand  if the first fails only if the first operand
 -- is executed normally, that is , it is not a reexecution consequence of an internal event on it.
 -- Return the first result
+(<***) :: TransIO a -> TransIO b -> TransIO a
 (<***) ma mb= Transient $ do
 
               a <- runTrans ma
@@ -649,8 +655,8 @@ free th env= do
      Just sibling  -> do
        found <- atomically $ do
                 sbs <- readTVar sibling
-                let (sbs', found) = drop [] th  sbs   -- !!> "search "++show th ++ " in " ++ show (map threadId sbs)
-                when found $ writeTVar sibling sbs'    -- !!> "found"
+                let (sbs', found) = drop [] th  sbs    -- !!> "search "++show th ++ " in " ++ show (map threadId sbs)
+                when found $ writeTVar sibling sbs'    -- !> ("new list",map threadId sbs')
                 return found
        if (not found && isJust (parent env))
          then free th $ fromJust $ parent env         -- !!> "toparent"

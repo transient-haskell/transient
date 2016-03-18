@@ -32,7 +32,11 @@ fromIDyn (IDyns s)=r where r= read s  -- !!> "read " ++ s ++ "to type "++ show (
 
 toIDyn x= IDynamic x
 
+{- TODO add save/recover from log
+rerun :: Log -> TransIO a -> TransIO a
 
+getLog :: TransIO Log
+-}
 
 -- | write the result of the computation in  the log and return it.
 -- but if there is data in the internal log, it read the data from the log and
@@ -58,21 +62,18 @@ logged mx =  Transient $ do
    Log recover rs full <- getData `onNothing` return ( Log False  [][])
    runTrans $
     case (recover,rs) of
-      (True, Step x: rs') -> do
-            setSData $ Log True rs' full
-            (return $ fromIDyn x)              -- !!>  "read in step:" ++ show x
+      (True, Step x: rs') -> do setSData $ Log True rs' full
+                                return $ fromIDyn x              -- !!>  "read in step:" ++ show x
 
       (True, Exec:rs') -> do
             setSData $ Log True  rs' full
             mx                                 -- !!> "step True Exec"
 
       (True, Wait:rs') -> do
-            setSData (Log True  rs' full)      -- !!> "Wait2"
+            setSData (Log True  rs' full)      -- !!> "Wait"
             empty
 
---      (True, Wormhole:rs') -> do
---            setSData (Log True  rs' full)      -- !!> "Wait2"
---            mx
+
 
 
       _ -> do
@@ -81,7 +82,8 @@ logged mx =  Transient $ do
 
             r <-  mx <*** ( do  -- para evitar que   p1 <|> p2   ejecute p1 cuando p1 espera input  ejecutando p2
                             r <- getSData <|> return NoRemote
-                            case r of WasParallel ->
+                            case r of
+                                      WasParallel ->
                                          let add= Wait: full
                                          in setSData $ Log False add add
                                       _ -> return ())

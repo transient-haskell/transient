@@ -30,7 +30,7 @@ import Data.Time.Clock
 
 -- | slurp a list of values and process them in parallel . To limit the number of processing
 -- threads, use `threads`
-choose  ::  [a] -> TransientIO a
+choose  ::  [a] -> TransIO a
 choose []= empty
 choose   xs = do
     evs <- liftIO $ newIORef xs
@@ -46,7 +46,7 @@ toData r= case r of
       SLast x -> x
 
 -- | group the output of a possible multithreaded process in groups of n elements.
-group :: Int -> TransientIO a -> TransientIO [a]
+group :: Int -> TransIO a -> TransIO [a]
 group num proc =  do
     v <- liftIO $ newIORef (0,[])
     x <- proc
@@ -60,7 +60,7 @@ group num proc =  do
       Just xs -> return xs
 
 -- | group result for a time interval, measured with `diffUTCTime`
-groupByTime :: Integer -> TransientIO a -> TransientIO [a]
+groupByTime :: Integer -> TransIO a -> TransIO [a]
 groupByTime time proc =  do
     v  <- liftIO $ newIORef (0,[])
     t  <- liftIO getCurrentTime
@@ -75,9 +75,9 @@ groupByTime time proc =  do
       Nothing -> stop
       Just xs -> return xs
 
--- | alternative definition with more parallelism, as the composition of n `parallel` sentences
-choose' :: [a] -> TransientIO a
-choose' xs = foldl (<|>) empty $ map (\x -> parallel (return (SLast x)) >>= return . toData) xs
+-- | alternative definition with more parallelism, as the composition of n `async` sentences
+choose' :: [a] -> TransIO a
+choose' xs = foldl (<|>) empty $ map (async . return) xs
 
 
 --newtype Collect a= Collect (MVar (Int, [a])) deriving Typeable
@@ -93,18 +93,18 @@ choose' xs = foldl (<|>) empty $ map (\x -> parallel (return (SLast x)) >>= retu
 -- if he find the number of solutions requested, it kill the non-free threads of the process and return
 -- It works monitoring the solutions found and the number of active threads.
 -- If the first parameter is 0, collect will return all the results
-collect ::  Int -> TransientIO a -> TransientIO [a]
+collect ::  Int -> TransIO a -> TransIO [a]
 collect n = collect' n 0.01 0
 
 -- | search also between two time intervals. If the first interval has passed and there is no result,
 --it stops.
 -- After the second interval, it stop unconditionally and return the current results.
 -- It also stops as soon as there are enough results specified in the first parameter.
-collect' :: Int -> NominalDiffTime -> NominalDiffTime -> TransientIO a -> TransientIO [a]
+collect' :: Int -> NominalDiffTime -> NominalDiffTime -> TransIO a -> TransIO [a]
 collect' n t1 t2 search= hookedThreads $  do
   rv <- liftIO $ atomically $ newTVar (0,[]) -- !> "NEWMVAR"
   endflag <- liftIO $ newTVarIO False
-  st <- Transient $ Just <$> get
+  st <-  get
   t <- liftIO getCurrentTime
   let worker = do
         r <- search    -- !> "ANY"
@@ -122,11 +122,11 @@ collect' n t1 t2 search= hookedThreads $  do
                                (n > 0 && n' >= n) ||
                                  (null ns && (diffUTCTime t' t > t1))    ||
                                  (t2 > 0 && diffUTCTime t' t > t2)
-                                      -- !!> show (diffUTCTime t' t, n', length ns)
+                                       !!> show (diffUTCTime t' t, n', length ns)
                                then return xs else retry
 
           th <- liftIO $ myThreadId   -- !> "KILL"
-          stnow <- Transient $ Just <$> get
+          stnow <-  get
           liftIO $ killChildren st
           liftIO $ hangThread st stnow
           return  xs

@@ -1,12 +1,7 @@
 {-# LANGUAGE  ExistentialQuantification, DeriveDataTypeable #-}
-{- TODO: test it. class Distributable, Shuffle (Distributable for DDS)
-class Distributable a where
-   distibute a -> [b]
- instance distributable (DDS (key,a) where
-   distribute= shuffle the data by key among the nodes
- -}
 
-module Transient.DDS(distribute, cmap, reduce) where
+
+module Transient.DDS where -- (distribute, cmap, reduce,textFile) where
 import Transient.Base hiding (stop)
 import Transient.Move
 import Transient.Logged
@@ -19,6 +14,7 @@ import Control.Monad.IO.Class
 import System.IO
 import Control.Monad
 import Data.Monoid
+import Data.Maybe
 
 import Data.Typeable
 import Data.List hiding (delete)
@@ -35,6 +31,7 @@ import qualified Data.Map as M
 import Control.Arrow (second)
 import qualified Data.Vector as V
 import Data.Hashable
+import System.IO.Unsafe
 
 data DDS a= Loggable a => DDS  (Cloud (PartRef a))
 data PartRef a= Ref Node Path Save deriving (Typeable, Read, Show)
@@ -50,17 +47,17 @@ keyp s False="PartT@"++s
 
 instance Loggable a => IResource (Partition a) where
     keyResource= key
-    readResourceByKey k= if k!! 5 /= 'P' then return Nothing
+    readResourceByKey k= if k !! 4 /= 'P' then return Nothing
         else defaultReadByKey k >>= return . fmap ( read . unpack)
     writeResource (s@(Part _ _ save _))=
           unless (not save) $ defaultWrite (defPath s ++ key s) (pack $ show s)
 
 
+eval :: DDS a -> TransIO (PartRef a)
+eval (DDS mx) = runCloud mx
 
 
 type Path=String
-
-
 
 cmap :: (Loggable a,Loggable b,Loggable k,Ord k) => (a -> (k,b)) -> DDS  (V.Vector a) -> DDS (M.Map k(V.Vector b))
 cmap f (DDS mx)= DDS $  do
@@ -70,7 +67,7 @@ cmap f (DDS mx)= DDS $  do
   where
 --  process ::  Partition a -> Cloud [Partition b]
   process  (ref@(Ref node path sav))= runAt node $ do
-              xs <- getPartitionData ref -- mx
+              xs <- getPartitionData ref   !> "CMAP"
               generateRef node $ map1 f xs
 
 
@@ -83,76 +80,93 @@ cmap f (DDS mx)= DDS $  do
 
 
 
+instance Show a => Show (MVar a) where
+   show mvx= "MVar " ++ show (unsafePerformIO $ readMVar mvx)
 
-
+instance Read a => Read (MVar a) where
+   readsPrec n ('M':'V':'a':'r':' ':s)=
+      let [(x,s')]= readsPrec n s
+      in [(unsafePerformIO $ newMVar x,s')]
 
 data ReduceChunk a= EndReduce | Reduce a deriving (Typeable, Read, Show)
 
 reduce ::  (Hashable k,Ord k, Loggable k, Loggable a)
              => (a -> a -> a) -> DDS (M.Map k (V.Vector a)) ->Cloud (M.Map k a)
-reduce red  (dds@(DDS mx))= loggedc $ do
-     ref <- mx
-     dat <- getPartitionData ref
+reduce red  (dds@(DDS mx))= do
 
-     let lengthdat= M.size dat
-     count <- onAll . liftIO $ newMVar 0
-     parallelize shuffle (M.assocs dat)
-
-     count <- onAll . liftIO $ modifyMVar count (\c ->return(c +1,c+1))
-     when (count== lengthdat) . clustered $ putMailBox (EndReduce `asTypeOf` paramOf (DDS mx)) --finish
-     empty
-    <|> do
-     maps <-local . collect 0 $ runCloud (clustered reducers)
-     return $ mconcat maps
-
+     reducer <|> shuffler
      where
-     atype ::DDS(M.Map k (V.Vector a)) -> V.Vector a
+     shuffler=   do
+         count <- lliftIO $ newMVar 0   !> "NEWMVAR"
+         ref <- mx
+         dat <- getPartitionData ref
+         let lengthdat= M.size dat
+
+         parallelize shuffle (M.assocs dat)
+
+         cnt <- lliftIO $ modifyMVar count (\c ->return(c +1,c+1))
+         when (cnt== lengthdat !> (cnt,lengthdat) ) $ do
+              clustered $ putMailBox (EndReduce `asTypeOf` paramOf dds) !> "ENDREDUCE"
+         empty
+
+
+--     shuffle :: (Loggable v a, Foldable v, Monoid v, Loggable k, Hashable k) => (k,v) -> Cloud ()
+     shuffle (k,ds) = do
+         nodes <- onAll getNodes  !> k
+         let i=  abs $ hash k `rem` length nodes
+         runAt  (nodes !! i) $ putMailBox $ Reduce (k,foldl1 red ds) -- local reduction in the node
+                       !> ("shuffle: moving to node, PUTMAILBOX ",i)
+
+     reducer= mclustered reduce    -- a reduce process in each node
+
+--     reduce :: (Ord k)  => Cloud (M.Map k v)
+     reduce = local $ do
+       reduceResults <- liftIO $ newMVar M.empty  !>  "CReATE reSULtS"
+       numberSent <- liftIO $ newMVar 0
+       minput <- getMailBox  -- get the chunk once it arrives to the mailbox
+
+       case minput of
+         Reduce (k,inp) -> do
+            let input= inp `asTypeOf` atype dds
+            return () !> "Reduce"
+            liftIO $ modifyMVar_ reduceResults
+                   $ \map -> do
+                      let maccum =  M.lookup k map
+                      return $ M.insert k (case maccum of
+                        Just accum -> red input accum
+                        Nothing ->  input) map
+            empty    !> ("reduce arriving", k)
+
+         EndReduce -> do
+            n <- liftIO $ modifyMVar numberSent $ \r -> return (r+1, r+1)
+            nodes <-  getNodes
+            if n == length nodes
+             then do
+               r <- liftIO $ readMVar reduceResults    !!> "end reduce"
+               liftIO $ print r
+               return r
+             else empty
+
+     atype ::DDS(M.Map k (V.Vector a)) ->  a
      atype = undefined -- type level
 
-     paramOf  :: DDS (M.Map k (V.Vector a)) -> ReduceChunk(M.Map k (V.Vector a))
+     paramOf  :: DDS (M.Map k (V.Vector a)) -> ReduceChunk( k,  a)
      paramOf = undefined -- type level
 
 --     groupByKey :: Ord k2 => [(k2, v2)] -> M.Map k2 [v2]
 --     groupByKey = M.fromListWith (++) . map (second return)
 
-     reducers = do
-       reduceResults <- onAll . liftIO $ newMVar M.empty
-
-       minput <- getMailBox
-
-       case minput of
-         Reduce (k,input) -> do
-              onAll . liftIO $ withMVar reduceResults
-                             $ \r -> return (M.insert k (foldl1 red (input `asTypeOf` atype dds)) r)
-              empty
-         EndReduce    -> onAll . liftIO $ readMVar reduceResults
-
-     shuffle :: (Loggable xs, Loggable k, Hashable k) => (k,xs) -> Cloud ()
-     shuffle (k,ds) = do
-           nodes <- onAll getNodes
-           let i=  hash k `rem` length nodes
-           beamTo  (nodes !! i)
-           putMailBox  (k,ds)
-
-parallelize f xs= loggedc $ foldl (<|>) empty $ map  f xs
-
-
-
-
-
-
+parallelize :: Loggable b => (a -> Cloud b) -> [a] -> Cloud b
+parallelize f xs=  foldl (<|>) empty $ map  f xs
 
 getPartitionData :: Loggable a => PartRef a   -> Cloud  a
-getPartitionData (Ref node path save)  = do
-    Just (Part _ _ _ xs) <- local . liftIO $ atomically
-                                       $ readDBRef
-                                       $ getDBRef
-                                       $ keyp path save
- --                                                   `asTypeOf` getPartitionType mx)
-    return xs
-    where
-    getPartitionType :: Cloud (PartRef a)-> Partition a
-    getPartitionType = undefined -- type level only
+getPartitionData (Ref node path save)  = local $ do
+    Just (Part _ _ _ xs) <- liftIO $ atomically
+                                   $ readDBRef
+                                   $ getDBRef
+                                   $ keyp path save
+
+    return xs  -- !> "getPartitionData"
 
 -- en caso de fallo de Node, se lanza un clustered en busca del path
 --   si solo uno lo tiene, se copia a otro
@@ -184,7 +198,7 @@ distribute :: Loggable a => V.Vector a -> DDS (V.Vector a)
 distribute = DDS  .  distribute'
 
 distribute' xs= loggedc $  do
-   nodes <- local getNodes
+   nodes <- local getNodes      !> "DISTRIBUTE"
    let size= length xs `div` length nodes
        xss = split size xs
    distribute'' xss nodes
@@ -213,16 +227,16 @@ textFile name= DDS $ loggedc $ do
 
 
 generateRef :: Loggable a => Node -> a -> Cloud (PartRef a)
-generateRef node x= onAll . liftIO $ do
+generateRef node x= local . liftIO $ do
        temp <- getTempName
-       let reg=  Part node temp False  x
+       let reg=  Part node temp True  x
        atomically $ newDBRef reg
        return $ getRef reg
 
 getRef (Part n t s x)= Ref n t s
 
 getTempName :: IO String
-getTempName=  ("DDS/" ++) <$> replicateM  5 (randomRIO ('a','z'))
+getTempName=  ("DDS" ++) <$> replicateM  5 (randomRIO ('a','z'))
 
 
 -------------- Distributed  Datasource Streams ---------
