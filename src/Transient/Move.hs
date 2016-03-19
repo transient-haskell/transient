@@ -966,6 +966,7 @@ shuffleNodes=  liftIO . atomically $ do
 -- use the thread control primitives.
 --
 -- this snippet receive a message from each of the simulated nodes:
+--
 -- > main = keep $ do
 -- >    let nodes= map createLocalNode [2000..2005]
 -- >    addNodes nodes

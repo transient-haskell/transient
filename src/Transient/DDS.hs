@@ -93,10 +93,10 @@ data ReduceChunk a= EndReduce | Reduce a deriving (Typeable, Read, Show)
 reduce ::  (Hashable k,Ord k, Loggable k, Loggable a)
              => (a -> a -> a) -> DDS (M.Map k (V.Vector a)) ->Cloud (M.Map k a)
 reduce red  (dds@(DDS mx))= do
+   box <- createNamedMailBox
 
-     reducer <|> shuffler
-     where
-     shuffler=   do
+
+   let shuffler=   do
          count <- lliftIO $ newMVar 0   !> "NEWMVAR"
          ref <- mx
          dat <- getPartitionData ref
@@ -106,47 +106,49 @@ reduce red  (dds@(DDS mx))= do
 
          cnt <- lliftIO $ modifyMVar count (\c ->return(c +1,c+1))
          when (cnt== lengthdat !> (cnt,lengthdat) ) $ do
-              clustered $ putMailBox (EndReduce `asTypeOf` paramOf dds) !> "ENDREDUCE"
+              clustered $ putNamedMailBox box (EndReduce `asTypeOf` paramOf dds) !> "ENDREDUCE"
          empty
 
 
 --     shuffle :: (Loggable v a, Foldable v, Monoid v, Loggable k, Hashable k) => (k,v) -> Cloud ()
-     shuffle (k,ds) = do
+       shuffle (k,ds) = do
          nodes <- onAll getNodes  !> k
          let i=  abs $ hash k `rem` length nodes
-         runAt  (nodes !! i) $ putMailBox $ Reduce (k,foldl1 red ds) -- local reduction in the node
+         runAt  (nodes !! i) $ putNamedMailBox box $ Reduce (k,foldl1 red ds) -- local reduction in the node
                        !> ("shuffle: moving to node, PUTMAILBOX ",i)
 
-     reducer= mclustered reduce    -- a reduce process in each node
+       reducer= mclustered reduce    -- a reduce process in each node
 
 --     reduce :: (Ord k)  => Cloud (M.Map k v)
-     reduce = local $ do
-       reduceResults <- liftIO $ newMVar M.empty  !>  "CReATE reSULtS"
-       numberSent <- liftIO $ newMVar 0
-       minput <- getMailBox  -- get the chunk once it arrives to the mailbox
+       reduce = local $ do
+           reduceResults <- liftIO $ newMVar M.empty  !>  "CReATE reSULtS"
+           numberSent <- liftIO $ newMVar 0
+           minput <- getNamedMailBox box  -- get the chunk once it arrives to the mailbox
 
-       case minput of
-         Reduce (k,inp) -> do
-            let input= inp `asTypeOf` atype dds
-            return () !> "Reduce"
-            liftIO $ modifyMVar_ reduceResults
-                   $ \map -> do
-                      let maccum =  M.lookup k map
-                      return $ M.insert k (case maccum of
-                        Just accum -> red input accum
-                        Nothing ->  input) map
-            empty    !> ("reduce arriving", k)
+           case minput of
+             Reduce (k,inp) -> do
+                let input= inp `asTypeOf` atype dds
+                return () !> "Reduce"
+                liftIO $ modifyMVar_ reduceResults
+                       $ \map -> do
+                          let maccum =  M.lookup k map
+                          return $ M.insert k (case maccum of
+                            Just accum -> red input accum
+                            Nothing ->  input) map
+                empty    !> ("reduce arriving", k)
 
-         EndReduce -> do
-            n <- liftIO $ modifyMVar numberSent $ \r -> return (r+1, r+1)
-            nodes <-  getNodes
-            if n == length nodes
-             then do
-               r <- liftIO $ readMVar reduceResults    !!> "end reduce"
-               liftIO $ print r
-               return r
-             else empty
+             EndReduce -> do
+                n <- liftIO $ modifyMVar numberSent $ \r -> return (r+1, r+1)
+                nodes <-  getNodes
+                if n == length nodes
+                 then do
+                   r <- liftIO $ readMVar reduceResults    !!> "end reduce"
+                   liftIO $ print r
+                   return r
+                 else empty
 
+   in reducer <|> shuffler
+   where
      atype ::DDS(M.Map k (V.Vector a)) ->  a
      atype = undefined -- type level
 
