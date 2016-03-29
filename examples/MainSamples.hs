@@ -67,11 +67,10 @@ example2= do
 collectSample= threads 4 $ do
     option "coll" "collect sample: return results in a list"
     r <- collect 0 $ do
-      x <- choose  [1,2,3]
-      y <- choose  [4,5,6]
-      th <- liftIO $ threadDelay 1000 >> myThreadId
-
-      return (x,y,th)
+           x <- choose  [1,2,3]
+           y <- choose  [4,5,6]
+           th <- liftIO $ threadDelay 1000 >> myThreadId
+           return (x,y,th)
 
     liftIO $ print r
 

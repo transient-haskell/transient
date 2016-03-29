@@ -73,14 +73,12 @@ logged mx =  Transient $ do
             setSData (Log True  rs' full)      -- !!> "Wait"
             empty
 
-
-
-
       _ -> do
             let add= Exec: full
             setSData $ Log False add add
 
-            r <-  mx <*** ( do  -- para evitar que   p1 <|> p2   ejecute p1 cuando p1 espera input  ejecutando p2
+            r <-  mx <*** ( do  -- when   p1 <|> p2, to avoid the re-execution of p1 at the
+                                -- recovery when p1 is asynchronous
                             r <- getSData <|> return NoRemote
                             case r of
                                       WasParallel ->

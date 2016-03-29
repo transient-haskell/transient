@@ -42,11 +42,9 @@ import           System.Environment
 
 {-# INLINE (!>) #-}
 (!>) :: Show a => b -> a -> b
-(!>) x y=   x !!> show y
+(!>) x y=   trace (show y) x
 infixr 0 !>
-{-# INLINE (!!>) #-}
-(!!>) =   flip trace
-infixr 0 !!>
+
 
 data TransIO  x = Transient  {runTrans :: StateT EventF IO (Maybe x)}
 type SData= ()
@@ -55,7 +53,7 @@ type EventId= Int
 
 type TransientIO= TransIO
 
-data EventF  = forall a b . EventF{effects     :: Effects
+data EventF  = forall a b . EventF{meffects     :: Effects
                                   ,event       :: Maybe SData
                                   ,xcomp       :: TransIO a
                                   ,fcomp       :: [b -> TransIO b]
@@ -171,23 +169,25 @@ instance Applicative TransIO where
              appg x = Transient $  do
                    liftIO $ writeIORef rg $ Just x
                    k <- liftIO $ readIORef rf
-                   return $ k <*> Just x  -- !> "RETURNED: " ++ show(isJust k)++ show(isJust x)
+                   return $ k <*> Just x    -- !> "RETURNED event in 2nd term <*>: " ++ show(isJust k)++ show(True)
 
 
              appf k = Transient $  do
                    liftIO $ writeIORef rf  $ Just k
                    x<- liftIO $ readIORef rg
-                   return $ Just k <*> x  --  !> "RETURNED: " ++ show(isJust k)++ show(isJust x)
+                   return $ Just k <*> x    -- !> "RETURNED event in 1st term <*> " ++ show(True)++ show(isJust x)
 
 
 
 
          setContinuation f appf fs
 
-         k <- runTrans f
+         k <- runTrans f    -- !> "RUN f"
          was <- getData `onNothing` return NoRemote
-         setData NoRemote                                    -- !>  ("was=",was)
+         when (was == WasParallel) $  setData NoRemote                                    -- !>  ("was=",was)
+
          Log recovery _ _ <- getData `onNothing` return (Log False [] [])
+
          if was== WasRemote  || (not recovery && was == NoRemote  && isNothing k)
          -- if the first operand was a remote request
          -- (so this node is not master and hasn't to execute the whole expression)
@@ -206,7 +206,7 @@ instance Applicative TransIO where
 
              setContinuation g appg fs
 
-             x <- runTrans g              -- !!> "RUN g"
+             x <- runTrans g             --  !> "RUN g"
              liftIO $ writeIORef rg  x
              restoreStack fs
              return $ k <*> x
@@ -251,22 +251,22 @@ data RemoteStatus=   WasRemote | WasParallel | NoRemote deriving (Typeable, Eq, 
 instance MonadPlus TransIO where
     mzero= empty
     mplus  x y=  Transient $ do
-         mx <- runTrans x      -- !!> "RUNTRANS11111"
+         mx <- runTrans x                -- !!> "RUNTRANS11111"
          was <- getData `onNothing` return NoRemote
-         if was== WasRemote  -- !!> "check wasremote"
-           then return Nothing    -- !!> "WASREMOTEEEEEEEEEEEEEEEEEEEEEEEEEEE"
+         if was== WasRemote              -- !!> "check wasremote"
+           then return Nothing           --  !> was
            else case mx of
-             Nothing -> runTrans y      -- !!> "RUNTRANS22222"
+             Nothing -> runTrans y      --  !!> "RUNTRANS22222"
              justx -> return justx
 
 -- | a sinonym of empty that can be used in a monadic expression. it stop the
 -- computation
-stop :: TransIO a
-stop= Control.Applicative.empty
+stop :: Alternative m => m a
+stop= empty
 
 infixr 1  <**  ,  <***
 
--- | forces the execution of the second operand even if the first fails. Return the first result
+-- | forces the execution of the second operand even if the first stop. Return the first result (experimental)
 (<**) :: TransIO a -> TransIO b -> TransIO a
 (<**) ma mb= Transient $ do
               EventF _ _ _ fs _ _ _ _ _ _ _  <- get
@@ -277,6 +277,8 @@ infixr 1  <**  ,  <***
               restoreStack fs
               return  a
 
+atEnd= (<**)
+
 -- | forces the execution of the second operand  if the first fails only if the first operand
 -- is executed normally, that is , it is not a reexecution consequence of an internal event on it.
 -- Return the first result
@@ -284,8 +286,10 @@ infixr 1  <**  ,  <***
 (<***) ma mb= Transient $ do
 
               a <- runTrans ma
-              b <- runTrans mb
-              return $ a <* b
+              runTrans mb
+              return a
+
+atEnd' = (<***)
 
 instance Monoid a => Monoid (TransIO a) where
   mappend x y = mappend <$> x <*> y
@@ -329,8 +333,8 @@ instance Monad TransIO where
       return x = Transient $ return $ Just x
 
       x >>= f  = Transient $ do
-            effects <- gets effects -- liftIO $ readIORef refEventCont
-            (t,mk) <- effects x x f
+--            effects <- gets effects -- liftIO $ readIORef refEventCont
+            (t,mk) <- baseEffects x x f
             t $ case mk of
                  Just k  ->  runTrans (f k)
 
@@ -577,7 +581,7 @@ loop (cont'@(EventF eff e x fs a b c d _ childs g))  rec  =  do
 
       -- execute the IO computation and then the closure-continuation
       loop'= forkMaybe False cont $ do
-         mdat <- rec
+         mdat <- threadDelay 0 >> rec
          case mdat of
              se@(SError _) ->  iocont se
              SDone ->          iocont SDone

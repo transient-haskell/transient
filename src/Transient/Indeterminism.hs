@@ -122,7 +122,7 @@ collect' n t1 t2 search= hookedThreads $  do
                                (n > 0 && n' >= n) ||
                                  (null ns && (diffUTCTime t' t > t1))    ||
                                  (t2 > 0 && diffUTCTime t' t > t2)
-                                       !!> show (diffUTCTime t' t, n', length ns)
+                                        -- !>  (diffUTCTime t' t, n', length ns)
                                then return xs else retry
 
           th <- liftIO $ myThreadId   -- !> "KILL"

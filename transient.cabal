@@ -18,21 +18,21 @@ source-repository head
     location: https://github.com/agocorona/transient
 
 library
-
+    build-depends: transformers
 
     if impl(ghcjs >=0.1)
-        build-depends: base >4 && <5, mtl , random ,
-                       containers , stm , transformers , process ,
-                       bytestring , time , ghcjs-base , ghcjs-prim
+        build-depends: base >4 && <5, mtl -any, random -any,
+                       containers -any, stm -any, transformers -any, process -any,
+                       bytestring -any, time -any, ghcjs-base -any, ghcjs-prim -any
         exposed: True
         buildable: True
     else
-        build-depends: base >4 && <5, mtl , random ,
-                       containers , directory , filepath , stm ,
-                       HTTP , network , transformers , process ,
-                       network-info , bytestring , time , vector ,
-                       TCache , websockets , network-uri ,
-                       case-insensitive , hashable
+        build-depends: base >4 && <5, mtl -any, random -any,
+                       containers -any, directory -any, filepath -any, stm -any,
+                       HTTP -any, network -any, transformers -any, process -any,network,
+                       network-info -any, bytestring -any, time -any, vector -any,
+                       TCache -any, websockets -any, network-uri -any,
+                       case-insensitive -any, hashable -any
         exposed: True
         buildable: True
 
@@ -53,4 +53,14 @@ library
     default-language: Haskell2010
     hs-source-dirs: src .
 
+test-suite test-transient
+    build-depends: base -any, transformers -any, stm -any,
+                   containers -any, transformers >=0.4.3.0 && <0.5,
+                   transformers >=0.4.3.0 && <0.5, transformers >=0.4.3.0 && <0.5,
+                   transformers >=0.4.3.0 && <0.5, transformers >=0.4.3.0 && <0.5
+    type: exitcode-stdio-1.0
+    main-is: Test4.hs
+    buildable: True
+    default-language: Haskell2010
+    hs-source-dirs: tests src .
 

@@ -109,7 +109,7 @@ initService node package program= loggedc $
             empty
           <|> do
             Connection{comEvent=ev} <- onAll getSData
-            (node', (package', program',port)) <- local getMailBox
+            (node', (package', program',port)) <- local waitNodeEvents
             if node'== node && package' == package && program'== program
                  then return port
                  else empty
@@ -123,7 +123,7 @@ notifyService node service=  clustered $ do
         writeTVar nodeList $ nod' : nodes'
         return ()
 
-     putMailBox (node,service)
+     local $ sendNodeEvent (node,service)
      return ()
 
 

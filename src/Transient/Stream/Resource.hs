@@ -104,7 +104,7 @@ onFinish  close= do
        Finish finish <- getSData <|> initFinish
 
        e <- readEVar finish
-       unsubscribe finish
+--       unsubscribe finish
        close e  -- !!> "CLOSE"
        stop
      <|> return()
