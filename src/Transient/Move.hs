@@ -87,21 +87,30 @@ data Node= Node{ nodeHost   :: HostName
                , connection :: IORef Pool
                , services   :: [Service]}
          | WebNode{wconnection:: IORef Pool}
-         deriving Typeable
+         deriving (Typeable)
+
+instance Ord Node where
+   compare node1 node2= compare (nodeHost node1,nodePort node1)(nodeHost node2,nodePort node2)
+
+newtype Cloud a= Cloud (TransIO a) deriving (Functor,Applicative, Alternative, Monad, MonadState EventF, Monoid)
 
 
-newtype Cloud a= Cloud (TransIO a) deriving (Functor, Applicative, Alternative, Monad, MonadState EventF, Monoid)
 
 local :: Loggable a => TransIO a -> Cloud a
 local =  Cloud . logged
 
-
+-- | Run a cloud computation
 runCloud :: Cloud a -> TransIO a
 runCloud (Cloud mx)= mx
 
 #ifndef ghcjs_HOST_OS
 runCloud' :: Cloud a -> IO a
 runCloud' (Cloud mx)= keep mx
+
+
+runCloud'' :: Cloud a -> IO a
+runCloud'' (Cloud mx)= keep' mx
+
 #endif
 
 
@@ -693,7 +702,7 @@ readHandler h= do
 
     let [(v,left)]= readsPrec 0 line
 
-    return  v        --  !>  line
+    return  v         --  !>  line
 
   `catch` (\(e::SomeException) -> return $ SError   e)
 --   where
@@ -1075,7 +1084,7 @@ httpMode (method,uri, headers) conn  = do
           let uri'= BC.tail $ uriPath uri              -- !!> "HTTP REQUEST"
               file= if BC.null uri' then "index.html" else uri'
 
-          content <- liftIO $  BL.readFile ( "tests/Test.jsexe/"++ BC.unpack file)
+          content <- liftIO $  BL.readFile ( "static/out.jsexe/"++ BC.unpack file)
                             `catch` (\(e:: SomeException) -> return "NOT FOUND")
 
           n <- liftIO $ SBS.sendMany conn $ -- ["HTTP/1.0 200 OK\rContent-Type: text/html\r\r"] ++

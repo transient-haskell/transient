@@ -19,7 +19,7 @@ data EVar a= EVar Int  (TChan (StreamData a)) deriving Typeable
 -- | creates an EVar.
 --
 -- Evars are event vars. `writeEVar` trigger the execution of all the continuations associated to the  `readEVar` of this variable
--- (the code that is after them) as  stack: the most recent reads are executed first.
+-- (the code that is after them).
 --
 -- It is like the publish-subscribe pattern but without inversion of control, since a readEVar can be inserted at any place in the
 -- Transient flow.
@@ -29,6 +29,8 @@ data EVar a= EVar Int  (TChan (StreamData a)) deriving Typeable
 -- they wait for their respective events, while TVars execute the whole expression when any variable is modified.
 --
 -- The execution continues after the writeEVar when all subscribers have been executed.
+--
+-- Now the continuations are executed in parallel.
 --
 -- see https://www.fpcomplete.com/user/agocorona/publish-subscribe-variables-transient-effects-v
 --

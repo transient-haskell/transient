@@ -30,7 +30,7 @@ main= do
           runNodes nodes
 
           r <- reduce  (+)  . cmap (\w -> (w, 1 :: Int)) -- $ textUrl "http://google.com"
-                            $ getText  words content'
+                            $ getText  words content
 
           lliftIO $  print  r
 --          onAll $ liftIO $ syncCache

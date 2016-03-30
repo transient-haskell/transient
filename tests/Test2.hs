@@ -4,50 +4,67 @@ import           Control.Monad
 import           Control.Monad.IO.Class
 import           Data.IORef
 import           GHC.Conc
-import           System.Environment
-import           System.IO
-import           System.Random
+import           Control.Applicative
+import           Data.Monoid
 import           Transient.Base
 import           Transient.Indeterminism
 import           Transient.Logged
 import           Transient.Move
 import           Transient.Stream.Resource
+import           Transient.DDS
+import Control.Concurrent
+import System.IO.Unsafe
+import Data.List
+import Control.Exception.Base
+import qualified Data.Map as M
 
-main = do
-  args  <- getArgs
-  let (mainNode : nodes) = node <$> args
-      numCalcsNode = 5000
+main= do
+     let numNodes = 2
+         ports = [2000 .. 2000 + numNodes - 1]
+         createLocalNode = createNode "localhost"
+         nodes = map createLocalNode ports
+         node1= head nodes
+         node2= nodes !! 1
 
-
-  rresults <- liftIO $ newIORef (0,0)
-
-  keep $ do
-    mapM_ (connect mainNode) nodes
-    logged $ option  "start"  "Start the calculation"
-
-    r <- clustered $ do
-      r <- group numCalcsNode $ do
-        n <- liftIO  getNumCapabilities
-        threads n $ spawn $ do
-          x <- randomIO :: IO Double
-          y <- randomIO
-          return $ if x * x + y * y < 1 then 1 else (0 :: Int)
-      return $ sum r
-
-    (n,c) <- liftIO $ atomicModifyIORef' rresults $ \(num, count) ->
-      let num' = num + r
-          count'= count + numCalcsNode
-      in ((num', count'),(num',count'))
-
-    when ( c `rem` 100000 == 0) $ liftIO $ do
-      th <- myThreadId
-      putStrLn $ "Samples: " ++ show c ++ " -> " ++
-        show( 4.0 * fromIntegral n / fromIntegral c) ++ "\t" ++ show th
+     r <-runCloud' $ do
+          local $ addNodes nodes
+          runNodes nodes
 
 
-node addr = let (h:p:_) = splitOn ':' addr in createNode h (read p)
 
-splitOn delimiter = foldr f [[]]
-  where f c l@(x:xs)
-          | c == delimiter = []:l
-          | otherwise = (c:x):xs
+          r <-  (runAt node1 (effect "node1" >> return "hello "))
+                    <>  (runAt node2 (effect "node2" >> return "world" ))
+          lliftIO $ print r
+
+          effs <- getEffects
+
+          assert (sort effs == sort [(node1,"node1"),(node2,"node2")]) $ return ()
+          delEffects
+
+          -- collect
+          -- clustered
+          -- mclustered
+          -- <>
+          --
+          r <- reduce  (+)  . cmap (\w -> (w, 1 :: Int))  $ getText  words "hello world hello hi"
+          assert (sort (M.toList r) == sort [("hello",2),("hi",1),("world",1)]) $ return ()
+          lliftIO $ print r
+          local $ exit "exit"
+
+     print r
+
+getEffects :: Loggable a =>  Cloud [(Node, a)]
+getEffects=lliftIO $ readMVar effects
+
+runNodes nodes= foldl (<|>) empty (map listen nodes) <|> return()
+
+
+delEffects= lliftIO $ modifyMVar_ effects $ const $ return[]
+effects= unsafePerformIO $ newMVar []
+
+effect x= do
+   node <- getMyNode
+   lliftIO $ modifyMVar_ effects $ \ xs ->  return $ (node,x): xs
+   return()
+
+

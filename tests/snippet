@@ -1,0 +1,9 @@
+:l tests/TestSuite.hs
+:l examples\PiDistribOnce.hs
+:l examples\DistrbDataSets.hs
+:l examples\MainSamples.hs
+:l ..\..\stuff\skynet\skynetTrans.hs
+
+:step main
+
+

@@ -158,27 +158,37 @@ instance Applicative TransIO where
   pure a  = Transient . return $ Just a
 
   f <*> g = Transient $ do
-         rf <- liftIO $ newIORef Nothing
-         rg <- liftIO $ newIORef Nothing   -- !> "NEWIOREF"
+         rf <- liftIO $ newIORef (Nothing,[])
+         rg <- liftIO $ newIORef (Nothing,[])   -- !> "NEWIOREF"
 
 
          EventF _ _ _ fs _ _ _ _ _ _ _  <- get
 
          let
 
-             appg x = Transient $  do
-                   liftIO $ writeIORef rg $ Just x
-                   k <- liftIO $ readIORef rf
-                   return $ k <*> Just x    -- !> "RETURNED event in 2nd term <*>: " ++ show(isJust k)++ show(True)
-
+             hasWait (_:Wait:_)= True
+             hasWait _ = False
 
              appf k = Transient $  do
-                   liftIO $ writeIORef rf  $ Just k
-                   x<- liftIO $ readIORef rg
-                   return $ Just k <*> x    -- !> "RETURNED event in 1st term <*> " ++ show(True)++ show(isJust x)
+                   Log rec _ full <- getData `onNothing` return (Log False [] [])
+                   liftIO $ writeIORef rf  (Just k,full)
+                   (x, full2)<- liftIO $ readIORef rg
+                   when (hasWait full2) $
+                        let full'= head full2: full
+                        in setData $ Log rec full' full'
 
 
+                   return $ Just k <*> x
 
+             appg x = Transient $  do
+                   Log rec _ full <- getData `onNothing` return (Log False [] [])
+                   liftIO $ writeIORef rg $ (Just x, full)
+                   (k,full1) <- liftIO $ readIORef rf
+                   when (hasWait  full) $
+                        let full'= head full: full1
+                        in setData $ Log rec full' full'
+
+                   return $ k <*> Just x
 
          setContinuation f appf fs
 
@@ -186,7 +196,7 @@ instance Applicative TransIO where
          was <- getData `onNothing` return NoRemote
          when (was == WasParallel) $  setData NoRemote                                    -- !>  ("was=",was)
 
-         Log recovery _ _ <- getData `onNothing` return (Log False [] [])
+         Log recovery _ full <- getData `onNothing` return (Log False [] [])
 
          if was== WasRemote  || (not recovery && was == NoRemote  && isNothing k)
          -- if the first operand was a remote request
@@ -194,12 +204,10 @@ instance Applicative TransIO where
          -- or it was not an asyncronous term (a normal term without async or parallel
          -- like primitives) and is nothing
            then  do
-
              restoreStack fs
              return Nothing
            else do
-
-             liftIO $ writeIORef rf  k
+             liftIO $ writeIORef rf  (k,full)
 
              mfdata <- gets mfData
              seq <- gets mfSequence
@@ -207,7 +215,8 @@ instance Applicative TransIO where
              setContinuation g appg fs
 
              x <- runTrans g             --  !> "RUN g"
-             liftIO $ writeIORef rg  x
+             Log recovery _ full' <- getData `onNothing` return (Log False [] [])
+             liftIO $ writeIORef rg  (x,full')
              restoreStack fs
              return $ k <*> x
 
@@ -231,7 +240,7 @@ instance Read IDynamic where
 type Recover= Bool
 type CurrentPointer= [LogElem]
 type LogEntries= [LogElem]
-data LogElem=   Wait | Exec | Step IDynamic deriving (Read,Show)
+data LogElem=   Wait | Exec | Var IDynamic deriving (Read,Show)
 data Log= Log Recover  CurrentPointer LogEntries deriving Typeable
 
 
@@ -271,7 +280,6 @@ infixr 1  <**  ,  <***
 (<**) ma mb= Transient $ do
               EventF _ _ _ fs _ _ _ _ _ _ _  <- get
               setContinuation ma (\x -> mb >> return x)  fs
-
               a <- runTrans ma
               runTrans mb
               restoreStack fs
@@ -848,9 +856,9 @@ keep' mx  = do
    stay
 
 -- | force the finalization of the main thread and thus, all the application
-exit :: TransIO ()
-exit= do
-  liftIO $ putMVar rexit   True
+exit :: a -> TransIO a
+exit x= do
+  liftIO $ putMVar rexit   x
   stop
 
 -- | alternative operator for maybe values. Used  in infix mode

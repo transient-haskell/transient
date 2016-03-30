@@ -225,6 +225,9 @@ sendAnyError :: SomeException -> IO (StreamData a)
 sendAnyError e= return $ SError  e
 
 
+-- | distribute a vector of values among many nodes.
+-- If the vector is static and sharable, better use the get* primitives
+-- since each node will load the data independently.
 distribute :: Loggable a => V.Vector a -> DDS (V.Vector a)
 distribute = DDS  .  distribute'
 
@@ -248,6 +251,7 @@ distribute'' xss nodes =
                         par <- generateRef node xs
                         return  par
 
+-- | input data from a text that must be static and shared by all the nodes
 getText  :: Loggable a => (String -> [a]) -> String -> DDS (V.Vector a)
 getText part str= DDS $ do
    nodes <- onAll getNodes                                        -- !> "DISTRIBUTE"
@@ -262,6 +266,7 @@ getText part str= DDS $ do
                         par <- generateRef node xss
                         return  par
 
+-- | get the worlds of an URL
 textUrl= getUrl words
 
 -- | generate a DDS from the content of a URL
@@ -281,9 +286,11 @@ getUrl partitioner url= DDS $ do
                         par <- generateRef node xss
                         return  par
 
+-- | get the words of a file
 textFile= getFile words
 
 -- | generate a DDS from a file. All the nodes must access the file with the same path
+-- the first parameter is the parser that generates elements from the content
 getFile :: Loggable a => (String -> [a]) ->  String -> DDS (V.Vector a)
 getFile partitioner file= DDS $ do
    nodes <- local getNodes                                        -- !> "DISTRIBUTE"

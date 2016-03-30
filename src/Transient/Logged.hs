@@ -62,12 +62,12 @@ logged mx =  Transient $ do
    Log recover rs full <- getData `onNothing` return ( Log False  [][])
    runTrans $
     case (recover,rs) of
-      (True, Step x: rs') -> do setSData $ Log True rs' full
-                                return $ fromIDyn x              -- !!>  "read in step:" ++ show x
+      (True, Var x: rs') -> do setSData $ Log True rs' full
+                               return $ fromIDyn x              -- !!>  "read in Var:" ++ show x
 
       (True, Exec:rs') -> do
             setSData $ Log True  rs' full
-            mx                                 -- !!> "step True Exec"
+            mx                                 -- !!> "Var True Exec"
 
       (True, Wait:rs') -> do
             setSData (Log True  rs' full)      -- !!> "Wait"
@@ -87,8 +87,8 @@ logged mx =  Transient $ do
                                       _ -> return ())
 
 
-            let add= Step (toIDyn r): full
-            (setSData $ Log False add add)     -- !!> "AFTER STEP"
+            let add= Var (toIDyn r): full
+            (setSData $ Log False add add)     -- !!> "AFTER Var"
             return  r
 
 

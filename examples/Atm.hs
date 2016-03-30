@@ -10,6 +10,11 @@ import Data.Typeable
 
 data Operation= Operation String deriving Typeable
 
+-- Follows  http://www.math-cs.gordon.edu/courses/cs211/ATMExample/
+-- to demostrate how it is possible to program at the user requiremente level
+-- the program follows closely the specifications and be clear enough to be understood
+-- by the client
+
 main= runBody atm
 
 atm= do
