@@ -34,7 +34,7 @@ import qualified Data.ByteString.Lazy as BL
 import Network.Socket.ByteString as SBS(send,sendMany,recv)
 import Data.CaseInsensitive(mk)
 import Data.Char(isSpace)
-import GHCJS.Perch (JSString)
+--import GHCJS.Perch (JSString)
 #else
 import  JavaScript.Web.WebSocket
 import  qualified JavaScript.Web.MessageEvent as JM
@@ -443,9 +443,11 @@ wormhole node (Cloud comp) = local $ Transient $ do
              SLast log -> setSData (Log True log $ reverse log ++  fulLog ) -- !!> ("SETTING "++ show log)
 
 #ifndef ghcjs_HOST_OS
-
-pack = id
+type JSString= String
+pack= id
 #endif
+
+
 newtype Prefix= Prefix JSString deriving(Read,Show)
 newtype IdLine= IdLine JSString deriving(Read,Show)
 data Repeat= Repeat | RepeatHandled JSString deriving (Eq, Read, Show)

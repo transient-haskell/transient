@@ -27,7 +27,7 @@ library
         exposed: True
         buildable: True
     else
-        build-depends: base >4 && <5, mtl -any, random -any, ghcjs-perch,
+        build-depends: base >4 && <5, mtl -any, random -any,
                        containers -any, directory -any, filepath -any, stm -any,
                        HTTP -any, network -any, transformers -any, process -any,network,
                        network-info -any, bytestring -any, time -any, vector -any,
