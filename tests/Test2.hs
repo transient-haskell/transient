@@ -16,6 +16,8 @@ import Control.Concurrent
 import System.IO.Unsafe
 import Data.List
 import Control.Exception.Base
+import Control.Monad.State
+import Unsafe.Coerce
 import qualified Data.Map as M
 
 main= do
@@ -26,32 +28,32 @@ main= do
          node1= head nodes
          node2= nodes !! 1
 
-     r <-runCloud' $ do
-          local $ addNodes nodes
-          runNodes nodes
+     runCloud'   $ do
+--          local $ addNodes nodes
+--          runNodes nodes
+
+          local $   (sync $ async( threadDelay 1000000 >> print "hello") >> stop ) <|> (liftIO $print "world")
+--         (liftIO (print "world") >>stop) <|> (liftIO $ print "hello")
 
 
 
-          r <-  (runAt node1 (effect "node1" >> return "hello "))
-                    <>  (runAt node2 (effect "node2" >> return "world" ))
-          lliftIO $ print r
 
-          effs <- getEffects
+--     print r
 
-          assert (sort effs == sort [(node1,"node1"),(node2,"node2")]) $ return ()
-          delEffects
 
-          -- collect
-          -- clustered
-          -- mclustered
-          -- <>
-          --
-          r <- reduce  (+)  . cmap (\w -> (w, 1 :: Int))  $ getText  words "hello world hello hi"
-          assert (sort (M.toList r) == sort [("hello",2),("hi",1),("world",1)]) $ return ()
-          lliftIO $ print r
-          local $ exit "exit"
+sync :: TransIO a -> TransIO a
+sync x=  Transient $ do
 
-     print r
+        EventF _ _ x' fs _ _ _ _ _ _ _  <- get
+
+
+
+--        setContinuation x (\x -> liftIO (print "hi") >> return x)  $   fs
+        r <- runTrans $ unsafeCoerce x'
+
+--        setData WasRemote
+--        restoreStack fs
+        return r
 
 getEffects :: Loggable a =>  Cloud [(Node, a)]
 getEffects=lliftIO $ readMVar effects

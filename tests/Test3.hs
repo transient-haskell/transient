@@ -2,44 +2,53 @@ module Main where
 
 import           Control.Monad
 import           Control.Monad.IO.Class
-import           Data.IORef
-import           GHC.Conc
 import           System.Environment
 import           System.IO
-import           System.Random
 import           Transient.Base
 import           Transient.Indeterminism
 import           Transient.Logged
 import           Transient.Move
 import           Transient.Stream.Resource
 import           Control.Applicative
-
+import           System.Info
+import           Control.Concurrent
 
 main = do
+
+  let nodes= [createNode "localhost" 2020, createNode "192.168.99.100" 2020]
   args  <- getArgs
-  let (local, remote)= if length args > 0 then (createNode "localhost" 2000, createNode "localhost" 2001)
-                                     else (createNode "localhost" 2001, createNode "localhost" 2000)
-  addNodes [local, remote]
-  let    numCalcsNode = 500
+  let [localnode, remote]= if length args > 0 then nodes
+                                     else reverse nodes
 
-  rresults <- liftIO $ newIORef (0,0)
 
-  keep $ do
+  runCloud' $ do
+    onAll $ addNodes nodes
+    listen localnode <|> return  ()
+    hello <|> helloworld <|> stream localnode
 
-    listen local <|> return  ()
-    logged $  option  "start"  "Start the calculation"
-    nodes <- logged getNodes
-    logged $ liftIO $ putStrLn $ "receiving from nodes: " ++ show nodes
+hello= do
+    local $  option  "hello"  "each computer say hello"
 
-    r <- clustered  $ threads 0 $ do
+    r <- clustered  $  do
                       node <- getMyNode
-                      async $ return node
+                      onAll . liftIO . print $ "hello " ++ os
+                      return ("hello from",os,arch, nodeHost node)
 
-    liftIO $ print r
+    lliftIO $ print r
 
-node addr = let (h:p:_) = splitOn ':' addr in createNode h (read p)
+helloworld= do
+    local $ option "helloword"  "both computers compose \"hello world\""
+    r <- mclustered  $  return $ if  os== "linux" then "hello " else "world"
+    lliftIO $ print r
 
-splitOn delimiter = foldr f [[]]
-  where f c l@(x:xs)
-          | c == delimiter = []:l
-          | otherwise = (c:x):xs
+
+stream remoteHost= do
+    local $ option "stream" "stream from the Linux node to windows"
+    let fibs=  0 : 1 : zipWith (+) fibs (tail fibs) :: [Int]   -- fibonacci numbers
+
+    r <- runAt remoteHost $ local $ do
+                     r <-  threads 1 $ choose $ take 10 fibs
+                     liftIO $ putStr os >> print r
+                     liftIO $ threadDelay 1000000
+                     return r
+    lliftIO $ print r

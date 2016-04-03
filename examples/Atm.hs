@@ -1,35 +1,53 @@
-{-# LANGUAGE DeriveDataTypeable #-}
-import Haste.HPlay.View
-import Control.Concurrent.MVar
-import System.IO.Unsafe
-import Data.Monoid
-import Haste
-import Haste.Foreign
-import Control.Monad.IO.Class
-import Data.Typeable
+{-# LANGUAGE   CPP #-}
 
-data Operation= Operation String deriving Typeable
+module Main where
+
+import Prelude hiding (div)
+import Transient.Base
+#ifdef ghcjs_HOST_OS
+   hiding ( option,runCloud')
+#endif
+import GHCJS.HPlay.View
+#ifdef ghcjs_HOST_OS
+   hiding (map)
+#else
+   hiding (map, option,runCloud')
+#endif
+
+import  Transient.Move  hiding(teleport)
+import Control.Applicative
+import Control.Monad
+import Data.Typeable
+import Data.IORef
+import Control.Concurrent (threadDelay)
+import Control.Monad.IO.Class
+import Control.Concurrent.MVar
+import System.Random
+import System.IO.Unsafe
+
+data Operation= Operation String
 
 -- Follows  http://www.math-cs.gordon.edu/courses/cs211/ATMExample/
 -- to demostrate how it is possible to program at the user requiremente level
 -- the program follows closely the specifications and be clear enough to be understood
 -- by the client
 
-main= runBody atm
+main= simpleWebApp 2020 atm
+
+
 
 atm= do
    card <- waitCard
-   wprint "Enter PIN"
-   pin  <- getInt Nothing `fire` OnChange
+   pin <- enterPIN
    validateBank pin card
-   setSData card
+   setData card
    performTransactions <|> cancel
    returnCard
 
 performTransactions = do
     clearScreen
-    withdrawal <|> deposit <|> transfer <|> balanceInquiry
-    printReceipt
+    operation <- withdrawal <|> deposit <|> transfer <|> balanceInquiry
+    printReceipt operation
     return ()
 
 withdrawal= do
@@ -84,9 +102,9 @@ balanceInquiry= do
     r <- getBalanceBank ac
     wprint $ "balance= "++ show r
 
-validateBank pin card = validate' pin card (0 :: Int)
+validateBank pin card = atServer $ validate' pin card (0 :: Int)
    where
-   validate' pin card times= do
+   validate' pin card times= local $ do
     r <- verifyPinBank pin card
     if r then return () else do
      if times ==2
@@ -116,8 +134,11 @@ switchOnOff= on <|> off
 type AccountNumber= String
 newtype Card= Card [AccountNumber]  deriving Typeable
 
-waitCard = wbutton Card "enter card"
+waitCard = local $ render $ wbutton Card "enter card"
 
+enterPIN= local $ do
+      wprint "Enter PIN"
+      render $ getInt Nothing `fire` OnChange
 
 cancel= wbutton () "Cancel"
 
@@ -148,6 +169,7 @@ getBalanceBank ac= liftIO $ do
     return $ r * 1000
 
 verifyPinBank _ _= liftIO $ do
+    liftIO $ print "verifyPinBank"
     r <- rand
     if r > 0.2 then return True else return False
 
@@ -156,9 +178,7 @@ waitDeposit = do
      if n > 0.5 then return True else return False
 
 rand:: IO Double
-rand= ffi $ toJSString "(function (){return Math.random()}"
+rand= randomRIO
 
-timeout= do
-   wtimeout 10 (return())
-   return False
+timeout t= threadDelay $ t * 1000000
 

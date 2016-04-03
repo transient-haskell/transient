@@ -1,5 +1,7 @@
-:l tests/TestSuite.hs
-:l examples\PiDistribOnce.hs
+:l tests/Test3.hs
+:l  examples\Atm.hs
+:l examples\webapp.hs
+:set -i../ghcjs-hplay/src -i../ghcjs-perch/src
 :l examples\DistrbDataSets.hs
 :l examples\MainSamples.hs
 :l ..\..\stuff\skynet\skynetTrans.hs

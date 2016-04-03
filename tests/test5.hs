@@ -29,11 +29,13 @@ import Data.List((\\))
 -- to be executed with two or more nodes
 main = do
      args <- getArgs
-     let port= read $ head args :: Integer
-         numNodes = 2
-         ports = [2000 .. 2000 + numNodes - 1]
-         createLocalNode = createNode "localhost"
-         nodes = map createLocalNode ports
+     let hostname= read $ head args :: String
+         remotehost= read $ args !! 1
+         port= 2000
+--         numNodes = 2
+--         ports = [2000 .. 2000 + numNodes - 1]
+
+         nodes = (createNode "localhost" ports
          node1= head nodes
          node2= nodes !! 1
 

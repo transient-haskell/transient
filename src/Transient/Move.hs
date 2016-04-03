@@ -34,16 +34,20 @@ import qualified Data.ByteString.Lazy as BL
 import Network.Socket.ByteString as SBS(send,sendMany,recv)
 import Data.CaseInsensitive(mk)
 import Data.Char(isSpace)
+import GHCJS.Perch (JSString)
 #else
 import  JavaScript.Web.WebSocket
 import  qualified JavaScript.Web.MessageEvent as JM
 import GHCJS.Prim (JSVal)
+import GHCJS.Marshal(fromJSValUnchecked)
 import qualified Data.JSString as JS
 
 
 import           JavaScript.Web.MessageEvent.Internal
 import           GHCJS.Foreign.Callback.Internal (Callback(..))
 import qualified GHCJS.Foreign.Callback          as CB
+import Data.JSString  (JSString(..), pack)
+
 #endif
 
 
@@ -78,6 +82,7 @@ import System.Random
 import Data.Dynamic
 import Data.String
 
+
 #ifdef ghcjs_HOST_OS
 type HostName  = String
 newtype PortID = PortNumber Int deriving (Read, Show, Eq, Typeable)
@@ -92,31 +97,52 @@ data Node= Node{ nodeHost   :: HostName
 instance Ord Node where
    compare node1 node2= compare (nodeHost node1,nodePort node1)(nodeHost node2,nodePort node2)
 
-newtype Cloud a= Cloud (TransIO a) deriving (Functor,Applicative, Alternative, Monad, MonadState EventF, Monoid)
+-- The cloud monad is a thin layer over Transient in order to make sure that the type system
+-- forces the logging of intermediate results
+newtype Cloud a= Cloud {runCloud ::TransIO a} deriving (Functor,Applicative, Alternative, Monad, MonadState EventF, Monoid)
 
 
-
+-- | Means that this computation will be executed in the current node. the result will be logged
+-- so the closure will be recovered if the computation is translated to other node by means of
+-- primitives like `beamTo`, `forkTo`, `runAt`, `teleport`, `clustered`, `mclustered` etc
 local :: Loggable a => TransIO a -> Cloud a
 local =  Cloud . logged
 
--- | Run a cloud computation
-runCloud :: Cloud a -> TransIO a
-runCloud (Cloud mx)= mx
+
 
 #ifndef ghcjs_HOST_OS
+-- | run the cloud computation.
 runCloud' :: Cloud a -> IO a
 runCloud' (Cloud mx)= keep mx
 
-
+-- | run the cloud computation with no console input
 runCloud'' :: Cloud a -> IO a
 runCloud'' (Cloud mx)= keep' mx
 
 #endif
 
+-- | alternative to `local` It means that if the computation is translated to other node
+-- this will be executed again if this has not been executed inside a `local` computation.
+--
+-- > onAll foo
+-- > local foo'
+-- > local $ do
+-- >       bar
+-- >       runCloud $ do
+-- >               onAll baz
+-- >               runAt node ....
+-- > callTo node' .....
+--
+-- Here foo will be executed in node' but foo' bar and baz don't.
+--
+-- However foo bar and baz will e executed in node.
+--
 
 onAll ::  TransIO a -> Cloud a
 onAll =  Cloud
 
+-- log the result a cloud computation. like `loogged`, This eliminated all the log produced by computations
+-- inside and substitute it for that single result when the computation is completed.
 loggedc (Cloud mx)= Cloud $ logged mx
 
 lliftIO :: Loggable a => IO a -> Cloud a
@@ -279,11 +305,22 @@ wsOpen url= do
    react (hsopen ws) (return ())             -- !!> "react"
    return ws                                 -- !!> "AFTER ReACT"
 
+foreign import javascript safe
+    "window.location.hostname"
+   js_hostname ::    JSVal
 
+foreign import javascript safe
+   "(function(){var res=window.location.href.split(':')[2];if (res === undefined){return 80} else return res.split('/')[0];})()"
+   js_port ::   JSVal
 
 foreign import javascript safe
     "$1.onmessage =$2;"
    js_onmessage :: WebSocket  -> JSVal  -> IO ()
+
+getWebServerNode _=
+
+    createNode  <$> ( fromJSValUnchecked js_hostname)
+                <*> (fromIntegral <$> (fromJSValUnchecked js_port :: IO Int))
 
 hsonmessage ::WebSocket -> (MessageEvent ->IO()) -> IO ()
 hsonmessage ws hscb= do
@@ -324,6 +361,7 @@ mread (Connection node  (Just (Node2Web sconn )) bufSize events blocked _ _ )=
             s <- NS.receiveData sconn
             return . read $  BS.unpack s         -- !>  ("WS MREAD RECEIVED ---->", s)
 
+getWebServerNode port= return $ createNode "localhost" port
 #endif
 
 
@@ -336,15 +374,19 @@ wormhole node (Cloud comp) = local $ Transient $ do
    Log rec log fulLog <- getData `onNothing` return (Log False [][])
 --   initState
    let lengthLog= length fulLog
-   if not rec                                                    -- !> ("recovery", rec)
+   if not rec                                                     -- !> ("recovery", rec)
             then runTrans $ (do
-                conn <- mconnect node                            -- !> ("connecting node ", show node)   !!> "wormhole local"
+                conn <- mconnect node                             -- !> ("connecting node ", show node)
+                                                                  -- !> "wormhole local"
 
-                liftIO $ msend conn $ SLast $ reverse fulLog     -- !> ("wh sending ", show fulLog) -- SLast will disengage  the previous wormhole/listen
+                liftIO $ msend conn $ SLast $ reverse fulLog      -- !> ("wh sending ", show fulLog) -- SLast will disengage  the previous wormhole/listen
 
                 setSData $ conn{calling= True,offset= lengthLog}
-                (mread conn >>= check fulLog)  <|> return ()    -- !!> "MREAD local"
+                (mread conn >>= check fulLog)  <|> return ()      -- !> "MREAD local"
 --                putState    !!> "PUTSTATE"
+#ifdef ghcjs_HOST_OS
+                addPrefix    -- for the DOM identifiers
+#endif
                 comp)
                <** (when (isJust moldconn) $ setSData (fromJust moldconn))
                     -- <*** is not enough
@@ -390,7 +432,6 @@ wormhole node (Cloud comp) = local $ Transient $ do
 
 
 
-
   check fulLog mlog =
    case  mlog    of                       -- !> ("RECEIVED ", mlog ) of
              SError e -> do
@@ -401,6 +442,20 @@ wormhole node (Cloud comp) = local $ Transient $ do
              SMore log -> setSData (Log True log $ reverse log ++  fulLog ) -- !!> ("SETTING "++ show log)
              SLast log -> setSData (Log True log $ reverse log ++  fulLog ) -- !!> ("SETTING "++ show log)
 
+#ifndef ghcjs_HOST_OS
+
+pack = id
+#endif
+newtype Prefix= Prefix JSString deriving(Read,Show)
+newtype IdLine= IdLine JSString deriving(Read,Show)
+data Repeat= Repeat | RepeatHandled JSString deriving (Eq, Read, Show)
+
+addPrefix= Transient $ do
+   n <- genId
+   Prefix s <- getData `onNothing` return ( Prefix "")
+   setSData $ Prefix (pack( 's': show n)<> s)
+   return $ Just ()
+
 
 
 
@@ -409,7 +464,19 @@ wormhole node (Cloud comp) = local $ Transient $ do
 teleport :: Cloud ()
 teleport =  local $ Transient $ do
     conn@Connection{calling= calling,offset= n} <- getData
-           `onNothing` error "teleport: No connection defined: use wormhole"
+         `onNothing` error "teleport: No connection defined: use wormhole"
+    when  (saveVars conn) $ runTrans (do
+        let copyCounter= do
+               r <- local $ gets mfSequence
+               onAll $ modify $ \s -> s{mfSequence= r}
+        runCloud $ do
+            copyData $ Prefix ""
+            copyData $ IdLine ""
+            copyData $ Repeat
+            copyCounter)  >> return ()
+
+
+
     Log rec log fulLog <- getData `onNothing` return (Log False [][])    -- !!> "TELEPORT"
     if not rec
       then  do
@@ -422,12 +489,12 @@ teleport =  local $ Transient $ do
       else do  delSData WasRemote                -- !> "deleting wasremote in teleport"
 
                return (Just ())                             -- !!> "TELEPORT remote"
---   where
---   getState = do
---        rstate <- getData `onNothing` error "rstate not defined"
---        stnew <- get
---        liftIO $ writeIORef rstate $ mfData stnew
 
+   where
+#ifndef ghcjs_HOST_OS
+   saveVars Connection{connData= Just(Node2Node{})}= False
+#endif
+   saveVars _ = True
 
 -- | copy session data variable from the local to the remote node.
 -- The parameter is the default value if there is none set in the local node.
@@ -836,10 +903,6 @@ type Program= String
 type Service= (Package, Program, Int)
 
 
-
-
-
-
 -- * Level 2: connections node lists and operations with the node list
 
 
@@ -857,13 +920,13 @@ instance Eq Node where
     _ == _ = False
 
 instance Show Node where
-   show (Node h p _ servs)= show (h,p,servs)
-   show (WebNode _)= "webnode"
+    show (Node h p _ servs)= show (h,p,servs)
+    show (WebNode _)= "webnode"
 
 instance Read Node where
-     readsPrec _ ('w':'e':'b':'n':'o':'d':'e':xs)=
+    readsPrec _ ('w':'e':'b':'n':'o':'d':'e':xs)=
           [(WebNode . unsafePerformIO $ emptyPool, xs)]
-     readsPrec _ s=
+    readsPrec _ s=
           let r= readsPrec 0 s
           in case r of
             [] -> []
@@ -899,7 +962,12 @@ errorMyNode f= error $ f ++ ": Node not set. Use setMynode before listen"
 getMyNode :: Cloud ()
 getMyNode= return ()
 
-setMyNode _ = return ()
+setMyNode :: Node -> TransIO ()
+setMyNode node= do
+        addNodes [node]
+        events <- newEVar
+        let conn= Connection () Nothing 8192 events (unsafePerformIO $ newMVar ()) False 0  :: Connection
+        setData conn
 #else
 
 getMyNode :: Cloud Node
@@ -913,7 +981,7 @@ getMyNode = local $ do
 setMyNode :: Node -> TransIO ()
 setMyNode node= do
         addNodes [node]
-        events <- newEVar -- liftIO $ newTVarIO $ toDyn ()
+        events <- newEVar
         rnode <- liftIO $ newTVarIO $ MyNode node
         let conn= Connection rnode Nothing 8192 events (unsafePerformIO $ newMVar ()) False 0  :: Connection
         setData conn
@@ -1130,32 +1198,33 @@ receiveHTTPHead h = do
   headers <- many $ (,) <$> (mk <$> getParam) <*> getParamValue    --  !!> show (method, uri, vers)
   return (method, uri, headers)                                    --  !!> show (method, uri, headers)
 
+  where
 
-getMethod= getString
-getUri= getString
-getVers= getString
-getParam= do
+  getMethod= getString
+  getUri= getString
+  getVers= getString
+  getParam= do
       dropSpaces
 
       r <- tTakeWhile (\x -> x /= ':' && x /= '\r')
       if BC.null r || r=="\r"  then  empty  else  dropChar >> return r
 
-getParamValue= dropSpaces >> tTakeWhile  (/= '\r')
+  getParamValue= dropSpaces >> tTakeWhile  (/= '\r')
 
-dropSpaces= parse $ \str ->((),BC.dropWhile isSpace str)
+  dropSpaces= parse $ \str ->((),BC.dropWhile isSpace str)
 
-dropChar= parse  $ \r -> ((), BC.tail r)
+  dropChar= parse  $ \r -> ((), BC.tail r)
 
-getString= do
+  getString= do
     dropSpaces
 
     tTakeWhile (not . isSpace)
 
-tTakeWhile :: (Char -> Bool) -> TransIO BC.ByteString
-tTakeWhile cond= parse (BC.span cond)
+  tTakeWhile :: (Char -> Bool) -> TransIO BC.ByteString
+  tTakeWhile cond= parse (BC.span cond)
 
-parse :: (Typeable a, Eq a, Show a, Monoid a,Monoid b) => (a -> (b,a)) -> TransIO b
-parse split= do
+  parse :: (Typeable a, Eq a, Show a, Monoid a,Monoid b) => (a -> (b,a)) -> TransIO b
+  parse split= do
     ParseContext rh str <- getSData <|> error "parse: ParseContext not found"
     if  str == mempty then do
           str3 <- liftIO  rh
@@ -1185,7 +1254,8 @@ parse split= do
 #ifdef ghcjs_HOST_OS
 isBrowserInstance= True
 
-listen _ = return () -- error "listen not implemented in browser"
+listen node = onAll $ setMyNode node
+--   return () -- error "listen not implemented in browser"
 #else
 isBrowserInstance= False
 #endif

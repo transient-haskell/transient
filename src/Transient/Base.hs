@@ -111,6 +111,11 @@ runCont (EventF _ _ x fs _ _  _ _  _ _ _)= runTrans $ do
       r <- (unsafeCoerce x)
       (compose fs r)
 
+-- | warning: radiactive untyped stuff. handle with care
+getContinuations :: StateIO [a -> TransIO b]
+getContinuations= do
+  EventF _ _ _ fs _ _ _ _ _ _ _  <- get
+  return $ unsafeCoerce fs
 
 {-
 runCont cont= do
@@ -144,7 +149,8 @@ setContinuation  b c fs =  do
 
 -- | run a chain of continuations. It is up to the programmer to assure by construction that
 --  each continuation type-check with the next, that the parameter type match the input of the first
--- continuation and that the output is of the type intended.
+-- continuation.
+-- Normally this makes sense if it stop the current flow with `stop` after the invocation
 runContinuations :: [a -> TransIO b] -> c -> TransIO d
 runContinuations fs x= (compose $ unsafeCoerce fs)  x
 
@@ -162,7 +168,7 @@ instance Applicative TransIO where
          rg <- liftIO $ newIORef (Nothing,[])   -- !> "NEWIOREF"
 
 
-         EventF _ _ _ fs _ _ _ _ _ _ _  <- get
+         fs  <- getContinuations
 
          let
 
@@ -244,7 +250,7 @@ data LogElem=   Wait | Exec | Var IDynamic deriving (Read,Show)
 data Log= Log Recover  CurrentPointer LogEntries deriving Typeable
 
 
-instance  Alternative TransIO where
+instance Alternative TransIO where
   empty = Transient $ return  Nothing
   (<|>) = mplus
 
@@ -278,7 +284,7 @@ infixr 1  <**  ,  <***
 -- | forces the execution of the second operand even if the first stop. Return the first result (experimental)
 (<**) :: TransIO a -> TransIO b -> TransIO a
 (<**) ma mb= Transient $ do
-              EventF _ _ _ fs _ _ _ _ _ _ _  <- get
+              fs  <- getContinuations
               setContinuation ma (\x -> mb >> return x)  fs
               a <- runTrans ma
               runTrans mb
@@ -292,7 +298,6 @@ atEnd= (<**)
 -- Return the first result
 (<***) :: TransIO a -> TransIO b -> TransIO a
 (<***) ma mb= Transient $ do
-
               a <- runTrans ma
               runTrans mb
               return a

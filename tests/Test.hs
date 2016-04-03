@@ -31,11 +31,14 @@ main = do
                      else serverNode
   runCloud' $  do
         listen mynode
+        local $
+          render $ do
+              rawHtml $ p "hello"
+              render $ rawHtml $ p "world"
 
-        wormhole serverNode $  widget  <|> widget
+counters server=   wormhole server $  counter  <|> counter
 
-widget =  do
-
+counter =  do
          op <-  local $ render $   (inputSubmit "start"  `fire` OnClick)
                                <|> (inputSubmit "cancel" `fire` OnClick) <++ br
 

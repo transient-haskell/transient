@@ -1,7 +1,5 @@
 #!/bin/bash
 
-sed -i -- "s/\"localhost\"/\"$1\"/g"  "./tests/Test.hs"
-
-ghcjs -isrc -i../ghcjs-hplay/src -i../ghcjs-perch/src tests/Test
-
-runghc -isrc -i../ghcjs-hplay/src -i../ghcjs-perch/src tests/Test
+set -e
+ghcjs -isrc -i../ghcjs-hplay/src  $1 -o static/out
+runghc -isrc -i../ghcjs-hplay/src $1

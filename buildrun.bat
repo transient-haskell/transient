@@ -1,3 +1,4 @@
-ghcjs -isrc -i../ghcjs-hplay/src  tests/Test
-runghc -isrc -i../ghcjs-hplay/src  tests/Test
+ghcjs -isrc -i../ghcjs-hplay/src  %1 -o static/out
+if %errorlevel% neq 0 exit
+runghc -isrc -i../ghcjs-hplay/src %1
 
