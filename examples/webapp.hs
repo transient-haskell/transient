@@ -24,7 +24,9 @@ import Control.Concurrent (threadDelay)
 import Control.Monad.IO.Class
 
 
-
+-- Show the composability of transient web aplications
+-- with three examples composed together, each one is a widget that execute
+-- code in the browser AND the server.
 
 main = simpleWebApp 2020 $  demo <|> demo2  <|>  counters
 
@@ -32,6 +34,7 @@ main = simpleWebApp 2020 $  demo <|> demo2  <|>  counters
 demo= do
    name <- local . render $ do
        rawHtml $ do
+          hr
           p "this snippet captures the essence of this demonstration"
           p $ span "it's a blend of server and browser code in a "
                >> (span $ b "composable") >> span " piece"
@@ -43,9 +46,9 @@ demo= do
    -- stream fibonancci
 
    r <-  atServer $ do
-               let fibs=  0 : 1 : zipWith (+) fibs (tail fibs) :: [Int]  --fibonacci numb. definition
+               let fibs= 0 : 1 : zipWith (+) fibs (tail fibs) :: [Int]  --fibonacci numb. definition
 
-               r <- local  $ return $ take 10 fibs
+               r <- local  . threads 1 . choose $ take 10 fibs
                lliftIO $ print r
                lliftIO $ threadDelay 1000000
                return r
@@ -55,7 +58,14 @@ demo= do
 
 
 demo2= do
-   name <- local $ render $ inputString (Just "Your name") `fire` OnKeyUp <++ br
+   name <- local . render $ do
+       rawHtml $ do
+          hr
+          br;br
+          p "In this example you enter your name and the server will salute you"
+          br
+
+       inputString (Just "Your name") `fire` OnKeyUp <++ br
 
    r <- atServer $ lliftIO $ print (name ++ " calling") >> return ("Hi " ++ name)
 
@@ -66,47 +76,6 @@ demo2= do
 
 
 fs= toJSString
-
-{-
-
-
-
-
-
-demo1 = do
--- render some text
-   local $ render $ do
-     rawHtml $ do
-          br
-          div ! id (fs "fibs") $ i "Fibonacci numbers should appear here"
-
-          br
-          p "Hi, this is a demo of some features of Transient for Web applications"
-
-     wlink () (p $ toElem "send something " >> b "to the server") <++ br
-
-   name <- local $ render $ inputString "Your name" `fire` OnClick
-   r <- atServer $ lliftIO $ print (name ++ "calling") >> return "Hi"
-
-   local $ render $ rawHtml $ do
-            p " returned"
-            h2 r
-
-   local .  render $ wlink () (p " stream fibonacci numbers")
-
-   -- stream fibonancci
-
-   r <-  atServer $ do
-               let fibs=  0 : 1 : zipWith (+) fibs (tail fibs) :: [Int]
-               r <- local . threads 1 . choose $ take 10 fibs
-               lliftIO $ threadDelay 1000000
-               return r
-
-   local . render $ at (fs "#fibs") Append $ rawHtml $ span r
-
-   stop
-
-
 
 
 
@@ -119,19 +88,24 @@ demo1 = do
 --
 -- in this example, events flow from the server to the browser (a counter) and back from
 -- the browser to the server (initiating and cancelling the counters)
-counters= do
-   serverNode <- onAll getSData <|> error "no server node" :: Cloud Node
---   local . render $ inputSubmit "show counters"  `fire` OnClick <++ br
-   wormhole serverNode $ counter <|> counter
 
--}
 
 counters= do
+   local . render . rawHtml $ do
+          hr
+          p "To demonstrate wormhole, teleport, widgets, interactive streaming"
+          p "and composability in a web application."
+          br
+          p "This is one of the most complicated interactions: how to control a stream in the server"
+          p "by means of a web interface without loosing composability."
+          br
+          p "in this example, events flow from the server to the browser (a counter) and back from"
+          p "the browser to the server (initiating and cancelling the counters)"
+
    server <- local $ getSData <|> error "no server???"
-
    wormhole  server $ counter <|> counter
-
-counter  =  do
+   where
+   counter  =  do
 
          op <-  startOrCancel
          teleport          -- translates the computation to the server
@@ -141,7 +115,7 @@ counter  =  do
 
          teleport          -- back to the browser again
          local $ render $ rawHtml $ h1 r
-   where
+
    -- generates a sequence of numbers
    stream= do
      counter <- liftIO $ newIORef (0 :: Int)
