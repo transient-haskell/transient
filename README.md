@@ -14,14 +14,12 @@ to server and back at runtime despite the different architecture.
 Widgets with code running in browser and servers cancompose with other widgets. 
 A Browser node can access to many server nodes using `clustered` primitives.
 
-map-reduce (Transient.DDS module) now has a true shuffle stage. Not tested
-yet.
-
+map-reduce (Transient.DDS module) now has a true shuffle stage. Before the  final reduction was in the node that initiated the computation. Now it is also distributed. Look for the concept of shuffle in the spark cloud platform
 
 `teleport` is a new primitive that translates computations back and forth reusing an
 already opened connection. 
 
-A `wormhole` opens a connection with another node anywhere in a computation.
+The connection is initiated by `wormhole` which opens a connection with another node anywhere in a computation.
 
 Don't worry: as always, everything is composable. All the previous distributed primitives are rewritten in terms of these two new ones.
 
@@ -45,22 +43,24 @@ clone and install hplay:
 
     > git clone https://github.com/agocorona/ghcjs-hplay
     > cd ghcjs-hplay
+    > cabal install
     > cabal install --ghcjs -f ghcjs
 
 
 for fast development interactions, use the script
 
-    > buildrun
+    > buildrun examples/webapp.hs
 
-This will compile tests/test.hs for ghcjs and run it interpreted with runghc
+This will compile examples/webapp.hs for ghcjs and run it interpreted with runghc
+
 
 then point a browser to: http:localhost:2020
 
-The test program run two copies of a widget that start, stop and display a counter that run in the server.
+See this video to see this example running: https://www.livecoding.tv/agocorona/videos/Ke1Qz-seamless-composable-web-programming
 
-EVERYTHING NEW IS IN AN ALPHA STAGE.
+The test program run among other things, two copies of a widget that start, stop and display a counter that run in the server.
 
-In particular, there are problems in rendering of widgets that run  both in server and browser
+
 
 transient
 =========
