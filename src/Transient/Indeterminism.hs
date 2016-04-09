@@ -50,9 +50,11 @@ group :: Int -> TransIO a -> TransIO [a]
 group num proc =  do
     v <- liftIO $ newIORef (0,[])
     x <- proc
+
     mn <- liftIO $ atomicModifyIORef' v $ \(n,xs) ->
             let !n'=n +1
             in  if n'== num
+
               then ((0,[]), Just xs)
               else ((n', x:xs),Nothing)
     case mn of
@@ -61,6 +63,7 @@ group num proc =  do
 
 -- | group result for a time interval, measured with `diffUTCTime`
 groupByTime :: Integer -> TransIO a -> TransIO [a]
+
 groupByTime time proc =  do
     v  <- liftIO $ newIORef (0,[])
     t  <- liftIO getCurrentTime
