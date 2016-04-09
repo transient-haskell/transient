@@ -18,34 +18,12 @@ source-repository head
     location: https://github.com/agocorona/transient
 
 library
-    build-depends: transformers
 
-    if impl(ghcjs >=0.1)
-        build-depends: base >4 && <5, mtl -any, random -any,
-                       containers -any, stm -any, transformers -any, process -any,
-                       bytestring -any, time -any, ghcjs-base -any, ghcjs-prim -any
-        exposed: True
-        buildable: True
-    else
-        build-depends: base >4 && <5, mtl -any, random -any,
-                       containers -any, directory -any, filepath -any, stm -any,
-                       HTTP -any, network -any, transformers -any, process -any,network,
-                       network-info -any, bytestring -any, time -any, vector -any,
-                       TCache -any, websockets -any, network-uri -any,
-                       case-insensitive -any, hashable -any
-        exposed: True
-        buildable: True
+        build-depends: base >4 && <5, containers, mtl, transformers, stm, time
 
-    if impl(ghcjs >=0.1)
-        exposed-modules: Transient.Indeterminism Transient.Base
-                         Transient.EVars Transient.Backtrack Transient.Move Transient.Logged
-                         Transient.Stream.Resource
-        exposed: True
-        buildable: True
-    else
-        exposed-modules: Transient.DDS Transient.Indeterminism
-                         Transient.Base Transient.EVars Transient.Backtrack Transient.Move
-                         Transient.Move.Services Transient.Logged Transient.Stream.Resource
+        exposed-modules: Transient.Indeterminism
+                         Transient.Base Transient.EVars Transient.Backtrack
+                         Transient.Logged Transient.Stream.Resource
         exposed: True
         buildable: True
     exposed: True
@@ -54,12 +32,9 @@ library
     hs-source-dirs: src .
 
 test-suite test-transient
-    build-depends: base >4 && <5, mtl -any, random -any,
-                       containers -any, directory -any, filepath -any, stm -any,
-                       HTTP -any, network -any, transformers -any, process -any,network,
-                       network-info -any, bytestring -any, time -any, vector -any,
-                       TCache -any, websockets -any, network-uri -any,
-                       case-insensitive -any, hashable -any
+    build-depends: base >4 && <5, mtl , random ,
+                       containers , directory , filepath , stm ,
+                       HTTP , network , transformers , process
     type: exitcode-stdio-1.0
     main-is: TestSuite.hs
     buildable: True

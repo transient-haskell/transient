@@ -13,7 +13,7 @@ import Data.List(nub)
 
 --newtype EVars= EVars  (IORef (M.Map Int [EventF]))  deriving Typeable
 
-data EVar a= EVar Int  (TChan (StreamData a)) deriving Typeable
+data EVar a= EVar Int  (TChan (StreamData a)) deriving  Typeable
 
 
 -- | creates an EVar.

@@ -298,9 +298,10 @@ atEnd= (<**)
 -- Return the first result
 (<***) :: TransIO a -> TransIO b -> TransIO a
 (<***) ma mb= Transient $ do
-              a <- runTrans ma
-              runTrans mb
+              a <- runTrans ma    -- !> "ma"
+              runTrans  mb        -- !> "mb"
               return a
+
 
 atEnd' = (<***)
 
@@ -809,9 +810,9 @@ inputLoop=  do
            inputLoop'
 
 processLine r= do
---   when (r=="end") $ putMVar rexit ()
+--   when (r=="end") $ atomically $ writeTVar rexit ()
    let rs = breakSlash [] r
-   mapM_ (\ r -> if (r=="end") then putMVar rexit () else do
+   mapM_ (\ r -> if (r=="end") then atomically $ writeTVar rexit $ Just () else do
                     threadDelay 1000
                     atomically . writeTVar  getLineRef $ Just r) rs
 
@@ -825,11 +826,15 @@ processLine r= do
       tail1 []=[]
       tail1 x= tail x
 
+{-# NOINLINE rexit #-}
+rexit= unsafePerformIO $ newTVarIO Nothing
 
-rexit= unsafePerformIO newEmptyMVar
-
-
-stay=  takeMVar rexit
+-- | wait for the execution of `exit` and return the result
+stay=  atomically $ do
+    mr <- readTVar rexit
+    case mr of
+      Nothing -> retry
+      Just r -> return r
 
 
 -- | keep the main thread running, initiate the asynchronous keyboard input and execute
@@ -839,10 +844,8 @@ keep :: TransIO a -> IO a
 keep mx = do
    forkIO inputLoop
    forkIO $ do
-     runTransient $ do
---       async inputLoop <|> return ()
-       mx
-     return ()
+           runTransient $  mx >> exit Nothing -- to avoid takeMVar in a infinite loop
+           return ()
    threadDelay 100000
    args <- getArgs
    let path = filter (\arg -> arg !! 0 == '/') args
@@ -856,14 +859,18 @@ keep mx = do
 keep' :: TransIO a -> IO a
 keep' mx  = do
 
-   forkIO $ runTransient mx  >> return ()
+   forkIO $ do
+           runTransient $  mx >> exit Nothing -- to avoid takeMVar in a infinite loop
+           return ()
+   threadDelay 100000
 
    stay
 
--- | force the finalization of the main thread and thus, all the application
+-- | force the finalization of the main thread and thus, all the Transient block (and the application
+-- if there is no more code)
 exit :: a -> TransIO a
 exit x= do
-  liftIO $ putMVar rexit   x
+  liftIO $ atomically $ writeTVar rexit $ Just   x
   stop
 
 -- | alternative operator for maybe values. Used  in infix mode
