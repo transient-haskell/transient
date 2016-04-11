@@ -812,7 +812,7 @@ inputLoop=  do
 processLine r= do
 --   when (r=="end") $ atomically $ writeTVar rexit ()
    let rs = breakSlash [] r
-   mapM_ (\ r -> if (r=="end") then atomically $ writeTVar rexit $ Just () else do
+   mapM_ (\ r -> if (r=="end") then exit' $ Left "terminated by user" else do
                     threadDelay 1000
                     atomically . writeTVar  getLineRef $ Just r) rs
 
@@ -827,15 +827,15 @@ processLine r= do
       tail1 x= tail x
 
 {-# NOINLINE rexit #-}
-rexit= unsafePerformIO $ newTVarIO Nothing
+rexit= unsafePerformIO $ newEmptyMVar
 
 -- | wait for the execution of `exit` and return the result
-stay=  atomically $ do
-    mr <- readTVar rexit
+stay=   do
+    mr <- takeMVar rexit
     case mr of
-      Nothing -> retry
-      Just r -> return r
-
+      Right Nothing -> stay
+      Right (Just r) -> return r
+      Left msg -> error msg
 
 -- | keep the main thread running, initiate the asynchronous keyboard input and execute
 -- the transient computation. It also read a slash separated list of string that are interpreted by
@@ -844,7 +844,7 @@ keep :: TransIO a -> IO a
 keep mx = do
    forkIO inputLoop
    forkIO $ do
-           runTransient $  mx >> exit Nothing -- to avoid takeMVar in a infinite loop
+           runTransient $  mx >> liftIO (putMVar rexit  $ Right Nothing) -- to avoid takeMVar in a infinite loop
            return ()
    threadDelay 100000
    args <- getArgs
@@ -860,7 +860,7 @@ keep' :: TransIO a -> IO a
 keep' mx  = do
 
    forkIO $ do
-           runTransient $  mx >> exit Nothing -- to avoid takeMVar in a infinite loop
+           runTransient $  mx >>   liftIO (putMVar rexit  $ Right Nothing)   -- to avoid takeMVar in a infinite loop
            return ()
    threadDelay 100000
 
@@ -870,9 +870,10 @@ keep' mx  = do
 -- if there is no more code)
 exit :: a -> TransIO a
 exit x= do
-  liftIO $ atomically $ writeTVar rexit $ Just   x
+  liftIO $  putMVar rexit .  Right $ Just   x
   stop
 
+exit' x= liftIO $  putMVar rexit  x
 -- | alternative operator for maybe values. Used  in infix mode
 onNothing :: Monad m => m (Maybe b) -> m b -> m b
 onNothing iox iox'= do

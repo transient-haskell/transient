@@ -1,6 +1,6 @@
 name: transient
 
-version: 0.2
+version: 0.3
 cabal-version: >=1.10
 build-type: Simple
 license: MIT
