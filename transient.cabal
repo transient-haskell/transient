@@ -10,6 +10,8 @@ homepage: http://www.fpcomplete.com/user/agocorona
 bug-reports: https://github.com/agocorona/transient/issues
 synopsis: Making composable programs with multithreading, events and distributed computing
 description: see <http://github.com/agocorona/transient>
+             In this release, distributed primitives have been moved to the transient-universe package
+             Web primitives have been moved to the package ghcjs-hplay
 category: Control
 author: Alberto G. Corona
 data-dir: ""
@@ -25,6 +27,7 @@ library
         exposed-modules: Transient.Indeterminism
                          Transient.Base Transient.EVars Transient.Backtrack
                          Transient.Logged Transient.Stream.Resource
+                         Transient.Internals
         exposed: True
         buildable: True
     exposed: True

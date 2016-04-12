@@ -2,6 +2,7 @@
 module Transient.EVars where
 
 import Transient.Base
+import Transient.Internals(onNothing, EventF)
 import qualified Data.Map as M
 import Data.Typeable
 

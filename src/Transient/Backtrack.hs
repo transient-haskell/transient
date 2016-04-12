@@ -6,6 +6,7 @@
 module Transient.Backtrack (registerUndo, onUndo, undo, retry, undoCut) where
 
 import Transient.Base
+import Transient.Internals(EventF(..),onNothing,runClosure,runContinuation)
 import Data.Typeable
 import Control.Applicative
 import Control.Monad.State
@@ -19,7 +20,7 @@ data Backtrack= forall a b.Backtrack{backtracking :: Bool
 -- | assures that backtracking will not go further back
 undoCut :: TransientIO ()
 undoCut= Transient $ do
-     delSessionData $ Backtrack False []
+     delSData $ Backtrack False []
      return $ Just ()
 
 -- | the secod parameter will be executed when backtracking

@@ -17,6 +17,7 @@ module Transient.Logged  where
 import Data.Typeable
 import Unsafe.Coerce
 import Transient.Base
+import Transient.Internals(onNothing,IDynamic(..),Log(..),LogElem(..),RemoteStatus(..))
 import Control.Applicative
 import Control.Monad.IO.Class
 

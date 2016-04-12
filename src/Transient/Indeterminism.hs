@@ -17,6 +17,7 @@ choose, choose', collect, collect', group, groupByTime
 ) where
 
 import Transient.Base
+import Transient.Internals(killChildren, EventF(..),hangThread)
 import Data.IORef
 import Control.Applicative
 import Data.Monoid
