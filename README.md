@@ -1,5 +1,6 @@
 ![](https://raw.githubusercontent.com/agocorona/transient/master/logo.ico)
 
+NOTE: distributed computing and web primitives have been moved to [transient-universe](https://github.com/agocorona/transient-universe) and [gchjs-hplay](https://github.com/agocorona/ghcjs-hplay)
 
 transient
 =========
@@ -25,7 +26,12 @@ The operators `<|>` and `<>` can be used for concurrency, the operator `<|>` can
 
 For this purpose transient is an extensible effects monad with all major effects and primitives for parallelism, events, asyncronous IO, early termination, non-determinism logging and distributed computing. Since it is possible to extend it with more effects without adding monad transformers, the composability is assured.
 
+Documentation
+=============
+
 The [Wiki](https://github.com/agocorona/transient/wiki) is more user oriented
+
+My video sessions in [livecoding.tv](https://www.livecoding.tv/agocorona/videos/) not intended as tutorials or presentations, but show some of the latest features running.
 
 The articles are more tecnical:
 
