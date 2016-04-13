@@ -16,7 +16,7 @@ module Transient.Base(
 
 TransIO(..), TransientIO
 ,keep, keep', stop
-,option, input
+,option, input, exit
 ,async,waitEvents, spawn, parallel
 ,react
 
@@ -27,7 +27,9 @@ TransIO(..), TransientIO
 , (<**),(<***)
 
 , StreamData(..)
-,genId)  where
--- /show
+,genId)
+
+where
+
 
 import    Transient.Internals
