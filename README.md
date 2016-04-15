@@ -1,6 +1,6 @@
 ![](https://raw.githubusercontent.com/agocorona/transient/master/logo.ico)
 
-NOTE: distributed computing and web primitives have been moved to [transient-universe](https://github.com/agocorona/transient-universe) and [gchjs-hplay](https://github.com/agocorona/ghcjs-hplay)
+NOTE: distributed computing and web primitives have been moved to [transient-universe](https://github.com/agocorona/transient-universe) and [ghcjs-hplay](https://github.com/agocorona/ghcjs-hplay)
 
 transient
 =========
@@ -24,7 +24,7 @@ Transient does exactly that.
 
 The operators `<|>` and `<>` can be used for concurrency, the operator `<|>` can be used for parallelism and `>>=` for sequencing of threads and/or distributed processes. So even in the presence of these effects and others, everything is composable.
 
-For this purpose transient is an extensible effects monad with all major effects and primitives for parallelism, events, asyncronous IO, early termination, non-determinism logging and distributed computing. Since it is possible to extend it with more effects without adding monad transformers, the composability is assured.
+For this purpose transient is an extensible effects monad with all major effects and primitives for parallelism, events, asynchronous IO, early termination, non-determinism logging and distributed computing. Since it is possible to extend it with more effects without adding monad transformers, the composability is assured.
 
 Documentation
 =============
@@ -33,7 +33,7 @@ The [Wiki](https://github.com/agocorona/transient/wiki) is more user oriented
 
 My video sessions in [livecoding.tv](https://www.livecoding.tv/agocorona/videos/) not intended as tutorials or presentations, but show some of the latest features running.
 
-The articles are more tecnical:
+The articles are more technical:
 
 - [Philosophy, async, parallelism, thread control, events, Session state](https://www.fpcomplete.com/user/agocorona/EDSL-for-hard-working-IT-programmers?show=tutorials)
 - [Backtracking and undoing IO transactions](https://www.fpcomplete.com/user/agocorona/the-hardworking-programmer-ii-practical-backtracking-to-undo-actions?show=tutorials)
@@ -43,7 +43,3 @@ The articles are more tecnical:
 - [Distributed streaming, map-reduce](https://www.schoolofhaskell.com/user/agocorona/estimation-of-using-distributed-computing-streaming-transient-effects-vi-1)
 
 These articles contain executable examples (not now, since the site no longer support the execution of haskell snippets).
-
-
-
-
