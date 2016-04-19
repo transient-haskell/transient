@@ -63,20 +63,20 @@ logged mx =  Transient $ do
    Log recover rs full <- getData `onNothing` return ( Log False  [][])
    runTrans $
     case (recover,rs) of
-      (True, Var x: rs') -> do setSData $ Log True rs' full
+      (True, Var x: rs') -> do setData $ Log True rs' full
                                return $ fromIDyn x              -- !!>  "read in Var:" ++ show x
 
       (True, Exec:rs') -> do
-            setSData $ Log True  rs' full
+            setData $ Log True  rs' full
             mx                                 -- !!> "Var True Exec"
 
       (True, Wait:rs') -> do
-            setSData (Log True  rs' full)      -- !!> "Wait"
+            setData (Log True  rs' full)      -- !!> "Wait"
             empty
 
       _ -> do
             let add= Exec: full
-            setSData $ Log False add add
+            setData $ Log False add add
 
             r <-  mx <*** ( do  -- when   p1 <|> p2, to avoid the re-execution of p1 at the
                                 -- recovery when p1 is asynchronous
@@ -84,12 +84,12 @@ logged mx =  Transient $ do
                             case r of
                                       WasParallel ->
                                          let add= Wait: full
-                                         in setSData $ Log False add add
+                                         in setData $ Log False add add
                                       _ -> return ())
 
 
             let add= Var (toIDyn r): full
-            (setSData $ Log False add add)     -- !!> "AFTER Var"
+            (setData $ Log False add add)     -- !!> "AFTER Var"
             return  r
 
 
@@ -101,12 +101,12 @@ logged mx =  Transient $ do
 --step :: (Show a, Read a, Typeable a) => TransientIO a -> TransientIO a
 --step mx = step' mx $ \full mx -> do
 --            let add= Exec: full
---            setSData $ Log False add add
+--            setData $ Log False add add
 --
 --            r <-  mx
 --
 --            let add= Step (toIDyn r): full
---            (setSData $ Log False add add)     -- !!> "AFTER STEP"
+--            (setData $ Log False add add)     -- !!> "AFTER STEP"
 --            return  r
 --
 --

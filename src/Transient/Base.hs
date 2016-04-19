@@ -20,7 +20,7 @@ TransIO(..), TransientIO
 ,async,waitEvents, spawn, parallel
 ,react
 
-,setData,setSData,getData,getSData,delSData
+,setData,getData,getSData,delData
 
 , threads,addThreads, freeThreads, hookedThreads,oneThread, killChilds
 

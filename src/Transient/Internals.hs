@@ -476,15 +476,13 @@ setData ::  (MonadState EventF m, Typeable a) => a -> m ()
 setData  x=
   let t= typeOf x in  modify $ \st -> st{mfData= M.insert  t (unsafeCoerce x) (mfData st)}
 
--- | a shorter name for setData
-setSData ::  (MonadState EventF m, Typeable a) => a -> m ()
-setSData = setData
 
-delSessionData x=
+delData :: ( MonadState EventF m,Typeable a) => a -> m ()
+delData x=
   modify $ \st -> st{mfData= M.delete (typeOf x ) (mfData st)}
 
-delSData :: ( MonadState EventF m,Typeable a) => a -> m ()
-delSData= delSessionData
+--delData :: ( MonadState EventF m,Typeable a) => a -> m ()
+--delSData= delSessionData
 
 --withSData ::  ( MonadState EventF m,Typeable a) => (Maybe a -> a) -> m ()
 --withSData f= modify $ \st -> st{mfData=
@@ -604,7 +602,6 @@ loop (cont'@(EventF eff e x fs a b c d _ childs g))  rec  =  do
              more@(SMore _) -> do
                   forkMaybe False cont $ iocont more
                   loop'
-
   loop'
   return ()
   where
@@ -628,9 +625,9 @@ loop (cont'@(EventF eff e x fs a b c d _ childs g))  rec  =  do
                          case me of -- !> "THREAD END" of
                           Left  e -> do
                              when (fromException e /= Just ThreadKilled)$ liftIO $ print e
-                             killChildren  cont  -- !!> "KILL RECEIVED" ++ (show $ unsafePerformIO myThreadId)
+                             killChildren  cont          -- !> "KILL RECEIVED" ++ (show $ unsafePerformIO myThreadId)
 
-                          Right _ ->  when(not $ freeTh cont') $ do -- if was not a free thread
+                          Right _ ->  when(not $ freeTh cont')  $ do -- if was not a free thread
                              --  if parent is alive
                              --  then remove himself from the parent list (with free)
                              --  and pass his active children to his parent
@@ -730,10 +727,10 @@ react setHandler iob= Transient $ do
             liftIO $ setHandler $ \dat ->do
               runStateT (setData dat >> runCont cont) cont
               iob
-            setSData WasParallel
+            setData WasParallel
             return Nothing
           Just dat -> do
-             delSessionData dat
+             delData dat
              return (Just  dat)
 
 
@@ -800,7 +797,7 @@ reads1 s=x where
       typeOfr  = undefined
 
 inputLoop=  do
-    putStrLn "Press end to exit"
+--    putStrLn "Press end to exit"
     inputLoop'  -- !> "started inputLoop"
     where
 
@@ -812,7 +809,8 @@ inputLoop=  do
 processLine r= do
 --   when (r=="end") $ atomically $ writeTVar rexit ()
    let rs = breakSlash [] r
-   mapM_ (\ r -> if (r=="end") then exit' $ Left "terminated by user" else do
+   mapM_ (\ r ->  -- if (r=="end") then exit' $ Left "terminated by user" else
+                 do
                     threadDelay 1000
                     atomically . writeTVar  getLineRef $ Just r) rs
 
@@ -842,9 +840,15 @@ stay=   do
 -- `option` and `input` as if they were entered by the keyboard
 keep :: TransIO a -> IO a
 keep mx = do
-   forkIO inputLoop
+--   forkIO inputLoop
    forkIO $ do
-           runTransient $  mx >> liftIO (putMVar rexit  $ Right Nothing) -- to avoid takeMVar in a infinite loop
+           runTransient $ do
+               async inputLoop
+                 <|> (option "end" "exit" >> exit' (Left "terminated by user"))
+                 <|> (liftIO $ putMVar rexit  $ Right Nothing)
+--                 <|> return ()
+               mx
+               liftIO (putMVar rexit  $ Right Nothing) -- to avoid "takeMVar blocked in a infinite loop" error
            return ()
    threadDelay 100000
    args <- getArgs

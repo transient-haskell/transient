@@ -94,7 +94,7 @@ initFinish :: TransIO Finish
 initFinish= do
       fin <-  newEVar
       let f = Finish fin
-      setSData  f
+      setData  f
       return  f
 
 
@@ -113,13 +113,13 @@ onFinish  close= do
 finish :: FinishReason -> TransIO ()
 finish e= do
     liftIO $ putStrLn "finish Called"
-    Finish finish <- getSData
+    Finish finish <- getSData <|> initFinish
     writeEVar finish e
 
 -- | deregister all the finalization actions.
 -- A initFinish is needed to register actions again
 unFinish= do
     Finish fin <- getSData
-    delEVar fin    -- !!> "DELEVAR"
+    cleanEVar fin    -- !!> "DELEVAR"
    <|> return ()   -- !!> "NOT DELEVAR"
 

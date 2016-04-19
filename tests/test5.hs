@@ -40,16 +40,10 @@ main = do
          node2= nodes !! 1
 
      runCloud' $ do
-       listen (createLocalNode port) <|> return ()
-       local $ option "fire" "fire"
-       r <-  (runAt node2 (return "hello "))
-                 <>  (runAt node2 (return "world"))
-       lliftIO $ print r
-       r <-  (runAt node2 (return "hello "))
+         listen (createLocalNode port) <|> return ()
+         local $ option "s" "start"
+         box <- local newMailBox
+         getMailBox box >>= lliftIO . print <|> putMailBox box "hello"
 
-       lliftIO $ print r
-
-       Log _ _ full <- onAll $ getSData
-       lliftIO $ print $ reverse full
 
 runNodes nodes= foldl (<|>) empty (map listen nodes) <|> return()
