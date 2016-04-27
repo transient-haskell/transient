@@ -811,11 +811,14 @@ processLine r= do
    let rs = breakSlash [] r
    mapM_ (\ r ->  -- if (r=="end") then exit' $ Left "terminated by user" else
                  do
-                    threadDelay 1000
-                    atomically . writeTVar  getLineRef $ Just r) rs
+                    threadDelay 100000
+                    atomically . writeTVar  getLineRef $ Just r
+                    putStrLn r) rs
+
 
     where
     breakSlash :: [String] -> String -> [String]
+    breakSlash [] ""= [""]
     breakSlash s ""= s
     breakSlash res s=
       let (r,rest) = span(/= '/') s
@@ -840,22 +843,28 @@ stay=   do
 -- `option` and `input` as if they were entered by the keyboard
 keep :: TransIO a -> IO a
 keep mx = do
---   forkIO inputLoop
+--   forkIO $ inputLoop
    forkIO $ do
+           liftIO $ putMVar rexit  $ Right Nothing
            runTransient $ do
-               async inputLoop
-                 <|> (option "end" "exit" >> exit' (Left "terminated by user"))
-                 <|> (liftIO $ putMVar rexit  $ Right Nothing)
---                 <|> return ()
+               (async inputLoop
+                       <|> (option "end" "exit" >> exit' (Left "terminated by user"))
+--                       <|> (liftIO $ putMVar rexit  $ Right Nothing)
+                       <|> return ())
+
+
                mx
                liftIO (putMVar rexit  $ Right Nothing) -- to avoid "takeMVar blocked in a infinite loop" error
            return ()
-   threadDelay 100000
+   threadDelay 10000
    args <- getArgs
-   let path = filter (\arg -> arg !! 0 == '/') args
-   when (not (null path)) $ do
-        putStr "Executing: " >> print (head path)
-        processLine $  head path
+   let mindex =  findIndex (\o ->  o == "-p" || o == "--path" ) args
+   when (isJust mindex) $ do
+        let i= fromJust mindex +1
+        when (length  args >= i) $ do
+          let path= args !! i
+          putStr "Executing: " >> print  path
+          processLine  path
    stay
 
 -- | same than `keep`but do not initiate the asynchronous keyboard input.
