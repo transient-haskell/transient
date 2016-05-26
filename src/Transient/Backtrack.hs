@@ -20,7 +20,7 @@ data Backtrack= forall a b.Backtrack{backtracking :: Bool
 -- | assures that backtracking will not go further back
 undoCut :: TransientIO ()
 undoCut= Transient $ do
-     delSData $ Backtrack False []
+     delData $ Backtrack False []
      return $ Just ()
 
 -- | the secod parameter will be executed when backtracking

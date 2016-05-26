@@ -98,7 +98,7 @@ choose' xs = foldl (<|>) empty $ map (async . return) xs
 -- It works monitoring the solutions found and the number of active threads.
 -- If the first parameter is 0, collect will return all the results
 collect ::  Int -> TransIO a -> TransIO [a]
-collect n = collect' n 0.01 0
+collect n = collect' n 0.1 0
 
 -- | search also between two time intervals. If the first interval has passed and there is no result,
 --it stops.

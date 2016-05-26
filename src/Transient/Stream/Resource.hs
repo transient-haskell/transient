@@ -102,7 +102,6 @@ initFinish= do
 onFinish :: (FinishReason ->TransIO ()) -> TransIO ()
 onFinish  close= do
        Finish finish <- getSData <|> initFinish
-
        e <- readEVar finish
 --       unsubscribe finish
        close e  -- !!> "CLOSE"

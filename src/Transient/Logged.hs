@@ -17,19 +17,19 @@ module Transient.Logged  where
 import Data.Typeable
 import Unsafe.Coerce
 import Transient.Base
-import Transient.Internals(onNothing,IDynamic(..),Log(..),LogElem(..),RemoteStatus(..))
+import Transient.Internals(onNothing,IDynamic(..),Log(..),LogElem(..),RemoteStatus(..),StateIO)
 import Control.Applicative
 import Control.Monad.IO.Class
-
+import Data.IORef
 
 
 class (Show a, Read a,Typeable a) => Loggable a
 instance (Show a, Read a,Typeable a) => Loggable a
 
 fromIDyn :: (Read a, Show a, Typeable a) => IDynamic -> a
-fromIDyn (IDynamic x)= unsafeCoerce x
+fromIDyn (IDynamic x)=r where r= unsafeCoerce x     -- !> "coerce" ++ " to type "++ show (typeOf r)
 
-fromIDyn (IDyns s)=r where r= read s  -- !!> "read " ++ s ++ "to type "++ show (typeOf r)
+fromIDyn (IDyns s)=r `seq`r where r= read s         -- !> "read " ++ s ++ " to type "++ show (typeOf r)
 
 toIDyn x= IDynamic x
 
@@ -62,53 +62,43 @@ logged :: (Show a, Read a, Typeable a) => TransientIO a -> TransientIO a
 logged mx =  Transient $ do
    Log recover rs full <- getData `onNothing` return ( Log False  [][])
    runTrans $
-    case (recover,rs) of
-      (True, Var x: rs') -> do setData $ Log True rs' full
-                               return $ fromIDyn x              -- !!>  "read in Var:" ++ show x
+    case (recover ,rs) of        -- !> ("logged enter",recover,rs) of
+      (True, Var x: rs') -> do
+            setData $ Log True rs' full
+            return $ fromIDyn x
+--                                   !> ("read in Var:", x)
 
       (True, Exec:rs') -> do
             setData $ Log True  rs' full
-            mx                                 -- !!> "Var True Exec"
+            mx                                  -- !> "Exec"
 
       (True, Wait:rs') -> do
-            setData (Log True  rs' full)      -- !!> "Wait"
+            setData (Log True  rs' full)        -- !> "Wait"
             empty
 
       _ -> do
-            let add= Exec: full
-            setData $ Log False add add
+--            let add= Exec: full
+            setData $ Log False (Exec : rs) (Exec: full)     -- !> ("setLog False", Exec:rs)
 
             r <-  mx <*** ( do  -- when   p1 <|> p2, to avoid the re-execution of p1 at the
                                 -- recovery when p1 is asynchronous
                             r <- getSData <|> return NoRemote
                             case r of
                                       WasParallel ->
-                                         let add= Wait: full
-                                         in setData $ Log False add add
+--                                         let add= Wait: full
+                                           setData $ Log False (Wait: rs) (Wait: full)
                                       _ -> return ())
 
-
-            let add= Var (toIDyn r): full
-            (setData $ Log False add add)     -- !!> "AFTER Var"
+            Log recoverAfter lognew _ <- getData `onNothing` return ( Log False  [][])
+            let add= Var (toIDyn r):  full
+            if recoverAfter && (not $ null lognew)      -- !> ("recoverAfter", recoverAfter)
+              then  (setData $ Log True lognew (reverse lognew ++ add) )
+                                                        -- !> ("recover",reverse lognew ,add)
+              else if recoverAfter && (null lognew) then
+                   setData $ Log False [] add
+              else
+                  (setData $ Log False (Var (toIDyn r):rs) add)  -- !> ("restore", (Var (toIDyn r):rs))
             return  r
 
-
-
-
-
-
-
---step :: (Show a, Read a, Typeable a) => TransientIO a -> TransientIO a
---step mx = step' mx $ \full mx -> do
---            let add= Exec: full
---            setData $ Log False add add
---
---            r <-  mx
---
---            let add= Step (toIDyn r): full
---            (setData $ Log False add add)     -- !!> "AFTER STEP"
---            return  r
---
---
 
 

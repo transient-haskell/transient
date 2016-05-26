@@ -39,7 +39,7 @@ import           GHC.Conc
 import           Data.List
 import           Data.IORef
 import           System.Environment
-
+import           System.IO (hFlush,stdout)
 {-# INLINE (!>) #-}
 (!>) :: Show a => b -> a -> b
 (!>) x y=   trace (show y) x
@@ -88,7 +88,7 @@ instance MonadState EventF TransIO where
 type StateIO= StateT EventF  IO
 
 
-
+-- | run the transient computation with a blank state
 runTransient :: TransIO x -> IO (Maybe x, EventF)
 runTransient t= do
   th <- myThreadId
@@ -105,11 +105,14 @@ runTransient t= do
 getCont :: TransIO EventF
 getCont = Transient $ Just <$> get
 
--- | run the closure and the continuation context
+-- | run the closure and the continuation using the state data of the calling thread
 runCont :: EventF -> StateIO (Maybe a)
 runCont (EventF _ _ x fs _ _  _ _  _ _ _)= runTrans $ do
       r <- (unsafeCoerce x)
       (compose fs r)
+
+-- | run the closure and the continuation using his own state data
+runCont' cont= runStateT (runCont cont) cont
 
 -- | warning: radiactive untyped stuff. handle with care
 getContinuations :: StateIO [a -> TransIO b]
@@ -183,7 +186,6 @@ instance Applicative TransIO where
                         let full'= head full2: full
                         in setData $ Log rec full' full'
 
-
                    return $ Just k <*> x
 
              appg x = Transient $  do
@@ -200,11 +202,13 @@ instance Applicative TransIO where
 
          k <- runTrans f    -- !> "RUN f"
          was <- getData `onNothing` return NoRemote
-         when (was == WasParallel) $  setData NoRemote                                    -- !>  ("was=",was)
+         when (was == WasParallel) $  setData NoRemote
 
          Log recovery _ full <- getData `onNothing` return (Log False [] [])
 
-         if was== WasRemote  || (not recovery && was == NoRemote  && isNothing k)
+
+
+         if was== WasRemote  || (not recovery && was == NoRemote  && isNothing k ) -- !>  ("was,recovery,isNothing=",was,recovery, isNothing k))
          -- if the first operand was a remote request
          -- (so this node is not master and hasn't to execute the whole expression)
          -- or it was not an asyncronous term (a normal term without async or parallel
@@ -214,6 +218,7 @@ instance Applicative TransIO where
              return Nothing
            else do
              liftIO $ writeIORef rf  (k,full)
+
 
              mfdata <- gets mfData
              seq <- gets mfSequence
@@ -232,6 +237,17 @@ restoreStack fs=
 
 
 
+readWithErr line=
+     let [(v,left)] = readsPrec 0 line
+     in (v   `seq` return [(v,left)])
+                    `catch` (\(e::SomeException) ->
+                      error ("read error of " ++ show( typeOf v) ++ " in: "++ line))
+
+
+readsPrec' _= unsafePerformIO . readWithErr
+
+
+
 -- | dynamic serializable data for logging
 data IDynamic= IDyns String | forall a.(Read a, Show a,Typeable a) => IDynamic a
 
@@ -240,7 +256,7 @@ instance Show IDynamic where
   show (IDyns s)= show s
 
 instance Read IDynamic where
-  readsPrec n str= map (\(x,s) -> (IDyns x,s)) $ readsPrec n str
+  readsPrec n str= map (\(x,s) -> (IDyns x,s)) $ readsPrec' n str
 
 
 type Recover= Bool
@@ -254,12 +270,6 @@ instance Alternative TransIO where
   empty = Transient $ return  Nothing
   (<|>) = mplus
 
---  Transient f <|> Transient g= Transient $ do
---         k <-   f
---         x <-   g
---         return $ k <|> x
-
-
 
 data RemoteStatus=   WasRemote | WasParallel | NoRemote deriving (Typeable, Eq, Show)
 
@@ -268,20 +278,23 @@ instance MonadPlus TransIO where
     mplus  x y=  Transient $ do
          mx <- runTrans x                -- !!> "RUNTRANS11111"
          was <- getData `onNothing` return NoRemote
-         if was== WasRemote              -- !!> "check wasremote"
-           then return Nothing           --  !> was
-           else case mx of
-             Nothing -> runTrans y      --  !!> "RUNTRANS22222"
-             justx -> return justx
+         if was== WasRemote              -- !> was
+           then return Nothing
+           else
+                 case mx of
+                     Nothing -> runTrans y      --  !!> "RUNTRANS22222"
+                     justx -> return justx
 
 -- | a sinonym of empty that can be used in a monadic expression. it stop the
--- computation
-stop :: Alternative m => m a
+-- computation and execute the next alternative computation (composed with `<|>`)
+stop :: Alternative m => m stop
 stop= empty
+
 
 infixr 1  <**  ,  <***
 
--- | forces the execution of the second operand even if the first stop. Return the first result (experimental)
+-- | forces the execution of the second operand even if the first stop. Return the first result. The second
+-- operand is executed also when internal events happens in the first operand and it returns something
 (<**) :: TransIO a -> TransIO b -> TransIO a
 (<**) ma mb= Transient $ do
               fs  <- getContinuations
@@ -293,8 +306,8 @@ infixr 1  <**  ,  <***
 
 atEnd= (<**)
 
--- | forces the execution of the second operand  if the first fails only if the first operand
--- is executed normally, that is , it is not a reexecution consequence of an internal event on it.
+-- | forces the execution of the second operand even if the first stop. It does not execute the second operand
+-- as result of internal events occuring in the first operand.
 -- Return the first result
 (<***) :: TransIO a -> TransIO b -> TransIO a
 (<***) ma mb= Transient $ do
@@ -304,6 +317,33 @@ atEnd= (<**)
 
 
 atEnd' = (<***)
+
+
+
+-- | when the first operand is an asynchronous operation, the second operand is executed once (one single time)
+-- when the first completes his first asyncronous operation.
+--
+-- This is useful for spawning asynchronous or distributed tasks that are singletons and that should start
+-- when the first one is set up.
+--
+-- for example a streaming where the event receivers are acivated before the senders.
+
+(<|) :: TransIO a -> TransIO b -> TransIO a
+(<|)  ma mb =  Transient $ do
+          fs  <- getContinuations
+          ref <- liftIO $ newIORef False
+          setContinuation ma (cont ref )  fs
+          r <- runTrans ma
+          restoreStack fs
+          return  r
+    where
+    cont ref x= Transient $ do
+          n <- liftIO $ readIORef ref
+          if  n == True
+            then  return $ Just x
+            else do liftIO $ writeIORef ref True
+                    runTrans mb
+                    return $ Just x
 
 instance Monoid a => Monoid (TransIO a) where
   mappend x y = mappend <$> x <*> y
@@ -379,7 +419,7 @@ threads n proc= Transient $ do
 
 -- | delete all the previous childs generated by the expressions and continue execution
 -- of the current thread.
-oneThread :: TransientIO a -> TransientIO a
+oneThread :: TransIO a -> TransientIO a
 oneThread comp=  do
    chs <- liftIO $ newTVarIO []
    r <-  comp
@@ -387,6 +427,26 @@ oneThread comp=  do
    killChilds
    return r
 
+showThreads :: TransIO empty
+showThreads= do
+
+   st' <- gets (fromJust . parent)
+   liftIO $ showTree 0 st'
+   stop
+   where
+   toplevel st =
+      case parent st of
+        Nothing ->  st
+        Just p -> toplevel p
+
+   showThreads' n rchs= do
+      chs <- atomically $ readTVar rchs
+      mapM_ (showTree n) chs
+
+   showTree n ch=  do
+         putStr $ take n $ repeat  ' '
+         print $ threadId ch
+         showThreads' (n+4) $ children ch
 
 
 -- | add n threads to the limit of threads. If there is no limit, it set it
@@ -575,7 +635,9 @@ parallel  ioaction= Transient $   do
         return $ unsafeCoerce j
      Nothing -> do
         liftIO $ loop cont ioaction
-        setData WasParallel
+        was <- getData `onNothing` return NoRemote
+        when (was /= WasRemote) $ setData WasParallel
+
         return Nothing
 
 
@@ -635,7 +697,7 @@ loop (cont'@(EventF eff e x fs a b c d _ childs g))  rec  =  do
                              th <- myThreadId
                              mparent <- free th cont
                              return ()
-
+                               -- pass the active children to the parent
 --                             case mparent of
 --                              Nothing  ->  return()
 --                              Just parent -> atomically $ do
@@ -656,8 +718,7 @@ loop (cont'@(EventF eff e x fs a b c d _ childs g))  rec  =  do
 
 forkFinally1 :: IO a -> (Either SomeException a -> IO ()) -> IO ThreadId
 forkFinally1 action and_then =
-  mask $ \restore ->
-    forkIO $ try (restore action) >>= and_then
+  mask $ \restore ->  forkIO $ try (restore action) >>= and_then
 
 free th env= do
   if isNothing $ parent env
@@ -727,7 +788,8 @@ react setHandler iob= Transient $ do
             liftIO $ setHandler $ \dat ->do
               runStateT (setData dat >> runCont cont) cont
               iob
-            setData WasParallel
+            was <- getData `onNothing` return NoRemote
+            when (was /= WasRemote) $ setData WasParallel
             return Nothing
           Just dat -> do
              delData dat
@@ -760,8 +822,10 @@ option ret message= do
 -- | validates an input entered in the keyboard in non blocking mode. non blocking means that
 -- the user can enter also anything else to activate other option
 -- unlike `option`, wich watch continuously, input only wait for one valid response
-input :: (Typeable a, Read a) => (a -> Bool) -> TransIO a
-input cond= Transient . liftIO . atomically $ do
+input :: (Typeable a, Read a,Show a) => (a -> Bool) -> String -> TransIO a
+input cond prompt= Transient . liftIO $do
+   putStr prompt >> hFlush stdout
+   atomically $ do
        mr <- readTVar getLineRef
        case mr of
          Nothing -> retry
@@ -769,6 +833,7 @@ input cond= Transient . liftIO . atomically $ do
             case reads1 r  of
             (s,_):_ -> if cond s  --  !> show (cond s)
                      then do
+                       unsafeIOToSTM $ print s
                        writeTVar  getLineRef Nothing -- !>"match"
                        return $ Just s
 
@@ -792,7 +857,7 @@ getLine' cond=    do
             _ -> retry
 
 reads1 s=x where
-      x= if typeOf(typeOfr x) == typeOf "" then unsafeCoerce[(s,"")] else readsPrec 0 s
+      x= if typeOf(typeOfr x) == typeOf "" then unsafeCoerce[(s,"")] else readsPrec' 0 s
       typeOfr :: [(a,String)] ->  a
       typeOfr  = undefined
 
@@ -812,8 +877,7 @@ processLine r= do
    mapM_ (\ r ->  -- if (r=="end") then exit' $ Left "terminated by user" else
                  do
                     threadDelay 100000
-                    atomically . writeTVar  getLineRef $ Just r
-                    putStrLn r) rs
+                    atomically . writeTVar  getLineRef $ Just r ) rs
 
 
     where
@@ -838,18 +902,21 @@ stay=   do
       Right (Just r) -> return r
       Left msg -> error msg
 
--- | keep the main thread running, initiate the asynchronous keyboard input and execute
--- the transient computation. It also read a slash separated list of string that are interpreted by
+-- | keep the main thread running, initiate the non blocking keyboard input and execute
+-- the transient computation.
+--
+-- It also read a slash-separated list of string that are read by
 -- `option` and `input` as if they were entered by the keyboard
+--
+-- >  foo  -p  options/to/be/read/by/option/and/input
+--
 keep :: TransIO a -> IO a
 keep mx = do
---   forkIO $ inputLoop
    forkIO $ do
            liftIO $ putMVar rexit  $ Right Nothing
            runTransient $ do
                (async inputLoop
                        <|> (option "end" "exit" >> exit' (Left "terminated by user"))
---                       <|> (liftIO $ putMVar rexit  $ Right Nothing)
                        <|> return ())
 
 

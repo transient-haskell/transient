@@ -14,7 +14,7 @@ import Data.List(nub)
 
 --newtype EVars= EVars  (IORef (M.Map Int [EventF]))  deriving Typeable
 
-data EVar a= EVar Int (TVar Int)  (TChan (StreamData a)) deriving  Typeable
+data EVar a= EVar Int (TVar (Int,Int))  (TChan (StreamData a)) deriving  Typeable
 
 
 -- | creates an EVar.
@@ -39,16 +39,15 @@ data EVar a= EVar Int (TVar Int)  (TChan (StreamData a)) deriving  Typeable
 newEVar ::  TransientIO (EVar a)
 newEVar  = Transient $ do
    id <- genId
-   rn <- liftIO $ newTVarIO 0
+   rn <- liftIO $ newTVarIO (0,0)
    ref <-liftIO  newTChanIO
    return . Just $ EVar id  rn ref
 
 -- | delete al the subscriptions for an evar.
 cleanEVar :: EVar a -> TransIO ()
 cleanEVar (EVar id rn ref1)= liftIO $ atomically $ do
-    n <- readTVar rn
-    replicateM_ n $ writeTChan  ref1 SDone
-    writeTVar rn 0
+    writeTChan  ref1 SDone
+    writeTVar rn (0,0)
 
 -- | read the EVar. It only succeed when the EVar is being updated
 -- The continuation gets registered to be executed whenever the variable is updated.
@@ -57,8 +56,19 @@ cleanEVar (EVar id rn ref1)= liftIO $ atomically $ do
 -- To avoid multiple registrations, use `cleanEVar`
 readEVar :: EVar a -> TransIO a
 readEVar (EVar id rn ref1)= do
-     liftIO $ atomically $ readTVar rn >>= \n -> writeTVar rn $ n +1
-     r <- parallel $ atomically $  readTChan ref1     -- !> "READEVAR"
+     liftIO $ atomically $ readTVar rn >>= \(n,n') -> writeTVar rn $ (n+1,n'+1)
+     r <- parallel $ atomically $ do
+                (n,n') <- readTVar rn
+
+                if n'> 1 then do
+                           r <- peekTChan ref1
+                           writeTVar rn (n,n'-1)
+                           return r
+                         else  do
+                           r <- readTChan ref1
+                           writeTVar rn (n,n)
+                           return r
+
      case r of
         SDone -> empty
         SMore x -> return x
@@ -66,7 +76,7 @@ readEVar (EVar id rn ref1)= do
         SError e -> error $ show e
 
 -- |  update the EVar and execute all readEVar blocks with "last in-first out" priority
+--
 writeEVar (EVar id rn ref1) x= liftIO $ atomically $ do
-    n <- readTVar rn
-    replicateM_ n $ writeTChan  ref1 $ SMore x
+       writeTChan  ref1 $ SMore x
 
