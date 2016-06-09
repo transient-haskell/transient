@@ -80,7 +80,7 @@ logged mx =  Transient $ do
 --            let add= Exec: full
             setData $ Log False (Exec : rs) (Exec: full)     -- !> ("setLog False", Exec:rs)
 
-            r <-  mx <*** ( do  -- when   p1 <|> p2, to avoid the re-execution of p1 at the
+            r <-  mx <** ( do  -- when   p1 <|> p2, to avoid the re-execution of p1 at the
                                 -- recovery when p1 is asynchronous
                             r <- getSData <|> return NoRemote
                             case r of

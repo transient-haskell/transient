@@ -98,8 +98,8 @@ runTransient t= do
 
   runStateT (runTrans t) eventf0
 
-
-
+-- | run the transient computation with an state
+runTransState st x = runStateT (runTrans x) st
 
 -- | get the continuation context: closure, continuation, state, child threads etc
 getCont :: TransIO EventF
@@ -291,12 +291,20 @@ stop :: Alternative m => m stop
 stop= empty
 
 
-infixr 1  <**  ,  <***
+-- | executes the second operand even if the frist return empty.
+-- A normal imperative (monadic) sequence uses the operator (>>) which in the Transient monad does not
+--- execute the next operand if the previous one return empty.
+(**>) :: TransIO a -> TransIO b -> TransIO b
+(**>) x y=  Transient $ do
+          runTrans x
+          runTrans y
+
+infixr 1  <***  ,  <**, **>
 
 -- | forces the execution of the second operand even if the first stop. Return the first result. The second
 -- operand is executed also when internal events happens in the first operand and it returns something
-(<**) :: TransIO a -> TransIO b -> TransIO a
-(<**) ma mb= Transient $ do
+(<***) :: TransIO a -> TransIO b -> TransIO a
+(<***) ma mb= Transient $ do
               fs  <- getContinuations
               setContinuation ma (\x -> mb >> return x)  fs
               a <- runTrans ma
@@ -304,19 +312,19 @@ infixr 1  <**  ,  <***
               restoreStack fs
               return  a
 
-atEnd= (<**)
+atEnd= (<***)
 
 -- | forces the execution of the second operand even if the first stop. It does not execute the second operand
 -- as result of internal events occuring in the first operand.
 -- Return the first result
-(<***) :: TransIO a -> TransIO b -> TransIO a
-(<***) ma mb= Transient $ do
+(<**) :: TransIO a -> TransIO b -> TransIO a
+(<**) ma mb= Transient $ do
               a <- runTrans ma    -- !> "ma"
               runTrans  mb        -- !> "mb"
               return a
 
 
-atEnd' = (<***)
+atEnd' = (<**)
 
 
 
@@ -769,12 +777,15 @@ killChildren cont  = do
 type EventSetter eventdata response= (eventdata ->  IO response) -> IO ()
 type ToReturn  response=  IO response
 
--- | deinvert an event handler. The first parameter is the event handler setter to be
+-- | deinvert an event handler.
+--
+-- The first parameter is the setter of the event handler  to be
 -- deinverted. Usually it is the primitive provided by a framework to set an event handler
 --
--- the second is the value to return to the event handler
--- it configures the event handler by calling the first parameter, that set the event
--- handler, with the current continuation
+-- the second parameter is the value to return to the event handler. Usually it is `return()`
+--
+-- it configures the event handler by calling the setter of the event
+-- handler with the current continuation
 react
   :: Typeable eventdata
   => EventSetter eventdata response
@@ -782,20 +793,34 @@ react
   -> TransIO eventdata
 react setHandler iob= Transient $ do
         cont    <- get
-        mEvData <- getData
-        case mEvData of
+        case event cont of
           Nothing -> do
             liftIO $ setHandler $ \dat ->do
-              runStateT (setData dat >> runCont cont) cont
+              runStateT (runCont cont) cont{event= Just $ unsafeCoerce dat}
               iob
             was <- getData `onNothing` return NoRemote
             when (was /= WasRemote) $ setData WasParallel
             return Nothing
-          Just dat -> do
-             delData dat
-             return (Just  dat)
+
+          j@(Just _) -> do
+            put cont{event=Nothing}
+            return $ unsafeCoerce j
+
+--          Just dat -> do
+--             delData dat
+--             return (Just  dat)
 
 
+--    case event cont of
+--     Nothing -> do
+--        liftIO $ loop cont ioaction
+--        was <- getData `onNothing` return NoRemote
+--        when (was /= WasRemote) $ setData WasParallel
+--
+--        return Nothing
+--     j@(Just _) -> do
+--        put cont{event=Nothing}
+--        return $ unsafeCoerce j
 
 
 

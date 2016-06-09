@@ -9,7 +9,9 @@ import Data.Typeable
 import Control.Concurrent
 import Control.Applicative
 import Control.Concurrent.STM
-import Control.Monad.State
+import Control.Monad.IO.Class
+
+
 import Data.List(nub)
 
 --newtype EVars= EVars  (IORef (M.Map Int [EventF]))  deriving Typeable
@@ -51,7 +53,8 @@ cleanEVar (EVar id rn ref1)= liftIO $ atomically $ do
 
 -- | read the EVar. It only succeed when the EVar is being updated
 -- The continuation gets registered to be executed whenever the variable is updated.
--- if readEVar is in any kind of loop, since each continuation is different, this will register
+--
+-- if readEVar is re-executed in any kind of loop, since each continuation is different, this will register
 -- again. The effect is that the continuation will be executed multiple times
 -- To avoid multiple registrations, use `cleanEVar`
 readEVar :: EVar a -> TransIO a
@@ -79,4 +82,13 @@ readEVar (EVar id rn ref1)= do
 --
 writeEVar (EVar id rn ref1) x= liftIO $ atomically $ do
        writeTChan  ref1 $ SMore x
+
+
+-- | write the EVar and drop all the `readEVar` handlers.
+--
+-- It is like a combination of `writeEVar` and `cleanEVar`
+lastWriteEVar (EVar id rn ref1) x= liftIO $ atomically $ do
+       writeTChan  ref1 $ SLast x
+
+
 

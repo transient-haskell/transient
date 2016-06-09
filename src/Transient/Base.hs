@@ -24,7 +24,7 @@ TransIO(..), TransientIO
 
 , threads,addThreads, freeThreads, hookedThreads,oneThread, killChilds
 
-, (<**),(<***), (<|)
+, (**>), (<**),(<***), (<|)
 
 , StreamData(..)
 ,genId)

@@ -113,7 +113,7 @@ finish :: FinishReason -> TransIO ()
 finish e= do
     liftIO $ putStrLn "finish Called"
     Finish finish <- getSData <|> initFinish
-    writeEVar finish e
+    lastWriteEVar finish e
 
 -- | deregister all the finalization actions.
 -- A initFinish is needed to register actions again
