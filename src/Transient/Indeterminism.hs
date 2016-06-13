@@ -131,7 +131,7 @@ collect' n t1 t2 search= hookedThreads $  do
 
           th <- liftIO $ myThreadId   -- !> "KILL"
           stnow <-  get
-          liftIO $ killChildren st
+          liftIO . killChildren $ children st
           liftIO $ hangThread st stnow
           return  xs
 

@@ -506,7 +506,7 @@ hookedThreads proc= Transient $ do
 killChilds :: TransientIO()
 killChilds= Transient $  do
    cont <- get
-   liftIO $  killChildren cont
+   liftIO $  killChildren $ children cont
    return $ Just ()
 
 -- * extensible state: session data management
@@ -663,7 +663,7 @@ loop (cont'@(EventF eff e x fs a b c d _ childs g))  rec  =  do
 
       -- execute the IO computation and then the closure-continuation
       loop'= forkMaybe False cont $ do
-         mdat <- threadDelay 0 >> rec
+         mdat <- threadDelay 0 >> rec `catch` \(e :: SomeException) -> return $ SError e
          case mdat of
              se@(SError _) ->  iocont se
              SDone ->          iocont SDone
@@ -695,7 +695,7 @@ loop (cont'@(EventF eff e x fs a b c d _ childs g))  rec  =  do
                          case me of -- !> "THREAD END" of
                           Left  e -> do
                              when (fromException e /= Just ThreadKilled)$ liftIO $ print e
-                             killChildren  cont          -- !> "KILL RECEIVED" ++ (show $ unsafePerformIO myThreadId)
+                             killChildren $ children cont          -- !> "KILL RECEIVED" ++ (show $ unsafePerformIO myThreadId)
 
                           Right _ ->  when(not $ freeTh cont')  $ do -- if was not a free thread
                              --  if parent is alive
@@ -758,10 +758,9 @@ hangThread parent child = when(not $ freeTh parent) $ do
        writeTVar headpths $  child:ths   -- !!>  "thread added: "++ show (threadId child)
 
 -- | kill  all the child threads associated with the continuation context
-killChildren cont  = do
+killChildren childs  = do
 
      forkIO $ do
-        let childs= children cont
         ths <- atomically $ do
            ths <- readTVar childs
            writeTVar childs []
@@ -909,12 +908,16 @@ processLine r= do
     breakSlash :: [String] -> String -> [String]
     breakSlash [] ""= [""]
     breakSlash s ""= s
+    breakSlash res ('\"':s)=
+      let (r,rest) = span(/= '\"') s
+      in breakSlash (res++[r]) $ tail1 rest
+
     breakSlash res s=
       let (r,rest) = span(/= '/') s
       in breakSlash (res++[r]) $ tail1 rest
-      where
-      tail1 []=[]
-      tail1 x= tail x
+
+    tail1 []=[]
+    tail1 x= tail x
 
 {-# NOINLINE rexit #-}
 rexit= unsafePerformIO $ newEmptyMVar

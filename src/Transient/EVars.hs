@@ -2,7 +2,7 @@
 module Transient.EVars where
 
 import Transient.Base
-import Transient.Internals(onNothing, EventF)
+import Transient.Internals(runTransState,onNothing, EventF(..), killChildren)
 import qualified Data.Map as M
 import Data.Typeable
 
@@ -10,9 +10,10 @@ import Control.Concurrent
 import Control.Applicative
 import Control.Concurrent.STM
 import Control.Monad.IO.Class
-
+import Control.Exception(SomeException)
 
 import Data.List(nub)
+import Control.Monad.State
 
 --newtype EVars= EVars  (IORef (M.Map Int [EventF]))  deriving Typeable
 
@@ -57,7 +58,13 @@ cleanEVar (EVar id rn ref1)= liftIO $ atomically $ do
 -- if readEVar is re-executed in any kind of loop, since each continuation is different, this will register
 -- again. The effect is that the continuation will be executed multiple times
 -- To avoid multiple registrations, use `cleanEVar`
-readEVar :: EVar a -> TransIO a
+--readEVar :: EVar a -> TransIO a
+--readEVar (ev@(EVar id rn ref1))= do
+--     onFinish $  const $ liftIO $ atomically $ do
+--                        (n,n') <- readTVar rn
+--                        writeTVar rn (n-1,n')
+--     readEVar' ev
+
 readEVar (EVar id rn ref1)= do
      liftIO $ atomically $ readTVar rn >>= \(n,n') -> writeTVar rn $ (n+1,n'+1)
      r <- parallel $ atomically $ do
@@ -67,7 +74,7 @@ readEVar (EVar id rn ref1)= do
                            r <- peekTChan ref1
                            writeTVar rn (n,n'-1)
                            return r
-                         else  do
+                         else do
                            r <- readTChan ref1
                            writeTVar rn (n,n)
                            return r
@@ -76,7 +83,7 @@ readEVar (EVar id rn ref1)= do
         SDone -> empty
         SMore x -> return x
         SLast x -> return x
-        SError e -> error $ show e
+        SError e -> error $ "readEVar: "++ show e
 
 -- |  update the EVar and execute all readEVar blocks with "last in-first out" priority
 --
@@ -91,4 +98,66 @@ lastWriteEVar (EVar id rn ref1) x= liftIO $ atomically $ do
        writeTChan  ref1 $ SLast x
 
 
+-- Finalization
 
+
+type FinishReason= Maybe SomeException
+
+checkFinalize v=
+           case v of
+              SDone ->  finish Nothing >> stop
+              SLast x ->  finish Nothing >> return x
+              SError e -> liftIO ( print e) >> finish Nothing >> stop
+              SMore x -> return x
+
+
+
+data Finish= Finish (EVar FinishReason) deriving Typeable
+
+-- | initialize the event variable for finalization.
+-- all the following computations in different threads will share it
+initFinish :: TransIO Finish
+initFinish= do
+      fin <-  newEVar
+      let f = Finish fin
+      setData  f
+      return  f
+
+
+-- | suscribe a computation to be called when the finish event is triggered
+onFinish :: (FinishReason ->TransIO ()) -> TransIO ()
+onFinish  close=  do
+       st <- get
+       liftIO $ forkIO $ do  -- in another thread to be sure that it executes even when the current thread dies
+                           runTransState st $ do
+                               Finish finish <- getSData <|> initFinish
+                               e <- readEVar finish
+                               close e  -- !!> "CLOSE"
+                               stop
+                           return ()
+       return ()
+
+
+
+
+-- | trigger the event, so this closes all the resources
+finish :: FinishReason -> TransIO ()
+finish e= do
+    liftIO $ putStr  "finish: " >> print e
+    Finish finish <- getSData <|> initFinish
+    lastWriteEVar finish e
+
+-- | deregister all the finalization actions.
+-- A initFinish is needed to register actions again
+unFinish= do
+    Finish fin <- getSData
+    cleanEVar fin    -- !!> "DELEVAR"
+   <|> return ()   -- !!> "NOT DELEVAR"
+
+
+killOnFinish comp=   do
+   chs <- liftIO $ newTVarIO []
+   onFinish $ const $ liftIO $ killChildren chs
+   r <- comp
+   modify $ \ s -> s{children= chs}
+   return r
