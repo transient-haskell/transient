@@ -594,26 +594,36 @@ data StreamData a=  SMore a | SLast a | SDone | SError SomeException deriving (T
 -- previous events
 waitEvents ::   IO b -> TransIO b
 waitEvents io= do
-   SMore r <- parallel (SMore <$> io)
-   return r
+   mr <- parallel (SMore <$> io)
+   case mr of
+     SMore x -> return x
+     SError e -> throw e
+
 
 -- Multithreaded version of `waitEvents` that do not kill the computations spawned by previous events
 waitEvents' ::   IO b -> TransIO b
 waitEvents' io= do
-   SMore r <- parallel (SMore <$> io)
-   return r
+   mr <- parallel (SMore <$> io)
+   case mr of
+     SMore x -> return x
+     SError e -> throw e
 
 -- | variant of `parallel` that execute the IO computation once, and kill the previous child threads
 async  ::  IO b -> TransIO b
 async io= do
-   SLast r <- parallel  (SLast <$>io)
-   return r
+   mr <- parallel  (SLast <$>io)
+   case mr of
+     SLast x -> return x
+     SError e -> throw e
 
 -- | variant that spawn free threads. Since there is no thread control, this is faster
 spawn ::  IO b -> TransIO b
 spawn io= freeThreads $ do
-   SMore r <- parallel (SMore <$>io)
-   return r
+   mr <- parallel (SMore <$>io)
+   case mr of
+     SMore x -> return x
+     SError e -> throw e
+
 
 
 

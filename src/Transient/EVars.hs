@@ -2,7 +2,7 @@
 module Transient.EVars where
 
 import Transient.Base
-import Transient.Internals(runTransState,onNothing, EventF(..), killChildren)
+import Transient.Internals((!>),runTransState,onNothing, EventF(..), killChildren)
 import qualified Data.Map as M
 import Data.Typeable
 
@@ -103,12 +103,13 @@ lastWriteEVar (EVar id rn ref1) x= liftIO $ atomically $ do
 
 type FinishReason= Maybe SomeException
 
-checkFinalize v=
-           case v of
-              SDone ->  finish Nothing >> stop
-              SLast x ->  finish Nothing >> return x
-              SError e -> liftIO ( print e) >> finish Nothing >> stop
-              SMore x -> return x
+-- | trigger finish when the stream data return SDone
+--checkFinalize v=
+--           case v of
+--              SDone ->  finish Nothing >> stop
+--              SLast x ->  return x
+--              SError e -> liftIO ( print e) >> finish Nothing >> stop
+--              SMore x -> return x
 
 
 
@@ -156,8 +157,9 @@ unFinish= do
 
 
 killOnFinish comp=   do
+   return () !> "setup killonfinish"
    chs <- liftIO $ newTVarIO []
-   onFinish $ const $ liftIO $ killChildren chs
+   onFinish $ const $ liftIO $ killChildren chs  !> "killOnFinish event"
    r <- comp
    modify $ \ s -> s{children= chs}
    return r
