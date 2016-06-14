@@ -103,13 +103,13 @@ lastWriteEVar (EVar id rn ref1) x= liftIO $ atomically $ do
 
 type FinishReason= Maybe SomeException
 
--- | trigger finish when the stream data return SDone
---checkFinalize v=
---           case v of
---              SDone ->  finish Nothing >> stop
---              SLast x ->  return x
---              SError e -> liftIO ( print e) >> finish Nothing >> stop
---              SMore x -> return x
+ | trigger finish when the stream data return SDone
+checkFinalize v=
+           case v of
+              SDone ->  finish Nothing >> stop
+              SLast x ->  return x
+              SError e -> liftIO ( print e) >> finish Nothing >> stop
+              SMore x -> return x
 
 
 
