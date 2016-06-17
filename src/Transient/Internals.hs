@@ -108,8 +108,8 @@ getCont = Transient $ Just <$> get
 -- | run the closure and the continuation using the state data of the calling thread
 runCont :: EventF -> StateIO (Maybe a)
 runCont (EventF _ _ x fs _ _  _ _  _ _ _)= runTrans $ do
-      r <- (unsafeCoerce x)
-      (compose fs r)
+      r <- unsafeCoerce x
+      compose fs r
 
 -- | run the closure and the continuation using his own state data
 runCont' cont= runStateT (runCont cont) cont

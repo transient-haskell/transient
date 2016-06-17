@@ -76,9 +76,9 @@ collectSample= threads 4 $ do
 
 threadSample= do
      option "th" "threads sample"
-     liftIO $ print "number of threads? (< 10)"
 
-     n <- input  ( < 10)
+
+     n <- input  ( < 10) "number of threads? (< 10)"
 
      threads n $ do
         x <- choose  [1,2,3]
@@ -257,14 +257,13 @@ pubSub=  do
   where
 
   publish v v'= do
-    liftIO $ putStrLn "Enter a message to publish"
-    msg <-  input(const True)
+    msg <-  input(const True) "Enter a message to publish"
 
     writeEVar v msg
     liftIO $ putStrLn "after writing first EVar\n"
 
-    liftIO $ putStrLn "Enter a second message to publish"
-    msg <-  input(const True)
+
+    msg <-  input (const True) "Enter a second message to publish"
 
     writeEVar v'  msg
     liftIO $ putStrLn "after writing second EVar\n"
