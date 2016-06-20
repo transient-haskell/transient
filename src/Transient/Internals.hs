@@ -85,7 +85,7 @@ instance MonadState EventF TransIO where
       put s'
       return $ Just a
 
-type StateIO= StateT EventF  IO
+type StateIO= StateT EventF IO
 
 
 -- | run the transient computation with a blank state

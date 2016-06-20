@@ -1,6 +1,7 @@
 module Main where
 
 import Transient.Move
+import Transient.Move.Utils
 import Transient.Logged
 import Transient.Base
 import Transient.Indeterminism
@@ -27,23 +28,22 @@ import Data.List((\\))
 
 
 -- to be executed with two or more nodes
-main = do
-     args <- getArgs
-     let hostname= read $ head args :: String
-         remotehost= read $ args !! 1
-         port= 2000
---         numNodes = 2
---         ports = [2000 .. 2000 + numNodes - 1]
-
-         nodes = (createNode "localhost" ports
-         node1= head nodes
-         node2= nodes !! 1
-
-     runCloud' $ do
-         listen (createLocalNode port) <|> return ()
-         local $ option "s" "start"
-         box <- local newMailBox
-         getMailBox box >>= lliftIO . print <|> putMailBox box "hello"
+main = keep $ initNode $ addNode1 <|> test
 
 
-runNodes nodes= foldl (<|>) empty (map listen nodes) <|> return()
+test= do
+        local $ option "exec" "exec"
+        nodes <- local getNodes
+        when (lenght nodes >1)$ do
+           runAt (nodes !! 1) $ print "hello"
+           lliftIO $ print "world"
+
+
+
+
+--         box <- local newMailBox
+--         getMailBox box >>= lliftIO . print <|> putMailBox box "hello"
+
+
+
+

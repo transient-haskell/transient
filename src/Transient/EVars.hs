@@ -2,7 +2,7 @@
 module Transient.EVars where
 
 import Transient.Base
-import Transient.Internals((!>),runTransState,onNothing, EventF(..), killChildren)
+import Transient.Internals(runTransState,onNothing, EventF(..), killChildren)
 import qualified Data.Map as M
 import Data.Typeable
 
@@ -15,7 +15,7 @@ import Control.Exception(SomeException)
 import Data.List(nub)
 import Control.Monad.State
 
---newtype EVars= EVars  (IORef (M.Map Int [EventF]))  deriving Typeable
+
 
 data EVar a= EVar Int (TVar (Int,Int))  (TChan (StreamData a)) deriving  Typeable
 
@@ -39,7 +39,7 @@ data EVar a= EVar Int (TVar (Int,Int))  (TChan (StreamData a)) deriving  Typeabl
 -- see https://www.fpcomplete.com/user/agocorona/publish-subscribe-variables-transient-effects-v
 --
 
-newEVar ::  TransientIO (EVar a)
+newEVar ::  TransIO (EVar a)
 newEVar  = Transient $ do
    id <- genId
    rn <- liftIO $ newTVarIO (0,0)
@@ -125,19 +125,15 @@ initFinish= do
       return  f
 
 
--- | suscribe a computation to be called when the finish event is triggered
 onFinish :: (FinishReason ->TransIO ()) -> TransIO ()
 onFinish  close=  do
-       st <- get
-       liftIO $ forkIO $ do  -- in another thread to be sure that it executes even when the current thread dies
-                           runTransState st $ do
+
                                Finish finish <- getSData <|> initFinish
                                e <- readEVar finish
                                close e  -- !!> "CLOSE"
                                stop
+                         <|>
                            return ()
-       return ()
-
 
 
 
@@ -157,9 +153,11 @@ unFinish= do
 
 
 killOnFinish comp=   do
-   return () !> "setup killonfinish"
+
    chs <- liftIO $ newTVarIO []
-   onFinish $ const $ liftIO $ killChildren chs  !> "killOnFinish event"
+   onFinish $ const $ do
+
+      liftIO $ killChildren chs  -- !> "killOnFinish event"
    r <- comp
    modify $ \ s -> s{children= chs}
    return r
