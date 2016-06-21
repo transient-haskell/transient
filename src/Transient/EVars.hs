@@ -58,24 +58,18 @@ cleanEVar (EVar id rn ref1)= liftIO $ atomically $ do
 -- if readEVar is re-executed in any kind of loop, since each continuation is different, this will register
 -- again. The effect is that the continuation will be executed multiple times
 -- To avoid multiple registrations, use `cleanEVar`
---readEVar :: EVar a -> TransIO a
---readEVar (ev@(EVar id rn ref1))= do
---     onFinish $  const $ liftIO $ atomically $ do
---                        (n,n') <- readTVar rn
---                        writeTVar rn (n-1,n')
---     readEVar' ev
-
 readEVar (EVar id rn ref1)= do
      liftIO $ atomically $ readTVar rn >>= \(n,n') -> writeTVar rn $ (n+1,n'+1)
      r <- parallel $ atomically $ do
-                (n,n') <- readTVar rn
-
+                r <- peekTChan ref1
+                return ()              -- !> "peekTChan executed"
+                (n,n') <- readTVar rn  -- !> "readtvar rn"
+                return ()              -- !> ("rn",n)
                 if n'> 1 then do
-                           r <- peekTChan ref1
                            writeTVar rn (n,n'-1)
                            return r
                          else do
-                           r <- readTChan ref1
+                           readTChan ref1
                            writeTVar rn (n,n)
                            return r
 
@@ -83,7 +77,9 @@ readEVar (EVar id rn ref1)= do
         SDone -> empty
         SMore x -> return x
         SLast x -> return x
-        SError e -> error $ "readEVar: "++ show e
+        SError e -> do
+            liftIO . atomically $ readTVar rn >>= \(n,n') -> writeTVar rn $ (n-1,n'-1)
+            error $ "readEVar: "++ show e
 
 -- |  update the EVar and execute all readEVar blocks with "last in-first out" priority
 --
