@@ -62,9 +62,9 @@ readEVar (EVar id rn ref1)= do
      liftIO $ atomically $ readTVar rn >>= \(n,n') -> writeTVar rn $ (n+1,n'+1)
      r <- parallel $ atomically $ do
                 r <- peekTChan ref1
-                return ()              -- !> "peekTChan executed"
+----                return ()               !> "peekTChan executed"
                 (n,n') <- readTVar rn  -- !> "readtvar rn"
-                return ()              -- !> ("rn",n)
+--                return ()              !> ("rn",n)
                 if n'> 1 then do
                            writeTVar rn (n,n'-1)
                            return r
@@ -153,7 +153,7 @@ killOnFinish comp=   do
    chs <- liftIO $ newTVarIO []
    onFinish $ const $ do
 
-      liftIO $ killChildren chs  -- !> "killOnFinish event"
+      liftIO $ killChildren chs   -- !> "killOnFinish event"
    r <- comp
    modify $ \ s -> s{children= chs}
    return r

@@ -1,20 +1,8 @@
 {-# LANGUAGE   CPP #-}
 
-module Main where
 
-import Prelude hiding (div)
-import Transient.Base
-#ifdef ghcjs_HOST_OS
-   hiding ( option,runCloud')
-#endif
-import GHCJS.HPlay.View
-#ifdef ghcjs_HOST_OS
-   hiding (map)
-#else
-   hiding (map, option,runCloud')
-#endif
 
-import  Transient.Move  hiding(teleport)
+import Transient.Move.Services
 import Control.Applicative
 import Control.Monad
 import Data.Typeable
@@ -22,44 +10,16 @@ import Data.IORef
 import Control.Concurrent (threadDelay)
 import Control.Monad.IO.Class
 
-main = do
-  let serverAddr= "localhost"
-      serverPort =  2020
-      serverNode  = createNode serverAddr serverPort
-      mynode    = if isBrowserInstance
-                     then createWebNode
-                     else serverNode
-  runCloud' $  do
-        listen mynode
-        local $
-          render $ do
-              rawHtml $ p "hello"
-              render $ rawHtml $ p "world"
 
-counters server=   wormhole server $  counter  <|> counter
 
-counter =  do
-         op <-  local $ render $   (inputSubmit "start"  `fire` OnClick)
-                               <|> (inputSubmit "cancel" `fire` OnClick) <++ br
+main= do
 
-         teleport          -- translates the computation to the server
+    runCloudIO $ do
+      runNodes [2000,2001]
+      local $ option "start" "start"
 
-         r <- local $ case op of
-                   "start"  ->  stream
-                   "cancel" ->  killChilds >> empty
 
-         teleport          -- back to the browser again
-
-         local $ render $ rawHtml $ h1 r
-
--- generates a sequence of numbers
-stream= do
-     counter <- liftIO $ newIORef (0 :: Int)
-     waitEvents $ do
-          n <- atomicModifyIORef counter $ \r -> (r +1,r)
-          threadDelay 1000000
-          putStr "generating: " >> print n
-          return  n
-
+      node <- initService  "ident" ("http://github.com/agocorona/transient", "MainStreamFiles")
+      onAll . liftIO $ putStrLn $ "installed at" ++ show node
 
 

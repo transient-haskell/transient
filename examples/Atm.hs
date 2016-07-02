@@ -14,7 +14,8 @@ import GHCJS.HPlay.View
    hiding (map, option,runCloud')
 #endif
 
-import  Transient.Move  hiding(teleport)
+import  Transient.Move
+import Transient.Move.Utils
 import Control.Applicative
 import Control.Monad
 import Data.Typeable
@@ -32,7 +33,7 @@ data Operation= Operation String
 -- the program follows closely the specifications and be clear enough to be understood
 -- by the client
 
-main= simpleWebApp 2020 atm
+main= initNode atm
 
 
 
