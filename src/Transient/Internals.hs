@@ -164,7 +164,7 @@ instance   Functor TransIO where
      return $ f x
 
 -- to set the identifier number...
-newtype IDNUM = IDNUM Int
+newtype IDNUM = IDNUM Int deriving Show
 
 instance Applicative TransIO where
   pure a  = Transient . return $ Just a
@@ -315,8 +315,8 @@ infixr 1  <***  ,  <**, **>
 
 atEnd= (<***)
 
--- | forces the execution of the second operand even if the first stop. It does not execute the second operand
--- as result of internal events occuring in the first operand.
+-- | forces the execution of the second operand even if the first stop. It does not execute
+-- the second operand as result of internal events occuring in the first operand.
 -- Return the first result
 (<**) :: TransIO a -> TransIO b -> TransIO a
 (<**) ma mb= Transient $ do
