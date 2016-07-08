@@ -1,0 +1,14 @@
+resolver: lts-6.6
+packages:
+- '.'
+extra-deps: []
+flags: {}
+extra-package-dbs: []
+
+compiler: ghcjs-0.2.0.20160703_ghc-7.10.3
+compiler-check: match-exact
+setup-info:
+  ghcjs:
+    source:
+      ghcjs-0.2.0.20160703_ghc-7.10.3:
+         url: http://ghcjs.luite.com/master-20160703.tar.gz
