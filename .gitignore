@@ -11,6 +11,9 @@ MFlow.lkshf
 notes.txt
 notes.lhs
 dist
+*.js*
+*.o
+*.hi
 .cabal-sandbox
 cabal.sanbox.config
 .stack*
