@@ -67,20 +67,8 @@ matrix:
     addons: {apt: {packages: [ghc-7.10.3], sources: [hvr-ghc]}}
 
   # Build on OS X in addition to Linux
-  - env: BUILD=stack ARGS="--resolver lts-3"
-    compiler: ": #stack 7.10.2 (OS X)"
-    os: osx
-
-  - env: BUILD=stack ARGS="--resolver lts-5"
-    compiler: ": #stack 7.10.3 LTS 5 (OS X)"
-    os: osx
-
   - env: BUILD=stack ARGS="--resolver lts-6"
     compiler: ": #stack 7.10.3 LTS 6 (OS X)"
-    os: osx
-
-  - env: BUILD=stack ARGS="--resolver nightly"
-    compiler: ": #stack nightly (OS X)"
     os: osx
 
   allow_failures:
