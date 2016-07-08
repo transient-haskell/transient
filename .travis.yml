@@ -62,7 +62,7 @@ matrix:
     addons: {apt: {packages: [libgmp-dev]}}
 
   # GHCJS build via stack
-  - env: BUILD=stack ARGS="--compiler=ghcjs-0.2.0_ghc-7.10.3 --stack-yaml=stack-ghcjs.yaml"
+  - env: BUILD=ghcjs ARGS="--stack-yaml=stack-ghcjs.yaml"
     compiler: ": #stack GHCJS"
     addons: {apt: {packages: [ghc-7.10.3], sources: [hvr-ghc]}}
 
@@ -108,14 +108,15 @@ install:
       travis_retry cabal update
       cabal install --only-dependencies --enable-tests --enable-benchmarks --force-reinstalls --ghc-options=-O0 --reorder-goals --max-backjumps=-1 $CABALARGS
       ;;
+    ghcjs)
+      stack --no-terminal setup $ARGS
+      stack --no-terminal --install-ghc $ARGS test --only-dependencies
+      ;;
   esac
 
 script:
 - |
   case "$BUILD" in
-    stack)
-      stack --no-terminal $ARGS test --haddock --no-haddock-deps
-      ;;
     cabal)
       cabal configure --enable-tests --enable-benchmarks -v2 --ghc-options="-O0 -Werror"
       cabal build
@@ -125,5 +126,8 @@ script:
       cabal copy
       SRC_TGZ=$(cabal info . | awk '{print $2;exit}').tar.gz && \
         (cd dist && cabal install --force-reinstalls "$SRC_TGZ")
+      ;;
+    *)
+      stack --no-terminal $ARGS test --haddock --no-haddock-deps
       ;;
   esac
