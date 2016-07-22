@@ -17,6 +17,7 @@ choose, choose', collect, collect', group, groupByTime
 ) where
 
 import Transient.Base
+import Transient.EVars
 import Transient.Internals(killChildren, EventF(..),hangThread)
 import Data.IORef
 import Control.Applicative
@@ -31,20 +32,22 @@ import Data.Time.Clock
 
 -- | slurp a list of values and process them in parallel . To limit the number of processing
 -- threads, use `threads`
-choose  ::  [a] -> TransIO a
+choose  :: Show a =>  [a] -> TransIO a
 choose []= empty
 choose   xs = do
     evs <- liftIO $ newIORef xs
     r <- parallel $ do
            es <- atomicModifyIORef' evs $ \es -> let !tes= tail es in (tes,es)
-           case es of
-            [x]  -> return $ SLast x
-            x:_  -> return $ SMore x
-    return $ toData r
+           case es  of
+            [x]  -> x `seq` return $ SLast x
+            x:_  -> x `seq` return $ SMore x
+    toData r
 
 toData r= case r of
-      SMore x -> x
-      SLast x -> x
+      SMore x -> return x
+      SLast x -> return x
+      SError e ->  finish (Just e) >> empty
+
 
 -- | group the output of a possible multithreaded process in groups of n elements.
 group :: Int -> TransIO a -> TransIO [a]

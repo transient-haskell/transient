@@ -40,10 +40,10 @@ import           Data.List
 import           Data.IORef
 import           System.Environment
 import           System.IO (hFlush,stdout)
---{-# INLINE (!>) #-}
---(!>) :: Show a => b -> a -> b
---(!>) x y=   trace (show y) x
---infixr 0 !>
+{-# INLINE (!>) #-}
+(!>) :: Show a => b -> a -> b
+(!>) x y=   trace (show y) x
+infixr 0 !>
 
 
 data TransIO  x = Transient  {runTrans :: StateT EventF IO (Maybe x)}
@@ -150,6 +150,7 @@ setContinuation  b c fs =  do
     (EventF eff ev _ _ d e f g h i j) <- get
     put $ EventF eff ev b ( unsafeCoerce c: fs) d e f g h i j
 
+
 -- | run a chain of continuations. It is up to the programmer to assure by construction that
 --  each continuation type-check with the next, that the parameter type match the input of the first
 -- continuation.
@@ -158,13 +159,13 @@ runContinuations :: [a -> TransIO b] -> c -> TransIO d
 runContinuations fs x= (compose $ unsafeCoerce fs)  x
 
 instance   Functor TransIO where
-  fmap f mx=   -- Transient $ fmap (fmap f) $ runTrans mx
+  fmap f mx=  --   Transient $ fmap (fmap f) $ runTrans mx
     do
      x <- mx
      return $ f x
 
--- to set the identifier number...
-newtype IDNUM = IDNUM Int deriving Show
+
+
 
 instance Applicative TransIO where
   pure a  = Transient . return $ Just a
@@ -222,10 +223,6 @@ instance Applicative TransIO where
              liftIO $ writeIORef rf  (k,full)
 
 
---             mfdata <- gets mfData
-             n <- gets mfSequence
-             setData $ IDNUM n
-
              setContinuation g appg fs
 
              x <- runTrans g             --  !> "RUN g"
@@ -233,7 +230,6 @@ instance Applicative TransIO where
              liftIO $ writeIORef rg  (x,full')
              restoreStack fs
              return $ k <*> x
-
 restoreStack fs=
        modify $ \(EventF eff _ f _ a b c d parent children g1) ->
                EventF eff Nothing f fs a b c d parent children g1
@@ -291,41 +287,52 @@ instance MonadPlus TransIO where
 stop :: Alternative m => m stop
 stop= empty
 
+class AdditionalOperators m where
 
--- | executes the second operand even if the frist return empty.
--- A normal imperative (monadic) sequence uses the operator (>>) which in the Transient monad does not
---- execute the next operand if the previous one return empty.
-(**>) :: TransIO a -> TransIO b -> TransIO b
-(**>) x y=  Transient $ do
-          runTrans x
-          runTrans y
+    -- | executes the second operand even if the frist return empty.
+    -- A normal imperative (monadic) sequence uses the operator (>>) which in the
+    -- Transient monad does not execute the next operand if the previous one return empty.
+    (**>) :: m a -> m b -> m b
+
+    -- | forces the execution of the second operand even if the first stop. It does not execute
+    -- the second operand as result of internal events occuring in the first operand.
+    -- Return the first result
+    (<**) :: m a -> m b -> m a
+
+    atEnd' ::m a -> m b -> m a
+    atEnd' = (<**)
+
+    -- | forces the execution of the second operand even if the first stop. Return the first result. The second
+    -- operand is executed also when internal events happens in the first operand and it returns something
+    (<***) :: m a -> m b -> m a
+
+    atEnd :: m a -> m b -> m a
+    atEnd= (<***)
+
+
+instance AdditionalOperators TransIO where
+
+--    (**>) :: TransIO a -> TransIO b -> TransIO b
+    (**>) x y=  Transient $ do
+              runTrans x
+              runTrans y
+
+--    (<***) :: TransIO a -> TransIO b -> TransIO a
+    (<***) ma mb= Transient $ do
+                  fs  <- getContinuations
+                  setContinuation ma (\x -> mb >> return x)  fs
+                  a <- runTrans ma
+                  runTrans mb
+                  restoreStack fs
+                  return  a
+
+--    (<**) :: TransIO a -> TransIO b -> TransIO a
+    (<**) ma mb= Transient $ do
+                  a <- runTrans ma    -- !> "ma"
+                  runTrans  mb        -- !> "mb"
+                  return a
 
 infixr 1  <***  ,  <**, **>
-
--- | forces the execution of the second operand even if the first stop. Return the first result. The second
--- operand is executed also when internal events happens in the first operand and it returns something
-(<***) :: TransIO a -> TransIO b -> TransIO a
-(<***) ma mb= Transient $ do
-              fs  <- getContinuations
-              setContinuation ma (\x -> mb >> return x)  fs
-              a <- runTrans ma
-              runTrans mb
-              restoreStack fs
-              return  a
-
-atEnd= (<***)
-
--- | forces the execution of the second operand even if the first stop. It does not execute
--- the second operand as result of internal events occuring in the first operand.
--- Return the first result
-(<**) :: TransIO a -> TransIO b -> TransIO a
-(<**) ma mb= Transient $ do
-              a <- runTrans ma    -- !> "ma"
-              runTrans  mb        -- !> "mb"
-              return a
-
-
-atEnd' = (<**)
 
 
 
@@ -362,7 +369,7 @@ instance Monoid a => Monoid (TransIO a) where
 setEventCont ::   TransIO a -> (a -> TransIO b) -> StateIO EventF
 setEventCont x f  = do
 
-   st@(EventF eff e _ fs d n  r applic  ch rc bs)  <- get
+   st@(EventF eff e _ fs d n  r applic  ch rc bs)  <- get  -- !> "SET"
    let cont=  EventF eff e x ( unsafeCoerce f : fs) d n  r applic  ch rc bs
    put cont
    return cont
@@ -371,7 +378,7 @@ setEventCont x f  = do
 -- in the list of continuations.
 --resetEventCont :: Maybe a -> EventF -> StateIO (TransIO b -> TransIO b)
 resetEventCont mx _=do
-   st@(EventF eff e _ fs d n  r nr  ch rc bs)  <- get
+   st@(EventF eff e _ fs d n  r nr  ch rc bs)  <- get     -- !> "reset"
    let f= \mx ->  case mx of
                        Nothing -> empty
                        Just x  -> (unsafeCoerce $ head fs)  x
@@ -383,6 +390,7 @@ tailsafe (x:xs)= xs
 
 --refEventCont= unsafePerformIO $ newIORef baseEffects
 
+{-# INLINE baseEffects #-}
 baseEffects :: Effects
 
 baseEffects x  x' f' = do
@@ -652,7 +660,6 @@ spawn io= freeThreads $ do
 -- IO action. with `SLast`, `SDone` and `SError`, `parallel` will not repeat the IO action anymore.
 parallel  ::    IO (StreamData b) -> TransIO (StreamData b)
 parallel  ioaction= Transient $   do
-
     cont <- get                    -- !> "PARALLEL"
     case event cont of
      j@(Just _) -> do

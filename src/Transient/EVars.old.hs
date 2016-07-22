@@ -17,7 +17,7 @@ import Control.Monad.State
 
 
 
-data EVar a= EVar  (TChan (StreamData a)) deriving  Typeable
+data EVar a= EVar Int (TVar (Int,Int))  (TChan (StreamData a)) deriving  Typeable
 
 
 -- | creates an EVar.
@@ -42,14 +42,15 @@ data EVar a= EVar  (TChan (StreamData a)) deriving  Typeable
 newEVar ::  TransIO (EVar a)
 newEVar  = Transient $ do
    id <- genId
-   ref <-liftIO  newBroadcastTChanIO
-   return . Just $ EVar  ref
+   rn <- liftIO $ newTVarIO (0,0)
+   ref <-liftIO  newTChanIO
+   return . Just $ EVar id  rn ref
 
 -- | delete al the subscriptions for an evar.
 cleanEVar :: EVar a -> TransIO ()
-cleanEVar (EVar  ref1)= liftIO $ atomically $ do
+cleanEVar (EVar id rn ref1)= liftIO $ atomically $ do
     writeTChan  ref1 SDone
-
+    writeTVar rn (0,0)
 
 -- | read the EVar. It only succeed when the EVar is being updated
 -- The continuation gets registered to be executed whenever the variable is updated.
@@ -57,28 +58,40 @@ cleanEVar (EVar  ref1)= liftIO $ atomically $ do
 -- if readEVar is re-executed in any kind of loop, since each continuation is different, this will register
 -- again. The effect is that the continuation will be executed multiple times
 -- To avoid multiple registrations, use `cleanEVar`
-readEVar :: EVar a -> TransIO a
-readEVar (EVar  ref1)=  do
-     tchan <-  liftIO . atomically $ dupTChan ref1
-     r <- parallel $ atomically $  readTChan tchan
+readEVar (EVar id rn ref1)= freeThreads $ do
+     liftIO $ atomically $ readTVar rn >>= \(n,n') -> writeTVar rn $ (n+1,n'+1)
+     r <- parallel $ atomically $ do
+                r <- peekTChan ref1
+----                return ()               !> "peekTChan executed"
+                (n,n') <- readTVar rn  -- !> "readtvar rn"
+--                return ()              !> ("rn",n)
+                if n'> 1 then do
+                           writeTVar rn (n,n'-1)
+                           return r
+                         else do
+                           readTChan ref1
+                           writeTVar rn (n,n)
+                           return r
 
      case r of
         SDone -> empty
         SMore x -> return x
         SLast x -> return x
-        SError e -> error ""
---            error $ "readEVar: "++ show e
+        SError e -> liftIO $ do
+            atomically $ readTVar rn >>= \(n,n') -> writeTVar rn $ (n-1,n'-1)
+            myThreadId >>= killThread
+            error $ "readEVar: "++ show e
 
 -- |  update the EVar and execute all readEVar blocks with "last in-first out" priority
 --
-writeEVar (EVar  ref1) x= liftIO $ atomically $ do
+writeEVar (EVar id rn ref1) x= liftIO $ atomically $ do
        writeTChan  ref1 $ SMore x
 
 
 -- | write the EVar and drop all the `readEVar` handlers.
 --
 -- It is like a combination of `writeEVar` and `cleanEVar`
-lastWriteEVar (EVar ref1) x= liftIO $ atomically $ do
+lastWriteEVar (EVar id rn ref1) x= liftIO $ atomically $ do
        writeTChan  ref1 $ SLast x
 
 
@@ -105,7 +118,7 @@ initFinish= do
 onFinish :: (FinishReason ->TransIO ()) -> TransIO ()
 onFinish  close=  do
        Finish finish <- getSData <|> initFinish
-       e <-  freeThreads $ readEVar finish
+       e <- readEVar finish
        close e  -- !!> "CLOSE"
        stop
      <|>
