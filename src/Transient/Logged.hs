@@ -58,7 +58,7 @@ getLog :: TransIO Log
 --
 --  but at the `thatOther` execution the log is: [Exec,(), ()]
 --
-logged :: (Show a, Read a, Typeable a) => TransientIO a -> TransientIO a
+logged :: Loggable a => TransientIO a -> TransientIO a
 logged mx =  Transient $ do
    Log recover rs full <- getData `onNothing` return ( Log False  [][])
    runTrans $

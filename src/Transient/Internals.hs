@@ -40,10 +40,10 @@ import           Data.List
 import           Data.IORef
 import           System.Environment
 import           System.IO (hFlush,stdout)
-{-# INLINE (!>) #-}
-(!>) :: Show a => b -> a -> b
-(!>) x y=   trace (show y) x
-infixr 0 !>
+--{-# INLINE (!>) #-}
+--(!>) :: Show a => b -> a -> b
+--(!>) x y=   trace (show y) x
+--infixr 0 !>
 
 
 data TransIO  x = Transient  {runTrans :: StateT EventF IO (Maybe x)}
@@ -185,9 +185,9 @@ instance Applicative TransIO where
                    Log rec _ full <- getData `onNothing` return (Log False [] [])
                    liftIO $ writeIORef rf  (Just k,full)       --  !> "APPF"
                    (x, full2)<- liftIO $ readIORef rg
-                   when (hasWait full2) $
-                        let full'= head full2: full
-                        in setData $ Log rec full' full'
+                   when (hasWait  full ) $                      -- !> (hasWait full,"full",full, "\nfull2",full2)) $
+                        let full'= head full: full2
+                        in (setData $ Log rec full' full')     -- !> ("result1",full')
 
                    return $ Just k <*> x
 
@@ -195,9 +195,9 @@ instance Applicative TransIO where
                    Log rec _ full <- getData `onNothing` return (Log False [] [])
                    liftIO $ writeIORef rg (Just x, full)       -- !> "APPG"
                    (k,full1) <- liftIO $ readIORef rf
-                   when (hasWait  full) $
+                   when (hasWait  full) $                    -- !> ("full", full, "\nfull1",full1)) $
                         let full'= head full: full1
-                        in setData $ Log rec full' full'
+                        in (setData $ Log rec full' full')   -- !> ("result2",full')
 
                    return $ k <*> Just x
 
