@@ -90,12 +90,9 @@ choose' xs = foldl (<|>) empty $ map (async . return) xs
 --newtype Collect a= Collect (MVar (Int, [a])) deriving Typeable
 
 -- collect the results of a search done in parallel, usually initiated by
--- `choose` . The results are added to the collection with `found`
+-- `choose` .
 --
---
-
-
--- | execute a process and get at least the first n solutions (they could be more).
+-- execute a process and get at least the first n solutions (they could be more).
 -- if the process end without finding the number of solutions requested, it return the found ones
 -- if he find the number of solutions requested, it kill the non-free threads of the process and return
 -- It works monitoring the solutions found and the number of active threads.

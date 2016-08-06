@@ -40,6 +40,7 @@ import           Data.List
 import           Data.IORef
 import           System.Environment
 import           System.IO (hFlush,stdout)
+import           System.Exit
 --{-# INLINE (!>) #-}
 --(!>) :: Show a => b -> a -> b
 --(!>) x y=   trace (show y) x
@@ -150,6 +151,12 @@ setContinuation  b c fs =  do
     (EventF eff ev _ _ d e f g h i j) <- get
     put $ EventF eff ev b ( unsafeCoerce c: fs) d e f g h i j
 
+withContinuation  c mx= do
+    EventF eff ev f1 fs d e f g h i j <- get
+    put $ EventF eff ev mx ( unsafeCoerce c: fs) d e f g h i j
+    r <- mx
+    restoreStack fs
+    return r
 
 -- | run a chain of continuations. It is up to the programmer to assure by construction that
 --  each continuation type-check with the next, that the parameter type match the input of the first
@@ -183,9 +190,11 @@ instance Applicative TransIO where
 
              appf k = Transient $  do
                    Log rec _ full <- getData `onNothing` return (Log False [] [])
-                   liftIO $ writeIORef rf  (Just k,full)       --  !> "APPF"
+                   (liftIO $ writeIORef rf  (Just k,full))
+--                                !> ( show $ unsafePerformIO myThreadId) ++"APPF"
                    (x, full2)<- liftIO $ readIORef rg
-                   when (hasWait  full ) $                      -- !> (hasWait full,"full",full, "\nfull2",full2)) $
+                   when (hasWait  full ) $
+                       -- !> (hasWait full,"full",full, "\nfull2",full2)) $
                         let full'= head full: full2
                         in (setData $ Log rec full' full')     -- !> ("result1",full')
 
@@ -193,9 +202,11 @@ instance Applicative TransIO where
 
              appg x = Transient $  do
                    Log rec _ full <- getData `onNothing` return (Log False [] [])
-                   liftIO $ writeIORef rg (Just x, full)       -- !> "APPG"
+                   liftIO $ writeIORef rg (Just x, full)
+--                      !> ( show $ unsafePerformIO myThreadId)++ "APPG"
                    (k,full1) <- liftIO $ readIORef rf
-                   when (hasWait  full) $                    -- !> ("full", full, "\nfull1",full1)) $
+                   when (hasWait  full) $
+                       -- !> ("full", full, "\nfull1",full1)) $
                         let full'= head full: full1
                         in (setData $ Log rec full' full')   -- !> ("result2",full')
 
@@ -203,7 +214,9 @@ instance Applicative TransIO where
 
          setContinuation f appf fs
 
-         k <- runTrans f    -- !> "RUN f"
+
+         k <- runTrans f
+                  -- !> ( show $ unsafePerformIO myThreadId)++ "RUN f"
          was <- getData `onNothing` return NoRemote
          when (was == WasParallel) $  setData NoRemote
 
@@ -211,7 +224,8 @@ instance Applicative TransIO where
 
 
 
-         if was== WasRemote  || (not recovery && was == NoRemote  && isNothing k ) -- !>  ("was,recovery,isNothing=",was,recovery, isNothing k))
+         if was== WasRemote  || (not recovery && was == NoRemote  && isNothing k )
+--               !>  ("was,recovery,isNothing=",was,recovery, isNothing k)
          -- if the first operand was a remote request
          -- (so this node is not master and hasn't to execute the whole expression)
          -- or it was not an asyncronous term (a normal term without async or parallel
@@ -220,16 +234,23 @@ instance Applicative TransIO where
              restoreStack fs
              return Nothing
            else do
-             liftIO $ writeIORef rf  (k,full)
-
+             when (isJust k) $ liftIO $ writeIORef rf  (k,full)
+                -- when necessary since it maybe WasParallel and Nothing
 
              setContinuation g appg fs
 
-             x <- runTrans g             --  !> "RUN g"
+             x <- runTrans g
+                    --  !> ( show $ unsafePerformIO myThreadId) ++ "RUN g"
              Log recovery _ full' <- getData `onNothing` return (Log False [] [])
              liftIO $ writeIORef rg  (x,full')
              restoreStack fs
-             return $ k <*> x
+             k'' <- if was== WasParallel
+                      then do
+                        (k',_) <- liftIO $ readIORef rf -- since k may have been updated by a parallel f
+                        return k'
+                      else return k
+             return $ k'' <*> x
+
 restoreStack fs=
        modify $ \(EventF eff _ f _ a b c d parent children g1) ->
                EventF eff Nothing f fs a b c d parent children g1
@@ -264,8 +285,8 @@ data Log= Log Recover  CurrentPointer LogEntries deriving Typeable
 
 
 instance Alternative TransIO where
-  empty = Transient $ return  Nothing
-  (<|>) = mplus
+    empty = Transient $ return  Nothing
+    (<|>) = mplus
 
 
 data RemoteStatus=   WasRemote | WasParallel | NoRemote deriving (Typeable, Eq, Show)
@@ -284,7 +305,7 @@ instance MonadPlus TransIO where
 
 -- | a sinonym of empty that can be used in a monadic expression. it stop the
 -- computation and execute the next alternative computation (composed with `<|>`)
-stop :: Alternative m => m stop
+stop :: Alternative m => m stopped
 stop= empty
 
 class AdditionalOperators m where
@@ -626,12 +647,12 @@ waitEvents' io= do
 -- | variant of `parallel` that execute the IO computation once, and kill the previous child threads
 async  ::  IO b -> TransIO b
 async io= do
-   mr <- parallel  (SLast <$>io)
+   mr <- parallel  (SLast <$> io)
    case mr of
      SLast x -> return x
      SError e -> throw e
 
--- | variant that spawn free threads. Since there is no thread control, this is faster
+-- | variant of waitEvents that spawn free threads. It is a little faster at the cost of no thread control
 spawn ::  IO b -> TransIO b
 spawn io= freeThreads $ do
    mr <- parallel (SMore <$>io)
@@ -662,18 +683,14 @@ parallel  ::    IO (StreamData b) -> TransIO (StreamData b)
 parallel  ioaction= Transient $   do
     cont <- get                    -- !> "PARALLEL"
     case event cont of
-     j@(Just _) -> do
-        put cont{event=Nothing}
-        return $ unsafeCoerce j
-     Nothing -> do
-        liftIO $ loop cont ioaction
-        was <- getData `onNothing` return NoRemote
-        when (was /= WasRemote) $ setData WasParallel
-
-        return Nothing
-
-
-
+         j@(Just _) -> do
+            put cont{event=Nothing}
+            return $ unsafeCoerce j
+         Nothing -> do
+            liftIO $ loop cont ioaction
+            was <- getData `onNothing` return NoRemote
+            when (was /= WasRemote) $ setData WasParallel
+            return Nothing
 
 
 -- executes the IO action and then the continuation included in the first parameter
@@ -713,7 +730,7 @@ loop (cont'@(EventF eff e x fs a b c d _ childs g))  rec  =  do
             then  do
                  forkFinally1 (do
                      th <- myThreadId
-                     hangThread cont' cont{threadId=th}  -- !!>  "thread created: "++ show th
+                     hangThread cont' cont{threadId=th}  -- !>  "thread created: "++ show th
                      proc)
                      $ \me -> do
                          case me of -- !> "THREAD END" of
@@ -739,7 +756,7 @@ loop (cont'@(EventF eff e x fs a b c d _ childs g))  rec  =  do
 --                                     return ()
 
                          case maxThread cont of
-                           Just sem -> signalQSemB sem
+                           Just sem -> signalQSemB sem  --   !> "freed thread"
                            Nothing -> return ()
                  return ()
 
@@ -784,7 +801,7 @@ hangThread parent child = when(not $ freeTh parent) $ do
 -- | kill  all the child threads associated with the continuation context
 killChildren childs  = do
 
-     forkIO $ do
+--     forkIO $ do
         ths <- atomically $ do
            ths <- readTVar childs
            writeTVar childs []
@@ -794,7 +811,7 @@ killChildren childs  = do
         mapM_ (killThread . threadId) ths   -- !!> ("KILLEVENT " ++ show (map threadId ths) ++
 --                                                        if length ths <20 then ""
 --                                                          else error "long list of threads" )
-     return ()
+--     return ()
 
 
 type EventSetter eventdata response= (eventdata ->  IO response) -> IO ()
@@ -952,7 +969,7 @@ stay=   do
     case mr of
       Right Nothing -> stay
       Right (Just r) -> return r
-      Left msg -> error msg
+      Left msg -> putStrLn msg >> exitWith ExitSuccess
 
 -- | keep the main thread running, initiate the non blocking keyboard input and execute
 -- the transient computation.
@@ -968,7 +985,7 @@ keep mx = do
            liftIO $ putMVar rexit  $ Right Nothing
            runTransient $ do
                (async inputLoop
-                       <|> (option "end" "exit" >> exit' (Left "terminated by user"))
+                       <|> (option "end" "exit" >> killChilds >> exit' (Left "terminated by user"))
                        <|> return ())
 
 
