@@ -18,7 +18,7 @@ choose, choose', collect, collect', group, groupByTime
 
 import Transient.Base
 import Transient.EVars
-import Transient.Internals(killChildren, EventF(..),hangThread)
+import Transient.Internals((!>),killChildren, EventF(..),hangThread)
 import Data.IORef
 import Control.Applicative
 import Data.Monoid
@@ -87,8 +87,6 @@ choose' :: [a] -> TransIO a
 choose' xs = foldl (<|>) empty $ map (async . return) xs
 
 
---newtype Collect a= Collect (MVar (Int, [a])) deriving Typeable
-
 -- collect the results of a search done in parallel, usually initiated by
 -- `choose` .
 --
@@ -106,15 +104,15 @@ collect n = collect' n 0.1 0
 -- It also stops as soon as there are enough results specified in the first parameter.
 collect' :: Int -> NominalDiffTime -> NominalDiffTime -> TransIO a -> TransIO [a]
 collect' n t1 t2 search= hookedThreads $  do
-  rv <- liftIO $ atomically $ newTVar (0,[]) -- !> "NEWMVAR"
+  rv <- liftIO $ atomically $ newTVar (0,[])  !> "NEWMVAR"
   endflag <- liftIO $ newTVarIO False
-  st <-  get
+  st <-  newPool
   t <- liftIO getCurrentTime
   let worker = do
-        r <- search    -- !> "ANY"
+        r <- search     !> "ANY"
         liftIO $ atomically $ do
             (n1,rs) <- readTVar rv
-            writeTVar  rv (n1+1,r:rs)  -- !> "MODIFY"
+            writeTVar  rv (n1+1,r:rs)   !> "MODIFY"
         stop
 
       monitor=  freeThreads $ do
@@ -126,17 +124,19 @@ collect' n t1 t2 search= hookedThreads $  do
                                (n > 0 && n' >= n) ||
                                  (null ns && (diffUTCTime t' t > t1))    ||
                                  (t2 > 0 && diffUTCTime t' t > t2)
-                                        -- !>  (diffUTCTime t' t, n', length ns)
+                                         !>  (diffUTCTime t' t, n', length ns)
                                then return xs else retry
 
-          th <- liftIO $ myThreadId   -- !> "KILL"
-          stnow <-  get
+
           liftIO . killChildren $ children st
-          liftIO $ hangThread st stnow
+
           return  xs
 
   monitor <|> worker
-
-
-
-
+  where
+  newPool  =  do
+       chs <- liftIO $ newTVarIO []
+       s <- get
+       let s'=  s{children= chs}
+       put s'
+       return s'
