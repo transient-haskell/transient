@@ -12,11 +12,11 @@
 --
 -----------------------------------------------------------------------------
 {-# LANGUAGE ScopedTypeVariables, DeriveDataTypeable  #-}
-module Transient.Stream.Resource(sourceFile, sinkFile, process, initFinish, finish,unFinish, onFinish) where
+module Transient.Stream.Resource(sourceFile, sinkFile, process, initFinish, finish, onFinish) where
 
 
 import Transient.Base hiding (loop)
-import Transient.EVars
+import Transient.Backtrack
 import Control.Exception
 import Control.Applicative
 import Data.Typeable

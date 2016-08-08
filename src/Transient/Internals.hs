@@ -41,10 +41,10 @@ import           Data.IORef
 import           System.Environment
 import           System.IO (hFlush,stdout)
 import           System.Exit
---{-# INLINE (!>) #-}
---(!>) :: Show a => b -> a -> b
---(!>) x y=   trace (show y) x
---infixr 0 !>
+{-# INLINE (!>) #-}
+(!>) :: Show a => b -> a -> b
+(!>) x y=  x -- trace (show y) x
+infixr 0 !>
 
 
 data TransIO  x = Transient  {runTrans :: StateT EventF IO (Maybe x)}
@@ -464,6 +464,7 @@ oneThread comp=  do
    modify $ \ s -> s{children= chs}
    killChilds
    return r
+
 
 showThreads :: TransIO empty
 showThreads= do

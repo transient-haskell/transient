@@ -17,7 +17,7 @@ choose, choose', collect, collect', group, groupByTime
 ) where
 
 import Transient.Base
-import Transient.EVars
+import Transient.Backtrack(checkFinalize)
 import Transient.Internals((!>),killChildren, EventF(..),hangThread)
 import Data.IORef
 import Control.Applicative
@@ -41,12 +41,7 @@ choose   xs = do
            case es  of
             [x]  -> x `seq` return $ SLast x
             x:_  -> x `seq` return $ SMore x
-    toData r
-
-toData r= case r of
-      SMore x -> return x
-      SLast x -> return x
-      SError e ->  finish (Just e) >> empty
+    checkFinalize r
 
 
 -- | group the output of a possible multithreaded process in groups of n elements.
