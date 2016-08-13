@@ -43,7 +43,7 @@ import           System.IO (hFlush,stdout)
 import           System.Exit
 {-# INLINE (!>) #-}
 (!>) :: Show a => b -> a -> b
-(!>) x y=  x -- trace (show y) x
+(!>) x y=  trace (show y) x
 infixr 0 !>
 
 
@@ -979,21 +979,37 @@ stay=   do
 -- `option` and `input` as if they were entered by the keyboard
 --
 -- >  foo  -p  options/to/be/read/by/option/and/input
---
+
 keep :: TransIO a -> IO a
 keep mx = do
    forkIO $ do
-           liftIO $ putMVar rexit  $ Right Nothing
-           runTransient $ do
-               (async inputLoop
-                       <|> (option "end" "exit" >> killChilds >> exit' (Left "terminated by user"))
-                       <|> return ())
+       liftIO $ putMVar rexit  $ Right Nothing
+       runTransient $ do
+           (async inputLoop
+                   <|> (option "end" "exit" >> killChilds >> exit' (Left "terminated by user"))
+                   <|> return ())
+           mx
+           liftIO (putMVar rexit  $ Right Nothing)
+           -- to avoid "takeMVar blocked in a infinite loop" error
+       return ()
+   threadDelay 10000
+   execCommandLine
+   stay
 
-
-               mx
-               liftIO (putMVar rexit  $ Right Nothing) -- to avoid "takeMVar blocked in a infinite loop" error
+-- | same than `keep`but do not initiate the asynchronous keyboard input.
+-- Useful for debugging or for creating background tasks.
+keep' :: TransIO a -> IO a
+keep' mx  = do
+   forkIO $ do
+           runTransient $  mx >> liftIO (putMVar rexit  $ Right Nothing)
+           -- to avoid takeMVar in a infinite loop
            return ()
    threadDelay 10000
+   execCommandLine
+
+   stay
+
+execCommandLine= do
    args <- getArgs
    let mindex =  findIndex (\o ->  o == "-p" || o == "--path" ) args
    when (isJust mindex) $ do
@@ -1002,19 +1018,6 @@ keep mx = do
           let path= args !! i
           putStr "Executing: " >> print  path
           processLine  path
-   stay
-
--- | same than `keep`but do not initiate the asynchronous keyboard input.
--- Useful for debugging
-keep' :: TransIO a -> IO a
-keep' mx  = do
-
-   forkIO $ do
-           runTransient $  mx >>   liftIO (putMVar rexit  $ Right Nothing)   -- to avoid takeMVar in a infinite loop
-           return ()
-   threadDelay 100000
-
-   stay
 
 -- | force the finalization of the main thread and thus, all the Transient block (and the application
 -- if there is no more code)
@@ -1024,6 +1027,8 @@ exit x= do
   stop
 
 exit' x= liftIO $  putMVar rexit  x
+
+
 -- | alternative operator for maybe values. Used  in infix mode
 onNothing :: Monad m => m (Maybe b) -> m b -> m b
 onNothing iox iox'= do
