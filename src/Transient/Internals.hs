@@ -140,6 +140,7 @@ compose (f: fs)= \x -> f x >>= compose fs
 runClosure :: EventF -> StateIO (Maybe a)
 runClosure (EventF _ _ x _ _ _ _ _ _ _ _) =  unsafeCoerce $ runTrans x
 
+
 -- | run the continuation (the 'f' in 'x >>= f') of the current bind operation
 runContinuation ::  EventF -> a -> StateIO (Maybe b)
 runContinuation (EventF _ _ _ fs _ _ _ _  _ _ _) =
@@ -584,9 +585,7 @@ setData  x=
 
 
 delData :: ( MonadState EventF m,Typeable a) => a -> m ()
-delData x=
-  modify $ \st -> st{mfData= M.delete (typeOf x ) (mfData st)}
-
+delData x=  modify $ \st -> st{mfData= M.delete (typeOf x ) (mfData st)}
 
 
 --withSData ::  ( MonadState EventF m,Typeable a) => (Maybe a -> a) -> m ()

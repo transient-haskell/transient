@@ -61,7 +61,7 @@ sourceFile file= process (return ()) (openFile file ReadMode)  hClose' read'
 process
   :: TransIO a       -- ^ input computation
      -> IO handle    -- ^ open computation that gives resources to be used during the computation
-     -> (handle -> FinishReason -> IO ())   -- ^ close computation that frees the resources
+     -> (handle -> Maybe SomeException -> IO ())   -- ^ close computation that frees the resources
      -> (handle -> a -> TransIO (StreamData b))   -- ^ process to be done
      -> TransIO b
 process input open close proc=do

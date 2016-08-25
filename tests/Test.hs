@@ -2,8 +2,11 @@
 
 
 
-import Transient.Move.Services
+import Transient.Base
+import Transient.EVars
+import Transient.Backtrack
 import Control.Applicative
+import Data.Monoid
 import Control.Monad
 import Data.Typeable
 import Data.IORef
@@ -12,14 +15,20 @@ import Control.Monad.IO.Class
 
 
 
-main= do
+main= keep $ do
+    ev <- newEVar
 
-    runCloudIO $ do
-      runNodes [2000,2001]
-      local $ option "start" "start"
-
-
-      node <- initService  "ident" ("http://github.com/agocorona/transient", "MainStreamFiles")
-      onAll . liftIO $ putStrLn $ "installed at" ++ show node
+    readers ev 100 <|> writers ev 100
 
 
+
+readers ev n= foldr (<>) mempty $ take n $ repeat $ readEVar ev
+
+writers ev n= foldr (<|>) empty $ take n $ repeat $ do
+     waitEvents $ threadDelay 1000000
+     writeEVar ev (1::Int)
+     empty
+
+instance Monoid Int where
+  mempty= 0
+  mappend= (+)
