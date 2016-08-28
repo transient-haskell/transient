@@ -11,20 +11,93 @@
 -- |
 --
 -----------------------------------------------------------------------------
-{-# LANGUAGE  ExistentialQuantification, FlexibleInstances, UndecidableInstances #-}
-module Transient.Logged  where
+{-# LANGUAGE  ExistentialQuantification, FlexibleInstances, ScopedTypeVariables, UndecidableInstances #-}
+module Transient.Logged(restore,checkpoint,suspend,logged) where
 
 import Data.Typeable
 import Unsafe.Coerce
 import Transient.Base
-import Transient.Internals(onNothing,IDynamic(..),Log(..),LogElem(..),RemoteStatus(..),StateIO)
+import Transient.Indeterminism(choose)
+import Transient.Internals(onNothing,reads1,IDynamic(..),Log(..),LogElem(..),RemoteStatus(..),StateIO)
 import Control.Applicative
 import Control.Monad.IO.Class
-import Data.IORef
+import System.Directory
+import Control.Exception
+import Control.Monad
+import System.Random
 
 
 class (Show a, Read a,Typeable a) => Loggable a
 instance (Show a, Read a,Typeable a) => Loggable a
+
+logs= "logs/"
+
+-- re-excutes all the threads whose state has been logged in the "./logs" folder
+-- .Each log is removed when it is executed.
+--
+-- example: this program, if executed three times will first print hello <number> some times
+-- but `suspend` will kill the threads and exit it.
+
+-- The second time, it will print "world" <number> and "world22222" <number> and will stay.
+--
+-- The third time that it is executed, it only present "world22222" <number> messages
+--
+-- > main= keep $ restore  $ do
+-- >    r <- logged $ choose [1..10 :: Int]
+-- >    logged $ liftIO $ print ("hello",r)
+-- >    suspend ()
+-- >    logged $ liftIO $ print ("world",r)
+-- >    checkpoint
+-- >    logged $ liftIO $ print ("world22222",r)
+
+restore :: TransIO a -> TransIO a
+restore   proc= do
+     liftIO $ createDirectory logs  `catch` (\(e :: SomeException) -> return ())
+     list <- liftIO $ getDirectoryContents logs
+                 `catch` (\(e::SomeException) -> return [])
+     if length list== 2 then proc else do
+
+         let list'= filter ((/=) '.' . head) list
+         file <- choose  list'       -- !> list'
+
+         logstr <- liftIO $ readFile (logs++file)
+         let log= length logstr `seq` read' logstr
+
+         log `seq` setData (Log True (reverse log) log)
+         liftIO $ remove $ logs ++ file
+         proc
+     where
+     read'= fst . head . reads1
+
+     remove f=  removeFile f `catch` (\(e::SomeException) -> remove f)
+
+
+
+-- | save the state of  the threads and exit the transient block initiated with `keep` or similar
+-- . `keep` return the value passed by `suspend`.
+-- If the process is executed again with `restore` it will reexecute the thread from this point on.
+suspend :: a -> TransIO a
+suspend  x= do
+   Log recovery _ log <- getData `onNothing` return (Log False [] [])
+   if recovery then return x else do
+        logAll  log
+        exit x
+
+-- | Save the state of every thread at this point. If the process is re-executed with `restore` it will reexecute the thread from this point on..
+checkpoint ::  TransIO ()
+checkpoint = do
+   Log recovery _ log <- getData `onNothing` return (Log False [] [])
+   if recovery then return () else logAll log
+
+
+logAll log= do
+        newlogfile <- liftIO $  (logs ++) <$> replicateM 7 (randomRIO ('a','z'))
+        liftIO $ writeFile newlogfile $ show log
+      :: TransIO ()
+
+
+
+
 
 fromIDyn :: (Read a, Show a, Typeable a) => IDynamic -> a
 fromIDyn (IDynamic x)=r where r= unsafeCoerce x     -- !> "coerce" ++ " to type "++ show (typeOf r)

@@ -1,4 +1,4 @@
-{-# LANGUAGE   CPP, ScopedTypeVariables #-}
+{-# LANGUAGE   CPP, ScopedTypeVariables, DeriveDataTypeable #-}
 
 
 
@@ -8,7 +8,7 @@ import Transient.Backtrack
 import Transient.Indeterminism
 import Transient.Internals
 import Transient.Logged
-
+import Data.Typeable
 import Control.Applicative
 import Data.Monoid
 import Control.Monad
@@ -16,61 +16,69 @@ import Data.Typeable
 import Data.IORef
 import Control.Concurrent (threadDelay)
 import Control.Monad.IO.Class
-
-
+import System.Directory
+import System.Random
 import Control.Exception
 
+
+logs= "logs/"
+--newtype LogFile= LogFile  String deriving Typeable
 suspend :: a -> TransIO a
-suspend file x= do
+suspend  x= do
    Log recovery _ log <- getData `onNothing` return (Log False [] [])
    if recovery then return x else do
-        mlogfile <- getData
-
-        newlogfile <- liftIO $ fmap ("log" ++) <$> randName
-        case mlogfile of
-           Just (LogFile _ prev) -> do
-             removeFile prev `catch` (\(e::SomeException) -> return ())
-             setData $ Logfile (Just prev) logfilw
-           Nothing -> do
-             setSData $ LogFile Nothing $ logfile
-
-        liftIO $ writeFile newlogfile $ show log
+        logAll  log
         exit x
 
-checkpoint :: String -> TransIO ()
-checkpoint file= do
-   Log recovery _ log <- getData  `onNothing` return (Log False [] [])
-   if recovery then return () else do
-        liftIO $ appendFile file  $ show log
-        return ()
+checkpoint ::  TransIO ()
+checkpoint = do
+   Log recovery _ log <- getData `onNothing` return (Log False [] [])
+   if recovery then return () else logAll log
 
-type Restore=
-file0 file1...
-usar arbol de threads: parent
- logear con  (threadId parent log): un fichero cada uno
-                 nombre/key: parent:thread
- restore: buscar el que tiene como parent Nothing
-           buscar los que tienen como parent su threadId
-           hasta que no hay ninguno: ese log es el que hay que usar
-           ejecutar esa serie de logs resultantes
-      Problema: repeticiones
-         Solucion: al salvar, buscar los parents y calcular su longitud
-      Problema: theadIds no validos para mas de una ejecuci¢n
-         borrar cada serie de logs y reescribirlo con los nuevos threadIds
-         Problema: repeticiones
 
-restore :: String -> TransIO a -> TransIO a
-restore pathLogs  proc= do
-     list <- getDirectoryContents pathLogs
-     log <- choose list
-     liftIO $ print log
-     setData $ Log True (reverse log) log
-     proc
+logAll log= do
+--        mlogfile <- getData
+        newlogfile <- liftIO $  (logs ++) <$> replicateM 7 (randomRIO ('a','z'))
+--        case mlogfile of
+--           Just (LogFile prev) ->  liftIO $ remove (logs ++ prev)
+--           Nothing -> return ()
+--
+--        setData $ LogFile  newlogfile
 
-main= keep $ restore "files" $ do
+        liftIO $ writeFile newlogfile $ show log
+      :: TransIO ()
+--     where
+--     remove f=  removeFile f `catch` (\(e::SomeException) -> remove f) !> ("remove",f)
+
+
+restore :: TransIO a -> TransIO a
+restore   proc= do
+     liftIO $ createDirectory logs  `catch` (\(e :: SomeException) -> return ())
+     list <- liftIO $ getDirectoryContents logs
+                 `catch` (\(e::SomeException) -> return [])
+     if length list== 2 then proc else do
+
+         let list'= filter ((/=) '.' . head) list
+         file <- choose  list'       -- !> list'
+
+         logstr <- liftIO $ readFile (logs++file)
+         let log= length logstr `seq` read' logstr
+
+         log `seq` setData (Log True (reverse log) log)
+         liftIO $ remove $ logs ++ file -- setData $ LogFile  file
+         proc
+     where
+     read'= fst . head . reads1
+
+     remove f=  removeFile f `catch` (\(e::SomeException) -> remove f)
+
+main= keep $ restore  $ do
      r <- logged $ choose [1..10 :: Int]
-     suspend  ()
      logged $ liftIO $ print ("hello",r)
+     suspend ()
+     logged $ liftIO $ print ("world",r)
+     checkpoint
+     logged $ liftIO $ print ("world22222",r)
 
 main2= keep $ do
     ev <- newEVar

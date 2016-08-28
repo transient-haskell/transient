@@ -29,6 +29,8 @@ library
                      , transformers
                      , stm
                      , time
+                     , directory
+                     , random
 
     exposed-modules: Transient.Backtrack
                      Transient.Base
