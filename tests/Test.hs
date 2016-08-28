@@ -21,56 +21,48 @@ import System.Random
 import Control.Exception
 
 
-logs= "logs/"
---newtype LogFile= LogFile  String deriving Typeable
-suspend :: a -> TransIO a
-suspend  x= do
-   Log recovery _ log <- getData `onNothing` return (Log False [] [])
-   if recovery then return x else do
-        logAll  log
-        exit x
-
-checkpoint ::  TransIO ()
-checkpoint = do
-   Log recovery _ log <- getData `onNothing` return (Log False [] [])
-   if recovery then return () else logAll log
-
-
-logAll log= do
---        mlogfile <- getData
-        newlogfile <- liftIO $  (logs ++) <$> replicateM 7 (randomRIO ('a','z'))
---        case mlogfile of
---           Just (LogFile prev) ->  liftIO $ remove (logs ++ prev)
---           Nothing -> return ()
+--logs= "logs/"
 --
---        setData $ LogFile  newlogfile
-
-        liftIO $ writeFile newlogfile $ show log
-      :: TransIO ()
+--suspend :: a -> TransIO a
+--suspend  x= do
+--   Log recovery _ log <- getData `onNothing` return (Log False [] [])
+--   if recovery then return x else do
+--        logAll  log
+--        exit x
+--
+--checkpoint ::  TransIO ()
+--checkpoint = do
+--   Log recovery _ log <- getData `onNothing` return (Log False [] [])
+--   if recovery then return () else logAll log
+--
+--
+--logAll log= do
+--
+--        newlogfile <- liftIO $  (logs ++) <$> replicateM 7 (randomRIO ('a','z'))
+--        liftIO $ writeFile newlogfile $ show log
+--      :: TransIO ()
+--
+--
+--restore :: TransIO a -> TransIO a
+--restore   proc= do
+--     liftIO $ createDirectory logs  `catch` (\(e :: SomeException) -> return ())
+--     list <- liftIO $ getDirectoryContents logs
+--                 `catch` (\(e::SomeException) -> return [])
+--     if length list== 2 then proc else do
+--
+--         let list'= filter ((/=) '.' . head) list
+--         file <- choose  list'       -- !> list'
+--
+--         logstr <- liftIO $ readFile (logs++file)
+--         let log= length logstr `seq` read' logstr
+--
+--         log `seq` setData (Log True (reverse log) log)
+--         liftIO $ remove $ logs ++ file -- setData $ LogFile  file
+--         proc
 --     where
---     remove f=  removeFile f `catch` (\(e::SomeException) -> remove f) !> ("remove",f)
-
-
-restore :: TransIO a -> TransIO a
-restore   proc= do
-     liftIO $ createDirectory logs  `catch` (\(e :: SomeException) -> return ())
-     list <- liftIO $ getDirectoryContents logs
-                 `catch` (\(e::SomeException) -> return [])
-     if length list== 2 then proc else do
-
-         let list'= filter ((/=) '.' . head) list
-         file <- choose  list'       -- !> list'
-
-         logstr <- liftIO $ readFile (logs++file)
-         let log= length logstr `seq` read' logstr
-
-         log `seq` setData (Log True (reverse log) log)
-         liftIO $ remove $ logs ++ file -- setData $ LogFile  file
-         proc
-     where
-     read'= fst . head . reads1
-
-     remove f=  removeFile f `catch` (\(e::SomeException) -> remove f)
+--     read'= fst . head . reads1
+--
+--     remove f=  removeFile f `catch` (\(e::SomeException) -> remove f)
 
 main= keep $ restore  $ do
      r <- logged $ choose [1..10 :: Int]

@@ -12,7 +12,7 @@
 --
 -----------------------------------------------------------------------------
 {-# LANGUAGE  ExistentialQuantification, FlexibleInstances, ScopedTypeVariables, UndecidableInstances #-}
-module Transient.Logged(restore,checkpoint,suspend,logged) where
+module Transient.Logged(restore,checkpoint,suspend,logged,Loggable) where
 
 import Data.Typeable
 import Unsafe.Coerce
@@ -73,9 +73,11 @@ restore   proc= do
 
 
 
--- | save the state of  the threads and exit the transient block initiated with `keep` or similar
--- . `keep` return the value passed by `suspend`.
+-- | save the state of  the thread that execute it and exit the transient block initiated with `keep` or similar
+-- . `keep` will return the value passed by `suspend`.
 -- If the process is executed again with `restore` it will reexecute the thread from this point on.
+--
+-- it is useful to insert it in `finish` blocks to gather error information,
 suspend :: a -> TransIO a
 suspend  x= do
    Log recovery _ log <- getData `onNothing` return (Log False [] [])
