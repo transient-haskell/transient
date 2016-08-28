@@ -260,7 +260,7 @@ readWithErr line=
      let [(v,left)] = readsPrec 0 line
      in (v   `seq` return [(v,left)])
                     `catch` (\(e::SomeException) ->
-                      error ("read error of " ++ show( typeOf v) ++ " in: "++ line))
+                      error ("read error of " ++ show( typeOf v) ++ " in: "++ "\""++line++"\""))
 
 
 readsPrec' _= unsafePerformIO . readWithErr
@@ -983,13 +983,16 @@ keep :: TransIO a -> IO a
 keep mx = do
    forkIO $ do
        liftIO $ putMVar rexit  $ Right Nothing
-       runTransient $ do
-           (async inputLoop
-                   <|> (option "end" "exit" >> killChilds >> exit' (Left "terminated by user"))
-                   <|> return ())
-           mx
-           liftIO (putMVar rexit  $ Right Nothing)
-           -- to avoid "takeMVar blocked in a infinite loop" error
+       runTransient $
+           async inputLoop
+            <|> do mx  -- ; liftIO (putMVar rexit  $ Right Nothing)
+                       -- to avoid "takeMVar blocked in a infinite loop" error
+            <|> do
+               option "end" "exit"
+               killChilds
+               exit' (Left "terminated by user")
+
+
        return ()
    threadDelay 10000
    execCommandLine
@@ -1025,7 +1028,7 @@ exit x= do
   liftIO $  putMVar rexit .  Right $ Just   x
   stop
 
-exit' x= liftIO $  putMVar rexit  x
+exit' x= do liftIO $  putMVar rexit  x ; stop
 
 
 -- | alternative operator for maybe values. Used  in infix mode
