@@ -78,7 +78,7 @@ restore   proc= do
 -- If the process is executed again with `restore` it will reexecute the thread from this point on.
 --
 -- it is useful to insert it in `finish` blocks to gather error information,
-suspend :: a -> TransIO a
+suspend :: Typeable a => a -> TransIO a
 suspend  x= do
    Log recovery _ log <- getData `onNothing` return (Log False [] [])
    if recovery then return x else do

@@ -960,14 +960,14 @@ processLine r= do
     tail1 []=[]
     tail1 x= tail x
 
-{-# NOINLINE rexit #-}
-rexit= unsafePerformIO $ newEmptyMVar
+
+
 
 -- | wait for the execution of `exit` and return the result
-stay=   do
+stay rexit=   do
     mr <- takeMVar rexit
     case mr of
-      Right Nothing -> stay
+      Right Nothing -> stay rexit
       Right (Just r) -> return r
       Left msg -> putStrLn msg >> exitWith ExitSuccess
 
@@ -979,37 +979,47 @@ stay=   do
 --
 -- >  foo  -p  options/to/be/read/by/option/and/input
 
-keep :: TransIO a -> IO a
+newtype Exit a= Exit a deriving Typeable
+
+keep :: Typeable a => TransIO a -> IO a
 keep mx = do
+   rexit <- newEmptyMVar
    forkIO $ do
        liftIO $ putMVar rexit  $ Right Nothing
-       runTransient $
+       runTransient $ do
+           setData $ Exit rexit
            async inputLoop
             <|> do mx  -- ; liftIO (putMVar rexit  $ Right Nothing)
                        -- to avoid "takeMVar blocked in a infinite loop" error
             <|> do
                option "end" "exit"
                killChilds
-               exit' (Left "terminated by user")
+               exit' (Left "terminated by user" `asTypeOf`  (type1 mx))
 
 
        return ()
    threadDelay 10000
    execCommandLine
-   stay
+   stay rexit
+   where
+   type1 :: TransIO a -> Either String (Maybe a)
+   type1= undefined
 
 -- | same than `keep`but do not initiate the asynchronous keyboard input.
 -- Useful for debugging or for creating background tasks.
-keep' :: TransIO a -> IO a
+keep' :: Typeable a => TransIO a -> IO a
 keep' mx  = do
+   rexit <- newEmptyMVar
    forkIO $ do
-           runTransient $  mx >> liftIO (putMVar rexit  $ Right Nothing)
+           runTransient $ do
+              setData $ Exit rexit
+              mx >> liftIO (putMVar rexit  $ Right Nothing)
            -- to avoid takeMVar in a infinite loop
            return ()
    threadDelay 10000
    execCommandLine
 
-   stay
+   stay rexit
 
 execCommandLine= do
    args <- getArgs
@@ -1023,12 +1033,18 @@ execCommandLine= do
 
 -- | force the finalization of the main thread and thus, all the Transient block (and the application
 -- if there is no more code)
-exit :: a -> TransIO a
+exit :: Typeable a => a -> TransIO a
 exit x= do
-  liftIO $  putMVar rexit .  Right $ Just   x
+  Exit rexit <- getSData <|> error "exit: not the type expected"  `asTypeOf` type1 x
+  liftIO $  putMVar rexit .  Right $ Just x
   stop
+  where
+  type1 :: a -> TransIO (Exit (MVar (Either String (Maybe a))))
+  type1= undefined
 
-exit' x= do liftIO $  putMVar rexit  x ; stop
+exit' x= do
+  Exit rexit <- getSData <|> error "exit: not type expected"
+  liftIO $  putMVar rexit  x ; stop
 
 
 -- | alternative operator for maybe values. Used  in infix mode
