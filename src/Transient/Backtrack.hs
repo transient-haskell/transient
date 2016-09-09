@@ -5,8 +5,8 @@
 
 module Transient.Backtrack (onUndo, undo, retry, undoCut,registerUndo,
 
--- * generalized versions of backtracking with an extra parameter that gives the reason for going back
--- different kinds of backtracking with different reasons can be managed in the same program
+-- * generalized versions of backtracking with an extra parameter that gives the reason for going back.
+-- Different kinds of backtracking with different reasons can be managed in the same program
 onBack, back, forward, backCut,registerBack,
 
 -- * finalization primitives
