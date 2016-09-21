@@ -52,9 +52,18 @@ matrix:
     compiler: ": #stack 7.10.3 LTS 5"
     addons: {apt: {packages: [ghc-7.10.3], sources: [hvr-ghc]}}
 
+  - env: BUILD=stack ARGS="--resolver lts-7"
+    compiler: ": #stack 8.0.1 LTS 7"
+    addons: {apt: {packages: [ghc-8.0.1], sources: [hvr-ghc]}}
   - env: BUILD=stack ARGS="--resolver lts-6"
     compiler: ": #stack 7.10.3 LTS 6"
     addons: {apt: {packages: [ghc-7.10.3], sources: [hvr-ghc]}}
+  - env: BUILD=stack ARGS="--resolver lts-5"
+    compiler: ": #stack 7.10.3 LTS 5"
+    addons: {apt: {packages: [ghc-7.10.3], sources: [hvr-ghc]}}
+  - env: BUILD=stack ARGS="--resolver lts-3"
+    compiler: ": #stack 7.10.2 LTS 3"
+    addons: {apt: {packages: [ghc-7.10.2], sources: [hvr-ghc]}}
 
   # Nightly builds are allowed to fail
   - env: BUILD=stack ARGS="--resolver nightly"
@@ -64,11 +73,11 @@ matrix:
   # GHCJS build via stack
   - env: BUILD=ghcjs ARGS="--stack-yaml=stack-ghcjs.yaml"
     compiler: ": #stack GHCJS"
-    addons: {apt: {packages: [ghc-7.10.3], sources: [hvr-ghc]}}
+    addons: {apt: {packages: [ghc-8.0.1], sources: [hvr-ghc]}}
 
   # Build on OS X in addition to Linux
-  - env: BUILD=stack ARGS="--resolver lts-6"
-    compiler: ": #stack 7.10.3 LTS 6 (OS X)"
+  - env: BUILD=stack ARGS="--resolver lts-7"
+    compiler: ": #stack 8.0.1 LTS 7 (OS X)"
     os: osx
 
   allow_failures:
