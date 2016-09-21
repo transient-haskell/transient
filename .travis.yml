@@ -79,6 +79,7 @@ before_install:
 # Using compiler above sets CC to an invalid value, so unset it
 - unset CC
 - export CASHER_TIME_OUT=600
+- if [ $BUILD = "ghcjs" ]; then nvm install 6; fi
 
 # We want to always allow newer versions of packages when building on GHC HEAD
 - CABALARGS=""
