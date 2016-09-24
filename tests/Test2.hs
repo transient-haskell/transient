@@ -1,72 +1,75 @@
-module Main where
+--
+-- The Computer Language Benchmarks Game
+-- http://benchmarksgame.alioth.debian.org/
+--
+-- Contributed by Don Stewart
+-- Parallelized by Louis Wasserman
+{-#LANGUAGE BangPatterns #-}
 
-import           Control.Monad
-import           Control.Monad.IO.Class
-import           Data.IORef
-import           GHC.Conc
-import           Control.Applicative
-import           Data.Monoid
-import           Transient.Base
-import           Transient.Indeterminism
-import           Transient.Logged
-import           Transient.Move
-import           Transient.Stream.Resource
-import           Transient.DDS
-import Control.Concurrent
-import System.IO.Unsafe
-import Data.List
-import Control.Exception.Base
-import Control.Monad.State
-import Unsafe.Coerce
-import qualified Data.Map as M
-
-main= do
-     let numNodes = 2
-         ports = [2000 .. 2000 + numNodes - 1]
-         createLocalNode = createNode "localhost"
-         nodes = map createLocalNode ports
-         node1= head nodes
-         node2= nodes !! 1
-
-     runCloud'   $ do
---          local $ addNodes nodes
---          runNodes nodes
-
-          local $   (sync $ async( threadDelay 1000000 >> print "hello") >> stop ) <|> (liftIO $print "world")
---         (liftIO (print "world") >>stop) <|> (liftIO $ print "hello")
+import System.Environment
+import Control.Monad
+import System.Mem
+import Data.Bits
+import Text.Printf
 
 
+--
+-- an artificially strict tree.
+--
+-- normally you would ensure the branches are lazy, but this benchmark
+-- requires strict allocation.
+--
+data Tree = Nil | Node !Int !Tree !Tree
 
+minN = 4
 
---     print r
+io s n t = printf "%s of depth %d\t check: %d\n" s n t
 
+main = do
+    n <- getArgs >>= readIO . head
+    let maxN     = max (minN + 2) n
+        stretchN = maxN + 1
+    -- stretch memory tree
+    let c = {-# SCC "stretch" #-} check (make 0 stretchN)
+    io "stretch tree" stretchN c
 
-sync :: TransIO a -> TransIO a
-sync x=  Transient $ do
+    -- allocate a long lived tree
+    let !long    = make 0 maxN
 
-        EventF _ _ x' fs _ _ _ _ _ _ _  <- get
+    -- allocate, walk, and deallocate many bottom-up binary trees
+    let vs = depth minN maxN
+    mapM_ (\((m,d,i)) -> io (show m ++ "\t trees") d i) vs
 
+    -- confirm the the long-lived binary tree still exists
+    io "long lived tree" maxN (check long)
 
+-- generate many trees
+depth :: Int -> Int -> [(Int,Int,Int)]
+depth d m
+    | d <= m    = let
+    	s = sumT d n 0
+    	rest = depth (d+2) m
+    	in s `par` ((2*n,d,s) : rest)
+    | otherwise = []
+  where n = bit (m - d + minN)
 
---        setContinuation x (\x -> liftIO (print "hi") >> return x)  $   fs
-        r <- runTrans $ unsafeCoerce x'
+-- allocate and check lots of trees
+sumT :: Int -> Int -> Int -> Int	
+sumT d 0 t = t
+sumT  d i t = a `par` b `par` sumT d (i-1) ans
+  where a = check (make i    d)
+        b = check (make (-i) d)
+        ans = a + b + t
 
---        setData WasRemote
---        restoreStack fs
-        return r
+check = check' True 0
 
-getEffects :: Loggable a =>  Cloud [(Node, a)]
-getEffects=lliftIO $ readMVar effects
+-- traverse the tree, counting up the nodes
+check' :: Bool -> Int -> Tree -> Int
+check' !b !z Nil          = z
+check' b z (Node i l r)	  = check' (not b) (check' b (if b then z+i else z-i) l) r
 
-runNodes nodes= foldl (<|>) empty (map listen nodes) <|> return()
-
-
-delEffects= lliftIO $ modifyMVar_ effects $ const $ return[]
-effects= unsafePerformIO $ newMVar []
-
-effect x= do
-   node <- getMyNode
-   lliftIO $ modifyMVar_ effects $ \ xs ->  return $ (node,x): xs
-   return()
-
-
+-- build a tree
+make :: Int -> Int -> Tree
+make i 0 = Node i Nil Nil
+make i d = Node i (make (i2-1) d2) (make i2 d2)
+  where i2 = 2*i; d2 = d-1--

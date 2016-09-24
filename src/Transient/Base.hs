@@ -17,7 +17,7 @@ module Transient.Base(
 TransIO(..), TransientIO
 ,keep, keep', stop
 ,option, input, exit
-,async,waitEvents, spawn, parallel
+,async,waitEvents, spawn, parallel, sample
 ,react
 
 ,setData,getData,getSData,delData
