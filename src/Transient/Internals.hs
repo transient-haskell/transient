@@ -661,6 +661,20 @@ spawn io= freeThreads $ do
      SError e -> throw e
 
 
+-- | executes an IO action each certain interval of time and return his value if it changes
+sample :: Eq a => IO a -> Int -> TransIO a
+sample action interval= do
+       v <-  liftIO action
+       prev <- liftIO $ newIORef v
+       waitEvents (loop action prev) <|> async (return v)
+       where
+       loop action prev= loop'
+        where
+        loop'= do
+            threadDelay interval
+            v <- action
+            v' <- readIORef prev
+            if v /= v' then writeIORef prev v >> return v else  loop'
 
 
 
