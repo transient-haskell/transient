@@ -1,5 +1,6 @@
 [![Stackage LTS](http://stackage.org/package/transient/badge/lts)](http://stackage.org/lts/package/transient)
 [![Stackage Nightly](http://stackage.org/package/transient/badge/nightly)](http://stackage.org/nightly/package/transient)
+[![Build Status](https://travis-ci.org/agocorona/transient.png?branch=master)](https://travis-ci.org/agocorona/transient)
 
 
 ![](https://raw.githubusercontent.com/agocorona/transient/master/logo.png)
