@@ -1,3 +1,4 @@
+[![Hackage](https://img.shields.io/hackage/v/purescript.svg)](http://hackage.haskell.org/package/purescript)
 [![Stackage LTS](http://stackage.org/package/transient/badge/lts)](http://stackage.org/lts/package/transient)
 [![Stackage Nightly](http://stackage.org/package/transient/badge/nightly)](http://stackage.org/nightly/package/transient)
 [![Build Status](https://travis-ci.org/agocorona/transient.png?branch=master)](https://travis-ci.org/agocorona/transient)
