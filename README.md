@@ -28,7 +28,7 @@ are possible if the types match, and generate new applications that are composab
 
 Transient does exactly that.
 
-The operators `<|>` and `<>` can be used for concurrency, the operator `<|>` can be used for parallelism and `>>=` for sequencing of threads and/or distributed processes. So even in the presence of these effects and others, everything is composable.
+The operators `<$>` `<*>` and `<>` express concurrency, the operator `<|>` express parallelism and `>>=` for sequencing of threads and/or distributed processes. So even in the presence of these effects and others, everything is composable.
 
 For this purpose transient is an extensible effects monad with all major effects and primitives for parallelism, events, asynchronous IO, early termination, non-determinism logging and distributed computing. Since it is possible to extend it with more effects without adding monad transformers, the composability is assured.
 
