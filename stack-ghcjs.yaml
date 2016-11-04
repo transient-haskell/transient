@@ -1,16 +1,16 @@
-resolver: lts-7.0
+resolver: lts-7.7
 packages:
 - '.'
 extra-deps: []
 flags: {}
 extra-package-dbs: []
 
-compiler: ghcjs-0.2.0.820160904_ghc-8.0.1
+compiler: ghcjs-0.2.1.9007007_ghc-8.0.1
 compiler-check: match-exact
 setup-info:
   ghcjs:
     source:
-      ghcjs-0.2.0.820160904_ghc-8.0.1:
-         url: "http://tolysz.org/ghcjs/ghc-8.0-2016-09-05-nightly-2016-09-04-820160904.tar.gz"
-         sha1: "cf4383b77f9d712133bdf54e6389c4361c57b484"
+      ghcjs-0.2.1.9007007_ghc-8.0.1:
+         url: http://ghcjs.tolysz.org/ghc-8.0-2016-11-03-lts-7.7-9007007.tar.gz
+         sha1: ce169f85f1c49ad613ae77fc494d5565452ff59a
 allow-newer: true
