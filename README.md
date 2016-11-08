@@ -1,7 +1,7 @@
 [![Hackage](https://img.shields.io/hackage/v/transient.svg)](http://hackage.haskell.org/package/transient)
 [![Stackage LTS](http://stackage.org/package/transient/badge/lts)](http://stackage.org/lts/package/transient)
 [![Stackage Nightly](http://stackage.org/package/transient/badge/nightly)](http://stackage.org/nightly/package/transient)
-[![Build Status](https://travis-ci.org/agocorona/transient.png?branch=master)](https://travis-ci.org/agocorona/transient)
+[![Build Status](https://api.travis-ci.org/transient-haskell/transient.png?branch=master)](https://travis-ci.org/transient-haskell/transient)
 
 
 ![](https://raw.githubusercontent.com/agocorona/transient/master/logo.png)
