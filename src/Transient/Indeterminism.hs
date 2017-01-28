@@ -117,10 +117,7 @@ collect' n t2 search= oneThread $ do
                      writeIORef results  (n'+1,r:rs)
 
                      t' <-  getCurrentTime
-                     if
-                       (n > 0 && n' >= n) -- ||
---                         (t2 > 0 && diffUTCTime t' t > t2)
-                                 -- !>  (diffUTCTime t' t, n', length ns)
+                     if (n > 0 && n' >= n)
                        then readIORef results >>= return . snd else loop
                  `catch` \(e :: BlockedIndefinitelyOnMVar) ->
                                    readIORef results >>= return . snd

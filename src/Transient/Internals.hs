@@ -827,8 +827,6 @@ parallel  ioaction= Transient $ do
 --            return () !> ("finish",th)
             return Nothing
 
-{-# NOINLINE count #-}
-count = unsafePerformIO $ newIORef 0
 
 -- executes the IO action and then the continuation
 loop ::  EventF -> IO (StreamData t) -> IO ()
@@ -1090,10 +1088,13 @@ inputLoop= do
 processLine r= do
 
    let rs = breakSlash [] r
-   mapM_ (\ r ->
-                 do
-                    threadDelay 100000
-                    atomically . writeTVar  getLineRef $ Just r ) rs
+
+   liftIO $ mapM_ (\ r ->
+                 atomically $ do
+--                    threadDelay 1000000
+                    t <- readTVar getLineRef
+                    when (isJust  t) STM.retry
+                    writeTVar  getLineRef $ Just r ) rs
 
 
     where
