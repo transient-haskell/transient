@@ -31,6 +31,7 @@ library
                      , time
                      , directory
                      , random
+                     , bytestring
 
     exposed-modules: Transient.Backtrack
                      Transient.Base
