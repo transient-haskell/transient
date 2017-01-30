@@ -635,7 +635,7 @@ killChilds= noTrans $  do
 
    liftIO $ do
       killChildren $ children cont
-      writeIORef (labelth cont) (Alive,mempty)  !> (threadId cont,"relabeled")
+      writeIORef (labelth cont) (Alive,mempty)     -- !> (threadId cont,"relabeled")
    return ()
 
 -- * extensible state: session data management
