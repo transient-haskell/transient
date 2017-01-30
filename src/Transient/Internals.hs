@@ -48,12 +48,13 @@ import           System.Exit
 
 import qualified Data.ByteString.Char8 as BS
 
--- {-# INLINE (!>) #-}
--- (!>) :: Show a => b -> a -> b
--- (!>) x y=  trace (show y) x
+--{-# INLINE (!>) #-}
+--(!>) :: Show a => b -> a -> b
+--(!>) x y=  trace (show y) x
+--infixr 0 !>
 
 -- (!>) x y = x
--- infixr 0 !>
+
 
 
 data TransIO  x = Transient  {runTrans :: StateT EventF IO (Maybe x)}
@@ -297,7 +298,7 @@ type Recover= Bool
 type CurrentPointer= [LogElem]
 type LogEntries= [LogElem]
 data LogElem=   Wait | Exec | Var IDynamic deriving (Read,Show)
-data Log= Log Recover  CurrentPointer LogEntries deriving Typeable
+data Log= Log Recover  CurrentPointer LogEntries deriving (Typeable, Show)
 
 
 instance Alternative TransIO where
@@ -524,13 +525,10 @@ labelState l=  do
 
 printBlock= unsafePerformIO $ newMVar ()
 
-criticalSection mv f=
 
-  takeMVar mv  >> mask (const f)  `finally` putMVar mv ()
-
-
+-- show the tree of threads hanging from the state
 showThreads :: MonadIO m => EventF -> m ()
-showThreads st= liftIO $  criticalSection printBlock $ do
+showThreads st= liftIO $ withMVar printBlock $ const $ do
 
    mythread <-  myThreadId
 --                                       !> "showThreads"
@@ -543,7 +541,7 @@ showThreads st= liftIO $  criticalSection printBlock $ do
             if BS.null label
               then putStr . show $ threadId ch
               else do BS.putStr label ; putStr . drop 8 . show $ threadId ch
-            when (state== Dead) $ putStr " dead"
+            putStr " " >> putStr (show state) -- when (state== Dead) $ putStr " dead"
             putStrLn $ if mythread== threadId ch then  " <--" else ""
 
          chs <-  readMVar $ children ch
@@ -551,7 +549,7 @@ showThreads st= liftIO $  criticalSection printBlock $ do
 
    showTree 0 st
 
-   where
+
 
 -- | return the state of the thread that initiated the transient computation
 topState :: TransIO EventF
@@ -564,7 +562,22 @@ topState = do
         Nothing ->  st
         Just p -> toplevel p
 
-
+-- | return the state variable of the type desired with which a thread, identified by his number in the treee was initiated
+showState :: (Typeable a, MonadIO m, Alternative m) => String -> EventF  -> m  (Maybe a)
+showState th top = resp
+  where
+  resp=  do
+     let thstring= drop 9 . show $ threadId top
+     if thstring == th  then getstate top else do
+       sts <-  liftIO $ readMVar $ children top
+       foldl (<|>)  empty $ map (showState th) sts
+       where
+       getstate st=
+            case M.lookup ( typeOf $ typeResp resp ) $ mfData st of
+              Just x  -> return . Just $ unsafeCoerce x
+              Nothing -> return Nothing
+       typeResp :: m (Maybe x) -> x
+       typeResp= undefined
 
 
 -- | add n threads to the limit of threads. If there is no limit, it set it
@@ -619,7 +632,10 @@ hookedThreads proc= Transient $ do
 killChilds :: TransientIO()
 killChilds= noTrans $  do
    cont <- get
-   liftIO $  killChildren $ children cont
+
+   liftIO $ do
+      killChildren $ children cont
+      writeIORef (labelth cont) (Alive,mempty)  !> (threadId cont,"relabeled")
    return ()
 
 -- * extensible state: session data management
@@ -835,7 +851,6 @@ loop  parentc  rec  = forkMaybe parentc $ \cont ->  do
       -- execute the IO computation and then the closure-continuation
   liftIO $ atomicModifyIORef (labelth cont) $ const ((Listener,BS.pack "wait"),())
   let loop'=   do
-
          mdat <- rec `catch` \(e :: SomeException) -> return $ SError e
          case mdat of
              se@(SError _)  -> setworker cont >> iocont  se    cont
@@ -843,8 +858,6 @@ loop  parentc  rec  = forkMaybe parentc $ \cont ->  do
              last@(SLast _) -> setworker cont >> iocont  last  cont
 
              more@(SMore _) -> do
-
-
                   forkMaybe cont $ iocont  more
                   loop'
 
@@ -885,14 +898,15 @@ loop  parentc  rec  = forkMaybe parentc $ \cont ->  do
          proc cont')
          $ \me -> do
 
-             case me of -- !> "THREAD END" of
-              Left  e -> do
---                 when (fromException e /= Just ThreadKilled)$
-                 liftIO $ print e
-                 killChildren $ children cont
---                                   !> "KILL RECEIVED" ++ (show $ unsafePerformIO myThreadId)
-
-              Right _ -> when(not $ freeTh parent  )  $ do -- if was not a free thread
+--             case me of -- !> "THREAD END" of
+--              Left  e -> do
+----                 when (fromException e /= Just ThreadKilled)$
+--                 liftIO $ print e
+--                 killChildren $ children cont
+----                                   !> "KILL RECEIVED" ++ (show $ unsafePerformIO myThreadId)
+--
+--              Right _ ->
+             when(not $ freeTh parent  )  $ do -- if was not a free thread
 
                  th <- myThreadId
                  (can,label) <- atomicModifyIORef (labelth cont) $ \(l@(status,label)) ->
@@ -916,7 +930,7 @@ loop  parentc  rec  = forkMaybe parentc $ \cont ->  do
        mask $ \restore ->  forkIO $ try (restore action) >>= and_then
 
   free th env= do
-       return ()                 --       !> ("freeing",th,"in",threadId env)
+--       return ()                      !> ("freeing",th,"in",threadId env)
        let sibling=  children env
 
        sbs <- takeMVar sibling
@@ -925,9 +939,9 @@ loop  parentc  rec  = forkMaybe parentc $ \cont ->  do
        if found
          then do
            putMVar sibling sbs'
-                                             --    !> ("new list for",threadId env,map threadId sbs')
+--                                             !> ("new list for",threadId env,map threadId sbs')
            (typ,_) <- readIORef $ labelth env
-           if (null sbs && typ /= Listener && isJust (parent env))
+           if (null sbs' && typ /= Listener && isJust (parent env))
             -- free the parent
             then free (threadId env) ( fromJust $ parent env)
             else return ()
@@ -1034,7 +1048,7 @@ option ret message= do
     liftIO $ putStrLn $ "Enter  "++sret++"\tto: " ++ message
     liftIO $ modifyMVar_ roption $ \msgs-> return $ sret:msgs
     waitEvents  $ getLine' (==ret)
-    liftIO $ putStrLn $ show ret ++ " chosen"
+    liftIO $ putStr ">" >> putStrLn (show ret)
     return ret
 
 
@@ -1082,6 +1096,7 @@ reads1 s=x where
 
 inputLoop= do
            r<- getLine
+           atomically $ writeTVar getLineRef Nothing
            processLine r
            inputLoop
 
@@ -1147,6 +1162,12 @@ keep mx = do
                    liftIO $ showThreads st
                    empty
             <|> do
+                   option "log" "log  of a thread"
+                   th <- input (const True)  "thread number>"
+                   ml <- liftIO $ showState th st
+                   liftIO $ print $ fmap (\(Log _ _ log) -> log) ml
+                   empty
+            <|> do
                    option "end" "exit"
                    killChilds
                    liftIO $ putMVar rexit Nothing
@@ -1162,7 +1183,9 @@ keep mx = do
    type1= undefined
 
 -- | same than `keep` but do not initiate the asynchronous keyboard input.
--- Useful for debugging or for creating background tasks.
+-- Useful for debugging or for creating background tasks, as well as to embed the Transient monad
+-- inside another computation. It returns either the value returned by `exit`.
+-- or Nothing, when there is no more threads running
 keep' :: Typeable a => TransIO a -> IO  (Maybe a)
 keep' mx  = do
    liftIO $ hSetBuffering stdout LineBuffering
