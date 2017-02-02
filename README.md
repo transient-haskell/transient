@@ -6,6 +6,8 @@
 
 ![](https://raw.githubusercontent.com/agocorona/transient/master/logo.png)
 
+[![Gitter](https://badges.gitter.im/theam/haskell-do.svg)](https://gitter.im/Transient-Transient-Universe-HPlay/Lobby?utm_source=share-link&utm_medium=link&utm_campaign=share-link)
+
 NOTE: distributed computing and web primitives have been moved to [transient-universe](https://github.com/agocorona/transient-universe) and [ghcjs-hplay](https://github.com/agocorona/ghcjs-hplay)
 
 transient
