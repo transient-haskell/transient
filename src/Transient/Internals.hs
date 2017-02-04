@@ -110,8 +110,9 @@ runTransient :: TransIO x -> IO (Maybe x, EventF)
 runTransient t= do
   th <- myThreadId
   label <- newIORef $ (Alive,BS.pack "top")
+  childs <- newMVar []
   let eventf0=  EventF baseEffects Nothing empty [] M.empty 0
-          th False  Nothing  (unsafePerformIO $ newMVar []) Nothing  label
+          th False  Nothing  childs Nothing  label
 
   runStateT (runTrans t) eventf0
 
@@ -501,21 +502,31 @@ threads n proc=  do
 oneThread :: TransIO a -> TransIO a
 oneThread comp= do
    st <-  get
+   chs <- liftIO $ newMVar []
+   label <-  liftIO $ newIORef (Alive, BS.pack "oneThread")
+   let st' = st{parent=Just st,children=   chs, labelth= label}
+   put st'
    x <- comp
-   th<- liftIO  myThreadId
-   chs <- liftIO $ readMVar $ children st
-   liftIO $ mapM_ (killChildren1  th . children )  chs
+   th<- liftIO  myThreadId                              -- !> ("FATHER:", threadId st)
+   chs <- liftIO $ readMVar chs -- children st'
+--   topState >>= showThreads
+   liftIO $ mapM_ (killChildren1  th  )  chs
    return x
    where
-   killChildren1 :: ThreadId  ->  MVar [EventF] -> IO ()
-   killChildren1 th childs = do
-       ths <- takeMVar childs
-       let (inn, ths')=  partition (\st -> threadId st == th) ths
-       putMVar childs inn
---           return ths
-       mapM_ (killChildren1  th . children) ths'
+   killChildren1 :: ThreadId  ->  EventF -> IO ()
+   killChildren1 th state = do
+       ths' <- modifyMVar (children state) $ \ths -> do
+                    let (inn, ths')=  partition (\st -> threadId st == th) ths
+                    return (inn, ths')
+--       ths <- takeMVar $ children state
+--       let (inn, ths')=  partition (\st -> threadId st == th) ths
+--       putMVar (children state) inn
+
+       mapM_ (killChildren1  th ) ths'
        mapM_ (killThread . threadId) ths'
 --                                            !> ("KILLEVENT1 ", map threadId ths' )
+
+
 
 
 -- | Add a label to the current passing threads so it can be printed by debugging calls like `showThreads`
@@ -533,7 +544,7 @@ showThreads st= liftIO $ withMVar printBlock $ const $ do
    mythread <-  myThreadId
 --                                       !> "showThreads"
 
-   putStrLn ""
+   putStrLn "--------------------"
    let showTree n ch=  do
          liftIO $ do
             putStr $ take n $ repeat  ' '
@@ -541,7 +552,7 @@ showThreads st= liftIO $ withMVar printBlock $ const $ do
             if BS.null label
               then putStr . show $ threadId ch
               else do BS.putStr label ; putStr . drop 8 . show $ threadId ch
-            putStr " " >> putStr (show state) -- when (state== Dead) $ putStr " dead"
+            when (state== Dead) $ putStr " dead"
             putStrLn $ if mythread== threadId ch then  " <--" else ""
 
          chs <-  readMVar $ children ch
@@ -933,12 +944,16 @@ loop  parentc  rec  = forkMaybe parentc $ \cont ->  do
 --       return ()                      !> ("freeing",th,"in",threadId env)
        let sibling=  children env
 
-       sbs <- takeMVar sibling
-       let (sbs', found) = drop [] th  sbs   -- !> "search "++show th ++ " in " ++ show (map threadId sbs)
+       (sbs',found) <- modifyMVar sibling $ \sbs -> do
+                   let (sbs', found) = drop [] th  sbs
+                   return (sbs',(sbs',found))
+
+--       sbs <- takeMVar sibling
+--       let (sbs', found) = drop [] th  sbs   -- !> "search "++show th ++ " in " ++ show (map threadId sbs)
 
        if found
          then do
-           putMVar sibling sbs'
+--           putMVar sibling sbs'
 --                                             !> ("new list for",threadId env,map threadId sbs')
            (typ,_) <- readIORef $ labelth env
            if (null sbs' && typ /= Listener && isJust (parent env))
@@ -947,14 +962,8 @@ loop  parentc  rec  = forkMaybe parentc $ \cont ->  do
             else return ()
 
 --               return env
-         else return ()
+         else return () -- putMVar sibling sbs
                                                      -- !>  (th,"orphan")
-
---          putMVar sibling sbs
---          if isJust $ parent env
---                then free th $ fromJust $ parent env       -- !> "to parent"
-----                else return env                            -- !> (th,"orphan")
---                else return ()
 
        where
        drop processed th []= (processed,False)
@@ -967,19 +976,21 @@ loop  parentc  rec  = forkMaybe parentc $ \cont ->  do
 
        let headpths= children parentProc
 
-       ths <- takeMVar headpths
+       modifyMVar_ headpths $ \ths -> return (child:ths)
+--       ths <- takeMVar headpths
+--       putMVar headpths (child:ths)
 
-       putMVar headpths (child:ths)
+
            --  !> ("hang", threadId child, threadId parentProc,map threadId ths,unsafePerformIO $ readIORef $ labelth parentProc)
 
 -- | kill  all the child threads associated with the continuation context
 killChildren childs  = do
 
---     forkIO $ do
 
-           ths <- takeMVar childs
-           putMVar childs []
---           return ths
+           ths <- modifyMVar childs $ \ths -> return ([],ths)
+--           ths <- takeMVar childs
+--           putMVar childs []
+
            mapM_ (killChildren . children) ths
 --                                                    !> ("KILLEVENT ", map threadId ths )
 
@@ -1130,9 +1141,9 @@ processLine r= do
 
 
 
--- | wait for the execution of `exit` and return the result
-stay rexit=  takeMVar rexit
+-- | wait for the execution of `exit` and return the result or the exhaustion of thread activity
 
+stay rexit=  takeMVar rexit
  `catch` \(e :: BlockedIndefinitelyOnMVar) -> return Nothing
 
 newtype Exit a= Exit a deriving Typeable
@@ -1165,7 +1176,7 @@ keep mx = do
                    option "log" "log  of a thread"
                    th <- input (const True)  "thread number>"
                    ml <- liftIO $ showState th st
-                   liftIO $ print $ fmap (\(Log _ _ log) -> log) ml
+                   liftIO $ print $ fmap (\(Log _ _ log) -> reverse log) ml
                    empty
             <|> do
                    option "end" "exit"
@@ -1194,12 +1205,11 @@ keep' mx  = do
            runTransient $ do
 --              onFinish $ \me -> exit me
               setData $ Exit rexit
-              mx -- >> liftIO (putMVar rexit $ Right Nothing)
-           -- to avoid takeMVar in a infinite loop
+              mx
+
            return ()
    threadDelay 10000
-   execCommandLine
-
+   forkIO $ execCommandLine
    stay rexit
 
 
