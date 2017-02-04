@@ -94,7 +94,7 @@ collect n = collect' n 0
 -- After the the timeout, it stop unconditionally and return the current results.
 -- It also stops as soon as there are enough results specified in the first parameter.
 collect' :: Int -> Int -> TransIO a -> TransIO [a]
-collect' n t2 search= oneThread $ do
+collect' n t2 search= do
 
   rv <- liftIO $ newEmptyMVar     -- !> "NEWMVAR"
 
@@ -106,22 +106,27 @@ collect' n t2 search= oneThread $ do
         liftIO $  putMVar rv r
         stop
 
-      timer= if t2>0 then async $ threadDelay t2 >> readIORef results >>= return . snd else empty
+      timer= if t2 > 0 then async $ threadDelay t2 >> readIORef results >>= return . snd
+                       else empty
+
       monitor=  async loop
 
           where
           loop = do
-
                      r <- takeMVar rv
                      (n',rs) <- readIORef results
-                     writeIORef results  (n'+1,r:rs)
+                     let n''= n' +1
+                     writeIORef results  (n'',r:rs)
 
                      t' <-  getCurrentTime
-                     if (n > 0 && n' >= n)
+                     if (n > 0 && n'' >= n)
                        then readIORef results >>= return . snd else loop
                  `catch` \(e :: BlockedIndefinitelyOnMVar) ->
                                    readIORef results >>= return . snd
 
 
-  monitor <|> worker <|> timer
+  r <- oneThread $ monitor <|> worker <|> timer
+
+  return r
+
 
