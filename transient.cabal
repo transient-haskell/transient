@@ -1,6 +1,6 @@
 name: transient
 
-version: 0.5.0
+version: 0.5.1
 
 
 author: Alberto G. Corona
@@ -33,13 +33,14 @@ library
                      , random
                      , bytestring
 
+
     exposed-modules: Transient.Backtrack
                      Transient.Base
                      Transient.EVars
                      Transient.Indeterminism
                      Transient.Internals
                      Transient.Logged
-                     Transient.Stream.Resource
+
     exposed: True
     buildable: True
     exposed: True
