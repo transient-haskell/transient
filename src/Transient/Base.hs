@@ -13,21 +13,35 @@
 -----------------------------------------------------------------------------
 
 module Transient.Base(
-
+-- * The Monad
 TransIO(..), TransientIO
+-- * Running the monad
 ,keep, keep', stop
+
+-- * input
 ,option, input, exit
+
+-- * Asynchronous operations
 ,async,waitEvents, spawn, parallel, sample
 ,react
 
-,setState, setData, getState, getSData,getData,delState,delData
+-- * State management
+,setState, setData, getState, getSData,getData,delState,delData, modifyData,modifyState
 
+-- * Thread management
 , threads,addThreads, freeThreads, hookedThreads,oneThread, killChilds
 
+-- * Additional operators
 , (**>), (<**),(<***), (<|)
 
+-- * exceptions
+
+,onException, cutExceptions, continue
+
+-- * Utilities
 , StreamData(..)
-,genId)
+,genId
+)
 
 where
 
