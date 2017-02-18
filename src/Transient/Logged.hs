@@ -18,11 +18,12 @@ module Transient.Logged(
 restore,checkpoint,suspend,
 #endif
 
-logged, paramName,paramVal, Loggable) where
+logged, received,param, Loggable) where
 
 import Data.Typeable
 import Unsafe.Coerce
 import Transient.Base
+import Transient.Internals(Loggable)
 import Transient.Indeterminism(choose)
 import Transient.Internals(onNothing,reads1,IDynamic(..),Log(..),LogElem(..),RemoteStatus(..),StateIO)
 import Control.Applicative
@@ -31,12 +32,13 @@ import System.Directory
 import Control.Exception
 import Control.Monad
 
+
+
 #ifndef ghcjs_HOST_OS
 import System.Random
 #endif
 
-class (Show a, Read a,Typeable a) => Loggable a
-instance (Show a, Read a,Typeable a) => Loggable a
+
 
 #ifndef ghcjs_HOST_OS
 logs= "logs/"
@@ -109,7 +111,7 @@ logAll log= do
 #endif
 
 
-fromIDyn :: (Read a, Show a, Typeable a) => IDynamic -> a
+fromIDyn :: Loggable a => IDynamic -> a
 fromIDyn (IDynamic x)=r where r= unsafeCoerce x     -- !> "coerce" ++ " to type "++ show (typeOf r)
 
 fromIDyn (IDyns s)=r `seq`r where r= read s         -- !> "read " ++ s ++ " to type "++ show (typeOf r)
@@ -118,11 +120,7 @@ fromIDyn (IDyns s)=r `seq`r where r= read s         -- !> "read " ++ s ++ " to t
 
 toIDyn x= IDynamic x
 
-{- TODO add save/recover from log
-rerun :: Log -> TransIO a -> TransIO a
 
-getLog :: TransIO Log
--}
 
 -- | write the result of the computation in  the log and return it.
 -- but if there is data in the internal log, it read the data from the log and
@@ -191,20 +189,22 @@ logged mx =  Transient $ do
 
 -------- parsing the log for API's
 
-
-paramName n=Transient $ do
+received :: Loggable a => a -> TransIO ()
+received n=Transient $ do
    Log recover rs full <- getData `onNothing` return ( Log False  [][])
    case rs of
      [] -> return Nothing
-     Var (IDyns s):t -> if s==n
+     Var (IDyns s):t -> if s == show1 n
           then  do
             setData $ Log recover t full
-            return $ Just n
+            return $ Just ()
           else return Nothing
      _  -> return Nothing
+   where
+   show1 x= if typeOf x == typeOf "" then unsafeCoerce x else show x
 
-paramVal :: Loggable a => TransIO a
-paramVal= res where
+param :: Loggable a => TransIO a
+param= res where
  res= Transient $ do
    Log recover rs full <- getData `onNothing` return ( Log False  [][])
    case rs of
