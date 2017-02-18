@@ -10,7 +10,7 @@ module Transient.Backtrack (onUndo, undo, retry, undoCut,registerUndo,
 onBack, back, forward, backCut,registerBack,
 
 -- * finalization primitives
-finish, onFinish, onFinish' ,initFinish , noFinish, killOnFinish ,checkFinalize , FinishReason
+finish, onFinish, onFinish' ,initFinish , noFinish,checkFinalize , FinishReason
 ) where
 
 import Transient.Internals
