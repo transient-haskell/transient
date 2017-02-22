@@ -260,7 +260,7 @@ instance Applicative TransIO where
              setContinuation g appg fs
 
              x <- runTrans g
-                    --  !> ( show $ unsafePerformIO myThreadId) ++ "RUN g"
+--                      !> ( show $ unsafePerformIO myThreadId) ++ "RUN g"
              Log recovery _ full' <- getData `onNothing` return (Log False [] [])
              liftIO $ writeIORef rg  (x,full')
              restoreStack fs
@@ -517,7 +517,7 @@ oneThread comp= do
    x <- comp
    th<- liftIO  myThreadId                              -- !> ("FATHER:", threadId st)
    chs <- liftIO $ readMVar chs -- children st'
---   topState >>= showThreads
+
    liftIO $ mapM_ (killChildren1  th  )  chs
    return x
    where
@@ -526,9 +526,7 @@ oneThread comp= do
        ths' <- modifyMVar (children state) $ \ths -> do
                     let (inn, ths')=  partition (\st -> threadId st == th) ths
                     return (inn, ths')
---       ths <- takeMVar $ children state
---       let (inn, ths')=  partition (\st -> threadId st == th) ths
---       putMVar (children state) inn
+
 
        mapM_ (killChildren1  th ) ths'
        mapM_ (killThread . threadId) ths'
@@ -648,7 +646,7 @@ hookedThreads proc= Transient $ do
      return r
 
 -- | kill all the child threads of the current thread
-killChilds :: TransientIO()
+killChilds :: TransIO()
 killChilds= noTrans $  do
    cont <- get
 
@@ -657,10 +655,21 @@ killChilds= noTrans $  do
       writeIORef (labelth cont) (Alive,mempty)     -- !> (threadId cont,"relabeled")
    return ()
 
--- | Kill the childs and the current thread
-killBranch= do
-        killChilds
-        noTrans $ liftIO $ (myThreadId >>= \th ->  killThread th)
+-- | Kill the  current thread and the childs
+killBranch= noTrans $ do
+        st <- get
+        liftIO $ killBranch' st
+
+-- | Kill the childs and the thread of an state
+killBranch' cont= liftIO $ do
+
+        killChildren $ children cont
+        let thisth= threadId cont
+        let mparent= parent cont
+        when (isJust mparent) $ modifyMVar_ (children $ fromJust mparent)
+                              $ \sts  -> return $ filter (\st -> threadId st /= thisth) sts
+        killThread $ thisth
+
 
 -- * extensible state: session data management
 
@@ -991,9 +1000,9 @@ killChildren childs  = do
 --           putMVar childs []
 
            mapM_ (killChildren . children) ths
-                                                  --  !> ("KILLEVENT ", map threadId ths )
 
-           mapM_ (killThread . threadId) ths
+
+           mapM_ (killThread . threadId) ths  -- !> ("KILL", map threadId ths )
 
 
 
@@ -1046,7 +1055,7 @@ option ret message= do
     liftIO $ putStrLn $ "Enter  "++sret++"\tto: " ++ message
     liftIO $ modifyMVar_ roption $ \msgs-> return $ sret:msgs
     waitEvents  $ getLine' (==ret)
-    liftIO $ putStr ">" >> putStrLn (show ret)
+    liftIO $ putStr "option >" >> putStrLn (show ret)
     return ret
 
 
@@ -1325,11 +1334,17 @@ back reason = Transient $ do
 
         Backtrack back _ <- getData `onNothing`  backStateOf  reason
                                                                  -- !> "END RUNCLOSURE"
-        case back of
-           Nothing -> case mr of
-                   Nothing ->  return empty                      -- !> "FORWARD END"
-                   Just x  ->  runContinuation first x           -- !> "FORWARD EXEC"
-           justreason -> goBackt $ Backtrack justreason bs       -- !> ("BACK AGAIN",back)
+--        case back of
+--           Nothing -> case mr of
+--                   Nothing ->  return empty                      -- !> "FORWARD END"
+--                   Just x  ->  runContinuation first x           -- !> "FORWARD EXEC"
+--           justreason -> goBackt $ Backtrack justreason bs       -- !> ("BACK AGAIN",back)
+
+        case mr of
+           Nothing -> return empty                                      -- !> "END EXECUTION"
+           Just x -> case back of
+                 Nothing -> runContinuation first x                     -- !> "FORWARD EXEC"
+                 justreason -> goBackt $ Backtrack justreason bs        -- !> ("BACK AGAIN",back)
 
 backStateOf :: (Monad m, Show a, Typeable a) => a -> m (Backtrack a)
 backStateOf reason= return $ Backtrack (Nothing `asTypeOf` (Just reason)) []
