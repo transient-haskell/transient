@@ -13,7 +13,7 @@ NOTE: distributed computing and web primitives have been moved to [transient-uni
 Transient
 =========
 
-** Some feedback on `transient`:
+## Some feedback on `transient`:
 
 1. Rahul Muttineni @rahulmutt nov. 09 2016 03:40  Lead developper of ETA (the JVM Haskell compiler)
 
@@ -22,6 +22,8 @@ Transient
    *The cool part is the composability in the distributed setting. You can make higher-order monadic functions that allow you to compose & reuse a long chain of distributed transactions via `wormhole` and `teleport`. Another benefit is that the transaction becomes first class and you can see exactly what's going on in one place instead of distributing the logic across actors making the code equivalent to event callbacks, as you've stated.*
 
   https://gitter.im/Transient-Transient-Universe-HPlay/Lobby?at=58228caa35e6cf054773303b
+
+## What is Transient?
 
 One of the biggest dreams of software engineering is unrestricted composability.
 
