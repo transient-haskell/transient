@@ -1,3 +1,6 @@
+Transient
+=========
+
 [![Hackage](https://img.shields.io/hackage/v/transient.svg)](http://hackage.haskell.org/package/transient)
 [![Stackage LTS](http://stackage.org/package/transient/badge/lts)](http://stackage.org/lts/package/transient)
 [![Stackage Nightly](http://stackage.org/package/transient/badge/nightly)](http://stackage.org/nightly/package/transient)
@@ -15,9 +18,9 @@ NOTE: distributed computing and web primitives have been moved to [transient-uni
 
 1. Rahul Muttineni @rahulmutt nov. 09 2016 03:40  Lead developper of ETA (the JVM Haskell compiler)
 
-   *It's a bit mind bending in that it's like using a higher-level list monad, but it's very, very cool. For beginning Haskellers, what would be really useful is a visualisation of what happens when you do various distributed/parallel stuff. It's almost shocking how effortlessly you can run computations across threads/nodes.*
+   *It's a bit mind bending in that it's like using a higher-level list monad, but it's very, very cool. For beginning Haskellers, what would be really useful is a visualisation of what happens when you do various distributed/parallel stuff.* **It's almost shocking how effortlessly you can run computations across threads/nodes.**
 
-   *The cool part is the composability in the distributed setting. You can make higher-order monadic functions that allow you to compose & reuse a long chain of distributed transactions via `wormhole` and `teleport`. Another benefit is that the transaction becomes first class and you can see exactly what's going on in one place instead of distributing the logic across actors making the code equivalent to event callbacks, as you've stated.*
+   *The cool part is the composability in the distributed setting. *You can make higher-order monadic functions that allow you to compose & reuse a long chain of distributed transactions via `wormhole` and `teleport`*. Another benefit is that the transaction becomes first class and* **you can see exactly what's going on in one place** *instead of distributing the logic across actors making the code equivalent to event callbacks, as you've stated.*
 
   https://gitter.im/Transient-Transient-Universe-HPlay/Lobby?at=58228caa35e6cf054773303b
 
