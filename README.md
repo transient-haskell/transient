@@ -10,8 +10,6 @@
 
 NOTE: distributed computing and web primitives have been moved to [transient-universe](https://github.com/agocorona/transient-universe) and [ghcjs-hplay](https://github.com/agocorona/ghcjs-hplay)
 
-Transient
-=========
 
 ## Some feedback on `transient`:
 
