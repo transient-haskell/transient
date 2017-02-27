@@ -1,14 +1,10 @@
-Transient
+![Transient logo](https://github.com/transient-haskell/transient/raw/master/logo.png)
 =========
 
 [![Hackage](https://img.shields.io/hackage/v/transient.svg)](http://hackage.haskell.org/package/transient)
 [![Stackage LTS](http://stackage.org/package/transient/badge/lts)](http://stackage.org/lts/package/transient)
 [![Stackage Nightly](http://stackage.org/package/transient/badge/nightly)](http://stackage.org/nightly/package/transient)
 [![Build Status](https://api.travis-ci.org/transient-haskell/transient.png?branch=master)](https://travis-ci.org/transient-haskell/transient)
-
-
-![](https://raw.githubusercontent.com/agocorona/transient/master/logo.png)
-
 [![Gitter](https://badges.gitter.im/theam/haskell-do.svg)](https://gitter.im/Transient-Transient-Universe-HPlay/Lobby?utm_source=share-link&utm_medium=link&utm_campaign=share-link)
 
 NOTE: distributed computing and web primitives have been moved to [transient-universe](https://github.com/agocorona/transient-universe) and [ghcjs-hplay](https://github.com/agocorona/ghcjs-hplay)
