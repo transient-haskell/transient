@@ -788,6 +788,16 @@ async io= do
      SLast x -> return x
      SError e -> back e
 
+-- | in an alternative computation it executes an async operations synchronously.
+-- This means that the alternatives do not execute until the async operation finishes.
+-- Do not use in Applicatives.
+sync :: TransIO a -> TransIO a
+sync x= do
+  setData WasRemote
+  r <- x
+  delData WasRemote
+  return r
+
 -- | `spawn= freeThreads . waitEvents`
 spawn= freeThreads . waitEvents
 
@@ -1055,7 +1065,7 @@ option ret message= do
     liftIO $ putStrLn $ "Enter  "++sret++"\tto: " ++ message
     liftIO $ modifyMVar_ roption $ \msgs-> return $ sret:msgs
     waitEvents  $ getLine' (==ret)
-    liftIO $ putStr "option >" >> putStrLn (show ret)
+    liftIO $ putStr "option: " >> putStrLn (show ret)
     return ret
 
 
