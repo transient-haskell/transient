@@ -22,7 +22,7 @@ NOTE: distributed computing and web primitives have been moved to [transient-uni
 
 ## What is Transient?
 
-One of the biggest dreams of software engineering is unrestricted composability.
+One of the dreams of software engineering is unrestricted composability.
 
 This may be put in these terms:
 
