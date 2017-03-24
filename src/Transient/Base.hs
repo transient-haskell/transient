@@ -26,7 +26,7 @@ TransIO(..), TransientIO
 ,react
 
 -- * State management
-,setState, setData, getState, getSData,getData,delState,delData, modifyData,modifyState
+,setState, setData, getState, getSData,getData,delState,delData, modifyData,modifyState,try
 
 -- * Thread management
 , threads,addThreads, freeThreads, hookedThreads,oneThread, killChilds
