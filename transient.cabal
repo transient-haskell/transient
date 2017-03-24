@@ -1,9 +1,11 @@
 name: transient
 
-version: 0.5.1
+version: 0.5.2
 
 
 author: Alberto G. Corona
+extra-source-files:
+    ChangeLog.md README.md
 
 cabal-version: >=1.10
 build-type: Simple
