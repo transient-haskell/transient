@@ -1,10 +1,14 @@
 name: transient
 
 
-version: 0.5.1
+version: 0.5.2
 
 
 author: Alberto G. Corona
+
+extra-source-files:
+    ChangeLog.md README.md
+
 maintainer: agocorona@gmail.com
 
 cabal-version: >=1.10
@@ -17,7 +21,7 @@ license-file: LICENSE
 homepage: http://www.fpcomplete.com/user/agocorona
 bug-reports: https://github.com/agocorona/transient/issues
 
-synopsis: Making composable programs with multithreading, events and distributed computing
+synopsis: composing programs with multithreading, events and distributed computing
 description: See <http://github.com/agocorona/transient>
              In this release distributed primitives have been moved to the transient-universe package, and web primitives have been moved to the ghcjs-hplay package.
 category: Control

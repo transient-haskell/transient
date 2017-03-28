@@ -91,42 +91,65 @@ collect ::  Int -> TransIO a -> TransIO [a]
 collect n = collect' n 0
 
 -- | search with a timeout
--- After the the timeout, it stop unconditionally and return the current results.
+-- After the  timeout, it stop unconditionally and return the current results.
 -- It also stops as soon as there are enough results specified in the first parameter.
+-- The results are returned by the original thread
+--
+-- >     timeout t proc=do
+-- >       r <- collect' 1 t proc
+-- >       case r of
+-- >          []  ->  empty
+-- >          r:_ -> return r
+--
+-- >     timeout 10000 empty <|> liftIO (print "timeout")
+--
+-- That executes the alternative and will print "timeout".
+-- This would not be produced if collect would not return the results to the original thread
+--
+-- `search` is executed in different threads and his state is lost, so don't rely in state
+-- to pass information
+
 collect' :: Int -> Int -> TransIO a -> TransIO [a]
-collect' n t2 search= do
+collect' n t search= do
 
   rv <- liftIO $ newEmptyMVar     -- !> "NEWMVAR"
 
-
   results <- liftIO $ newIORef (0,[])
 
-  let worker = do
-        r <- search
-        liftIO $  putMVar rv r
+  let worker =  do
+        r <- abduce >> search
+        liftIO $  putMVar rv $ Just r
         stop
 
-      timer= if t2 > 0 then async $ threadDelay t2 >> readIORef results >>= return . snd
-                       else empty
+      timer= do
+             when (t > 0) . async $ threadDelay t >>putMVar rv Nothing -- readIORef results  >>= return . snd
+             empty
 
-      monitor=  async loop
+      monitor=  liftIO loop
 
           where
           loop = do
-                     r <- takeMVar rv
-                     (n',rs) <- readIORef results
+               mr <- takeMVar rv
+               (n',rs) <- readIORef results
+               case mr of
+                  Nothing -> return rs
+                  Just r -> do
                      let n''= n' +1
-                     writeIORef results  (n'',r:rs)
+                     let rs'= r:rs
+                     writeIORef results  (n'',rs')
 
                      t' <-  getCurrentTime
                      if (n > 0 && n'' >= n)
-                       then readIORef results >>= return . snd else loop
-                 `catch` \(e :: BlockedIndefinitelyOnMVar) ->
+                       then  return (rs')
+                       else loop
+              `catch` \(e :: BlockedIndefinitelyOnMVar) ->
                                    readIORef results >>= return . snd
 
 
-  r <- oneThread $ monitor <|> worker <|> timer
+  r <- oneThread $  worker <|> timer <|> monitor
 
   return r
+
+
 
 
