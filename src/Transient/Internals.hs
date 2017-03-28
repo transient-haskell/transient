@@ -51,10 +51,10 @@ import qualified Data.ByteString.Char8 as BS
 
 
 
--- {-# INLINE (!>) #-}
---(!>) :: Show a => b -> a -> b
---(!>) x y=  trace (show y) x
---infixr 0 !>
+{-# INLINE (!>) #-}
+(!>) :: Show a => b -> a -> b
+(!>) x y=  trace (show y) x
+infixr 0 !>
 
 -- (!>) x y= x
 
@@ -1042,6 +1042,8 @@ killChildren childs  = do
 --
 -- it configures the event handler by calling the setter of the event
 -- handler with the current continuation
+--
+-- react is composable with applicative and alternative operators too
 react
   :: Typeable eventdata
   => ((eventdata ->  IO response) -> IO ())
@@ -1066,24 +1068,25 @@ react setHandler iob= Transient $ do
 --
 -- Useful for executing alternative computations
 
-abduce = Transient $ do
-   st <-  get
-   case  event st of
-          Just _ -> do
-               put st{event=Nothing}
-               return $ Just ()
-          Nothing -> do
-               chs <- liftIO $ newMVar []
-
-               label <-  liftIO $ newIORef (Alive, BS.pack "abduce")
-               liftIO $ forkIO $ do
-                   th <- myThreadId
-                   let st' = st{event= Just (),parent=Just st,children=   chs, threadId=th,labelth= label}
-                   liftIO $ hangThread st st'
-
-                   runCont' st'
-                   return()
-               return Nothing
+abduce = async $ return ()
+--  Transient $ do
+--   st <-  get
+--   case  event st of
+--          Just _ -> do
+--               put st{event=Nothing}
+--               return $ Just ()
+--          Nothing -> do
+--               chs <- liftIO $ newMVar []
+--
+--               label <-  liftIO $ newIORef (Alive, BS.pack "abduce")
+--               liftIO $ forkIO $ do
+--                   th <- myThreadId
+--                   let st' = st{event= Just (),parent=Just st,children=   chs, threadId=th,labelth= label}
+--                   liftIO $ hangThread st st'
+--
+--                   runCont' st'
+--                   return()
+--               return Nothing
 
 
 -- * non-blocking keyboard input
@@ -1313,10 +1316,12 @@ undoCut = backCut ()
 {-# NOINLINE onBack #-}
 onBack :: (Typeable b, Show b) => TransientIO a -> ( b -> TransientIO a) -> TransientIO a
 onBack ac bac = registerBack (typeof bac) $ Transient $ do
-     Backtrack mreason _  <- getData `onNothing` backStateOf (typeof bac)
+     Backtrack mreason stack  <- getData `onNothing` backStateOf (typeof bac)
      runTrans $ case mreason of
                   Nothing     -> ac
-                  Just reason -> bac reason
+                  Just reason -> do
+                      setState $ Backtrack mreason $ tail stack -- to avoid recursive call tot he same handler
+                      bac reason
      where
      typeof :: (b -> TransIO a) -> b
      typeof = undefined
@@ -1325,7 +1330,7 @@ onUndo ::  TransientIO a -> TransientIO a -> TransientIO a
 onUndo x y= onBack x (\() -> y)
 
 
--- | Register an action that will be executed when backtracking
+-- | Register an action that will be executed when backtracking of a given type
 {-# NOINLINE registerUndo #-}
 registerBack :: (Typeable b, Show b) => b -> TransientIO a -> TransientIO a
 registerBack witness f  = Transient $ do
@@ -1375,17 +1380,12 @@ back reason = Transient $ do
 
   goBackt (Backtrack _ [] )= return Nothing                      -- !!> "END"
   goBackt (Backtrack b (stack@(first : bs)) )= do
-        (setData $ Backtrack (Just reason) stack)
+        setData $ Backtrack (Just reason) stack
 
         mr <-  runClosure first                                  -- !> "RUNCLOSURE"
 
         Backtrack back _ <- getData `onNothing`  backStateOf  reason
                                                                  -- !> "END RUNCLOSURE"
---        case back of
---           Nothing -> case mr of
---                   Nothing ->  return empty                      -- !> "FORWARD END"
---                   Just x  ->  runContinuation first x           -- !> "FORWARD EXEC"
---           justreason -> goBackt $ Backtrack justreason bs       -- !> ("BACK AGAIN",back)
 
         case mr of
            Nothing -> return empty                                      -- !> "END EXECUTION"
