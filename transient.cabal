@@ -32,7 +32,7 @@ data-dir: ""
 library
     -- Note: `stack sdist/upload` will add missing bounds (via "pvp-bounds: both") in `build-depends`
     -- support GHC 7.10.3 and later; lower bounds below denote GHC 7.10.3's bundled versions
-    build-depends:     base          >= 4.8.2  &&  < 5
+    build-depends:     base          >= 4.8.1  &&  < 5
                      , containers    >= 0.5.6
                      , transformers  >= 0.4.2
                      , time          >= 1.5
