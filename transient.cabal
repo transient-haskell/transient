@@ -30,16 +30,19 @@ data-dir: ""
 
 
 library
-    build-depends:     base          > 4  &&  < 5
-                     , containers
-                     , mtl
-                     , transformers
-                     , stm
-                     , time
-                     , directory
-                     , random
-                     , bytestring
+    -- Note: `stack sdist/upload` will add missing bounds (via "pvp-bounds: both") in `build-depends`
+    -- support GHC 7.10.3 and later; lower bounds below denote GHC 7.10.3's bundled versions
+    build-depends:     base          >= 4.8.2  &&  < 5
+                     , containers    >= 0.5.6
+                     , transformers  >= 0.4.2
+                     , time          >= 1.5
+                     , directory     >= 1.2.2
+                     , bytestring    >= 0.10.6
 
+                     -- libraries not bundled w/ GHC
+                     , mtl
+                     , stm
+                     , random
 
     exposed-modules: Transient.Backtrack
                      Transient.Base

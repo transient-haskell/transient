@@ -4,3 +4,4 @@ packages:
 extra-deps: []
 flags: {}
 extra-package-dbs: []
+pvp-bounds: both
