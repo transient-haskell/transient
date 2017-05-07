@@ -60,7 +60,14 @@ import qualified Data.ByteString.Char8 as BS
 
 
 
-
+-- | 'TransientIO' is a high level concurrency and asynchronous events monad.
+-- It provides facilities to create and compose asynchronous computations as
+-- well as streams of asynchronous events. Producers and consumers of events
+-- can be composed together to create an arbitrarily complex reactive system.
+-- Applicative, Alternative and Monad are the usual ways to compose
+-- computations.  The degree of parallelism can be controlled by the
+-- programmer.
+--
 data TransIO  x = Transient  {runTrans :: StateT EventF IO (Maybe x)}
 type SData= ()
 
@@ -70,20 +77,32 @@ type TransientIO= TransIO
 
 data LifeCycle= Alive | Parent | Listener | Dead deriving (Eq,Show)
 
-data EventF  = forall a b . EventF{meffects     :: ()
-                                  ,event       :: Maybe SData
-                                  ,xcomp       :: TransIO a
-                                  ,fcomp       :: [b -> TransIO b]
-                                  ,mfData      :: M.Map TypeRep SData
-                                  ,mfSequence  :: Int
-                                  ,threadId    :: ThreadId
-                                  ,freeTh      :: Bool
-                                  ,parent      :: Maybe EventF
-                                  ,children    :: MVar[EventF]
-                                  ,maxThread   :: Maybe (IORef Int)
-                                  ,labelth     :: IORef (LifeCycle,BS.ByteString)
-                                  }
-                                  deriving Typeable
+-- | EventF describes the context of a TransientIO computation:
+--
+data EventF  = forall a b . EventF
+    {meffects     :: ()
+    ,event       :: Maybe SData
+    -- ^ not yet consumed result (event) from the last asynchronous run of the
+    -- computation
+    ,xcomp       :: TransIO a
+    ,fcomp       :: [b -> TransIO b]
+    -- ^ list of continuations
+    ,mfData      :: M.Map TypeRep SData
+    -- ^ state data accessed with get or put operations
+    ,mfSequence  :: Int
+    ,threadId    :: ThreadId
+    ,freeTh      :: Bool
+    -- ^ when 'True', threads are not killed using kill primitives
+    ,parent      :: Maybe EventF
+    -- ^ the parent of this thread
+    ,children    :: MVar[EventF]
+    -- ^ forked child threads, only when 'freeTh' is 'False'
+    ,maxThread   :: Maybe (IORef Int)
+    -- ^ maximum number of threads that are allowed to be created
+    ,labelth     :: IORef (LifeCycle,BS.ByteString)
+    -- ^ label the thread with its lifecycle state and a label string
+    }
+    deriving Typeable
 
 
 
@@ -109,7 +128,7 @@ type StateIO= StateT EventF IO
 -- that the computation neither can stop neither can trigger additional events/threads
 noTrans x= Transient $ x >>= return . Just
 
--- | Run the transient computation with a blank state
+-- | Run a transient computation with a default initial state
 runTransient :: TransIO x -> IO (Maybe x, EventF)
 runTransient t= do
   th <- myThreadId
@@ -120,7 +139,7 @@ runTransient t= do
 
   runStateT (runTrans t) eventf0
 
--- | Run the transient computation with an state
+-- | Run a transient computation with a given initial state
 runTransState st x = runStateT (runTrans x) st
 
 -- | Get the continuation context: closure, continuation, state, child threads etc
@@ -133,7 +152,7 @@ runCont (EventF _ _ x fs _ _  _ _  _ _ _ _)= runTrans $ do
       r <- unsafeCoerce x
       compose fs r
 
--- | Run the closure and the continuation using his own state data
+-- | Run the closure and the continuation using its own state data
 runCont' cont= runStateT (runCont cont) cont
 
 -- | Warning: radiactive untyped stuff. handle with care
@@ -151,7 +170,7 @@ runCont cont= do
 -}
 
 
--- | Compose a list of continuations
+-- | Compose a list of continuations.
 compose []= const empty
 compose (f: fs)= \x -> f x >>= compose fs
 
@@ -332,8 +351,10 @@ instance MonadPlus TransIO where
 
 
 
--- | A sinonym of empty that can be used in a monadic expression. it stop the
--- computation and execute the next alternative computation (composed with `<|>`)
+-- | A synonym of 'empty' that can be used in a monadic expression. It stops
+-- the computation, which allows the next computation in an 'Alternative'
+-- ('<|>') composition to run.
+--
 stop :: Alternative m => m stopped
 stop= empty
 
@@ -679,7 +700,8 @@ killBranch' cont= liftIO $ do
 
 -- * extensible state: session data management
 
--- | Get the state data for the desired type if there is any.
+-- | When 'getData' is used the type is determined from the context
+-- and the corresponding value from the map is returned.
 getData ::  (MonadState EventF m,Typeable a) =>  m (Maybe a)
 getData =  resp where
  resp= gets mfData >>= \list  ->
@@ -714,10 +736,13 @@ getSData= Transient getData
 getState ::  Typeable a => TransIO  a
 getState= getSData
 
--- | Set session data for this type. retrieved with getData or getSData
--- Note that this is data in a state monad, that means that the update only affect downstream
--- in the monad execution. it is not a global state neither a per user or per thread state
--- it is a monadic state like the one of a state monad.
+-- | State data is maintained as a 'Map'. The map stores values keyed by their
+-- types. This means that only one value of a certain type can be stored.
+-- 'setData' sets the session data for the type corresponding to its argument.
+-- This data can later be retrieved using 'getData' or 'getSData'.  Note that this
+-- is data in a state monad, therefore updates only affect downstream
+-- in the monad execution. It is neither a global state nor a per user or per
+-- thread state, it is a monadic state like the one of a state monad.
 setData ::  (MonadState EventF m, Typeable a) => a -> m ()
 setData  x=
   let t= typeOf x in  modify $ \st -> st{mfData= M.insert  t (unsafeCoerce x) (mfData st)}
@@ -787,7 +812,8 @@ instance Read SomeException where
 data StreamData a=  SMore a | SLast a | SDone | SError SomeException deriving (Typeable, Show,Read)
 
 
--- | Variant of `parallel` that repeatedly executes the IO computation without end
+-- | Run an IO computation forever, in a loop, asynchronously. Return the
+-- results as a stream of events.
 --
 waitEvents ::   IO b -> TransIO b
 waitEvents io= do
@@ -796,7 +822,7 @@ waitEvents io= do
      SMore x -> return x
      SError e -> back  e
 
--- | Variant of `parallel` that execute the IO computation once
+-- | Run an IO computation asynchronously and return the result.
 async  ::  IO b -> TransIO b
 async io= do
    mr <- parallel  (SLast <$> io)
@@ -804,9 +830,10 @@ async io= do
      SLast x -> return x
      SError e -> back e
 
--- | in an alternative computation it executes an async operations synchronously.
--- This means that the alternatives do not execute until the async operation finishes.
--- Do not use in Applicatives.
+-- | Force an async computation to run synchronously. It can be useful in an
+-- 'Alternative' composition to run the alternative only after finishing a
+-- computation.  Note that in Applicatives it might result in an undesired
+-- serialization.
 sync :: TransIO a -> TransIO a
 sync x= do
   setData WasRemote
@@ -814,10 +841,11 @@ sync x= do
   delData WasRemote
   return r
 
--- | `spawn= freeThreads . waitEvents`
+-- | @spawn= freeThreads . waitEvents@
 spawn= freeThreads . waitEvents
 
--- | Executes an IO action each certain interval of time and return his value if it changes
+-- | Run an IO computation periodically and return the series of results. A
+-- new sample is generated only if it is different from the previous one.
 sample :: Eq a => IO a -> Int -> TransIO a
 sample action interval= do
        v <-  liftIO action
@@ -1093,7 +1121,15 @@ getLineRef= unsafePerformIO $ newTVarIO Nothing
 
 roption= unsafePerformIO $ newMVar []
 
--- | Install a event receiver that wait for a string and trigger the continuation when this string arrives.
+-- | Waits on stdin in a loop and triggers an event every time the input data
+-- matches the first argument.  The result is the matched value i.e. the first
+-- argument  itself. The second argument is a string to identify this option.
+-- When the program is run every option is displayed on the stdout.
+--
+-- Note that if two independent invocations of 'option' are expecting the same
+-- input, only one of them gets it and triggers an event. It cannot be
+-- predicted which one gets it.
+--
 option :: (Typeable b, Show b, Read b, Eq b) =>
      b -> String -> TransIO b
 option ret message= do
@@ -1106,9 +1142,10 @@ option ret message= do
     return ret
 
 
--- | Validates an input entered in the keyboard in non blocking mode. non blocking means that
--- the user can enter also anything else to activate other option
--- unlike `option`, wich watch continuously, input only wait for one valid response
+-- | Waits on stdin until the input matches the predicate specified in the
+-- first argument.  The second argument is a string to identify this input
+-- consumer.
+--
 input :: (Typeable a, Read a,Show a) => (a -> Bool) -> String -> TransIO a
 input cond prompt= Transient . liftIO $do
    putStr prompt >> hFlush stdout
@@ -1151,6 +1188,8 @@ reads1 s=x where
 
 inputLoop= do
            r<- getLine
+           -- XXX hoping that the previous value has been consumed by now.
+           -- otherwise its just lost by overwriting.
            atomically $ writeTVar getLineRef Nothing
            processLine r
            inputLoop
@@ -1159,6 +1198,8 @@ processLine r= do
 
    let rs = breakSlash [] r
 
+   -- XXX this blocks forever if an input is not consumed by any consumer.
+   -- e.g. try this "xxx/xxx" on the stdin
    liftIO $ mapM_ (\ r ->
                  atomically $ do
 --                    threadDelay 1000000
@@ -1192,13 +1233,41 @@ stay rexit=  takeMVar rexit
 
 newtype Exit a= Exit a deriving Typeable
 
--- | Keep the main thread running, initiate the non blocking keyboard input and execute
--- the transient computation.
+-- | Runs the transient computation in a child thread and keeps the main thread
+-- running until all the user threads exit or some thread invokes 'exit'.
 --
--- It also read a slash-separated list of string that are read by
--- `option` and `input` as if they were entered by the keyboard
+-- The main thread provides facilities to accept keyboard input in a
+-- non-blocking but line-oriented manner. The program reads the standard input
+-- and feeds it to all the async input consumers (e.g. 'option' and 'input').
+-- All async input consumers contend for each line entered on the standard
+-- input and try to read it atomically. When a consumer consumes the input
+-- others do not get to see it, otherwise it is left in the buffer for others
+-- to consume. If nobody consumes the input, it is discarded.
 --
--- >  foo  -p  options/to/be/read/by/option/and/input
+-- A @/@ in the input line is treated as a newline.
+--
+-- When using asynchronous input, regular synchronous IO APIs like getLine
+-- cannot be used as they will contend for the standard input along with the
+-- asynchronous input thread. Instead you can use the asynchronous input APIs
+-- provided by transient.
+--
+-- A built-in interactive command handler also reads the stdin asynchronously.
+-- All available commands handled by the command handler are displayed when the
+-- program is run.  The following commands are available:
+--
+-- 1. @ps@: show threads
+-- 2. @log@: inspect the log of a thread
+-- 3. @end@, @exit@: terminate the program
+--
+-- An input not handled by the command handler can be handled by the program.
+--
+-- The program's command line is scanned for @-p@ or @--path@ command line
+-- options.  The arguments to these options are injected into the async input
+-- channel as keyboard input to the program. Each line of input is separated by
+-- a @/@. For example:
+--
+-- >  foo  -p  ps/end
+--
 keep :: Typeable a => TransIO a -> IO (Maybe a)
 keep mx = do
 
@@ -1237,10 +1306,14 @@ keep mx = do
    type1 :: TransIO a -> Either String (Maybe a)
    type1= undefined
 
--- | Same than `keep` but do not initiate the asynchronous keyboard input.
--- Useful for debugging or for creating background tasks, as well as to embed the Transient monad
--- inside another computation. It returns either the value returned by `exit`.
--- or Nothing, when there is no more threads running
+-- | Same as `keep` but does not read from the standard input, and therefore
+-- the async input APIs ('option' and 'input') cannot be used in the monad.
+-- However, keyboard input can still be passed via command line arguments as
+-- described in 'keep'.  Useful for debugging or for creating background tasks,
+-- as well as to embed the Transient monad inside another computation. It
+-- returns either the value returned by `exit`.  or Nothing, when there are no
+-- more threads running
+--
 keep' :: Typeable a => TransIO a -> IO  (Maybe a)
 keep' mx  = do
    liftIO $ hSetBuffering stdout LineBuffering
@@ -1266,8 +1339,8 @@ execCommandLine= do
           putStr "Executing: " >> print  path
           processLine  path
 
--- | Force the finalization of the main thread and thus, all the Transient block (and the application
--- if there is no more code)
+-- | Exit the main thread, and thus all the Transient threads (and the
+-- application if there is no more code)
 exit :: Typeable a => a -> TransIO a
 exit x= do
   Exit rexit <- getSData <|> error "exit: not the type expected"  `asTypeOf` type1 x
