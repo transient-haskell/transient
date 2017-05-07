@@ -60,14 +60,6 @@ import qualified Data.ByteString.Char8 as BS
 
 
 
--- | 'TransientIO' is a high level concurrency and asynchronous events monad.
--- It provides facilities to create and compose asynchronous computations as
--- well as streams of asynchronous events. Producers and consumers of events
--- can be composed together to create an arbitrarily complex reactive system.
--- Applicative, Alternative and Monad are the usual ways to compose
--- computations.  The degree of parallelism can be controlled by the
--- programmer.
---
 data TransIO  x = Transient  {runTrans :: StateT EventF IO (Maybe x)}
 type SData= ()
 
@@ -807,13 +799,19 @@ instance Read SomeException where
    readsPrec n str=
       let [(s , r)]= read str in [(SomeException $ ErrorCall s,r)]
 
--- | Async calls
+-- | 'StreamData' represents an event in a stream of events.
 
-data StreamData a=  SMore a | SLast a | SDone | SError SomeException deriving (Typeable, Show,Read)
+data StreamData a =
+      SMore a               -- ^ more events to come
+    | SLast a               -- ^ this is the last event
+    | SDone                 -- ^ no more events, we are done
+    | SError SomeException  -- ^ an error occurred
+    deriving (Typeable, Show,Read)
 
 
--- | Run an IO computation forever, in a loop, asynchronously. Return the
--- results as a stream of events.
+-- | An event generator that produces a stream of events by running an IO
+-- computation in a loop. An event is triggered using the output of the
+-- computation.
 --
 waitEvents ::   IO b -> TransIO b
 waitEvents io= do
@@ -822,7 +820,8 @@ waitEvents io= do
      SMore x -> return x
      SError e -> back  e
 
--- | Run an IO computation asynchronously and return the result.
+-- | Run an IO computation asynchronously and generate an event using the
+-- result of the computation when it completes.
 async  ::  IO b -> TransIO b
 async io= do
    mr <- parallel  (SLast <$> io)
@@ -841,11 +840,13 @@ sync x= do
   delData WasRemote
   return r
 
--- | @spawn= freeThreads . waitEvents@
+-- | @spawn = freeThreads . waitEvents@
 spawn= freeThreads . waitEvents
 
--- | Run an IO computation periodically and return the series of results. A
--- new sample is generated only if it is different from the previous one.
+-- | An event generator that produces a stream of events by running an IO
+-- computation periodically at the specified time interval. The value of the
+-- event is the result of the computation.  A new event is generated only if
+-- the event value is different from the previous one.
 sample :: Eq a => IO a -> Int -> TransIO a
 sample action interval= do
        v <-  liftIO action
@@ -887,20 +888,18 @@ sample action interval= do
 --                      loop cont ioaction
 
 
--- |  Return empty to the current thread and execute the IO action in a new thread.
--- When the IO action returns, the transient computation continues with this value as the result
--- The IO action may be re-executed or not depending on the result. So parallel can spawn any
--- number of threads/results.
+-- | Run an IO action, if possible, asynchronously in a new thread.  The IO
+-- action returns a 'StreamData'. When it returns an 'SMore' or 'SLast' the
+-- result generates a transient event. If the return value is 'SMore', the
+-- action is run again (asynchronously) to generate the next element in the
+-- stream of events, otherwise event generation stops.  If the maximum number
+-- of threads set with 'threads' has been reached, `parallel` falls back to
+-- working synchronously, in the current thread.
 --
--- If the maximum number of threads, set with `threads` has been reached  `parallel` perform
--- the work sequentially, in the current thread.
--- So `parallel` means that 'it can be parallelized if there are thread available'
+-- 'parallel' returns 'empty' when it chooses to run asynchronously, to allow
+-- concatenation of multiple asynchronous event generators using '<|>' in an
+-- 'Alternative' composition.
 --
--- if there is a limitation of threads, when a thread finish, the counter of threads available
--- is increased so another `parallel` can make use of it.
---
--- The behaviour of `parallel` depend on `StreamData`; If `SMore`, `parallel` will excute again the
--- IO action. With `SLast`, `SDone` and `SError`, `parallel` will not repeat the IO action anymore.
 parallel  ::    IO (StreamData b) -> TransIO (StreamData b)
 parallel  ioaction= Transient $ do
     cont <- get                    -- !> "PARALLEL"
@@ -1061,15 +1060,18 @@ killChildren childs  = do
 
 
 
--- | De-invert an event handler.
+-- | Make a transient event generator from an asynchronous callback handler.
 --
--- The first parameter is the setter of the event handler  to be
--- deinverted. Usually it is the primitive provided by a framework to set an event handler
+-- The first parameter is a callback. The second parameter is a value to be
+-- returned to the callback; if the callback expects no return value it
+-- can just be a @return ()@. The callback expects a setter function taking the
+-- @eventdata@ as an argument and returning a value to the callback; this
+-- function is provided by 'react'.
 --
--- the second parameter is the value to return to the event handler. Usually it is `return()`
+-- Callbacks from foreign code can be wrapped into such a handler and hooked
+-- into the transient monad using 'react'. Every time the callback is called it
+-- generates an event for the transient monad.
 --
--- it configures the event handler by calling the setter of the event
--- handler with the current continuation
 react
   :: Typeable eventdata
   => ((eventdata ->  IO response) -> IO ())
@@ -1090,9 +1092,8 @@ react setHandler iob= Transient $ do
             put cont{event=Nothing}
             return $ unsafeCoerce j
 
--- | continue the computation in another thread and return `empty` to the computation in the curren thread.
---
--- Useful for executing alternative computations
+-- | Runs a computation asynchronously without generating any events. Returns
+-- 'empty' in an 'Alternative' composition.
 
 abduce = Transient $ do
    st <-  get
@@ -1123,8 +1124,8 @@ roption= unsafePerformIO $ newMVar []
 
 -- | Waits on stdin in a loop and triggers an event every time the input data
 -- matches the first argument.  The result is the matched value i.e. the first
--- argument  itself. The second argument is a string to identify this option.
--- When the program is run every option is displayed on the stdout.
+-- argument  itself. The second argument is a label for the option. The label
+-- is displayed on the console when the option is activated.
 --
 -- Note that if two independent invocations of 'option' are expecting the same
 -- input, only one of them gets it and triggers an event. It cannot be
@@ -1142,9 +1143,9 @@ option ret message= do
     return ret
 
 
--- | Waits on stdin until the input matches the predicate specified in the
--- first argument.  The second argument is a string to identify this input
--- consumer.
+-- | Waits on stdin and fires an event when a console input matches the
+-- predicate specified in the first argument.  The second argument is a string
+-- displayed on the console before waiting.
 --
 input :: (Typeable a, Read a,Show a) => (a -> Bool) -> String -> TransIO a
 input cond prompt= Transient . liftIO $do
