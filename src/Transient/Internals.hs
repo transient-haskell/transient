@@ -60,14 +60,6 @@ import qualified Data.ByteString.Char8 as BS
 
 
 
--- | 'TransientIO' is a high level concurrency and asynchronous events monad.
--- It provides facilities to create and compose asynchronous computations as
--- well as streams of asynchronous events. Producers and consumers of events
--- can be composed together to create an arbitrarily complex reactive system.
--- Applicative, Alternative and Monad are the usual ways to compose
--- computations.  The degree of parallelism can be controlled by the
--- programmer.
---
 data TransIO  x = Transient  {runTrans :: StateT EventF IO (Maybe x)}
 type SData= ()
 
@@ -520,8 +512,10 @@ instance MonadIO TransIO where
 waitQSemB sem= atomicModifyIORef sem $ \n -> if n > 0 then(n-1,True) else (n,False)
 signalQSemB sem= atomicModifyIORef sem  $ \n ->  (n + 1,())
 
--- | Set the maximun number of threads for a procedure. It is useful to limit the
--- parallelization of transient code that uses `parallel` `spawn` and `waitEvents`
+-- | Set the maximum number of threads for a procedure. When set to 0 it
+-- results in fully synchronous operation. It is useful to limit the
+-- parallelization of transient code that uses `parallel` `spawn` and
+-- `waitEvents`
 threads :: Int -> TransIO a -> TransIO a
 threads n proc=  do
    msem <- gets maxThread
@@ -700,8 +694,9 @@ killBranch' cont= liftIO $ do
 
 -- * extensible state: session data management
 
--- | When 'getData' is used the type is determined from the context
--- and the corresponding value from the map is returned.
+-- | Same as 'getSData' but with a more general type.  If the data is found, a
+-- 'Just' value is returned otherwise a 'Nothing' value is returned.
+--
 getData ::  (MonadState EventF m,Typeable a) =>  m (Maybe a)
 getData =  resp where
  resp= gets mfData >>= \list  ->
@@ -712,44 +707,53 @@ getData =  resp where
  typeResp= undefined
 
 
--- | getData specialized for the Transient monad. if Nothing, the
--- monadic computation does not continue.
+-- | Retrieve a previously stored data item of the given data type from the
+-- monad state. The data type to retrieve is implicitly determined from the
+-- requested type context.
+-- If the data item is not found, an 'empty' value (a void event) is returned.
+-- Remember that an empty value stops the monad computation. If you want to
+-- print an error message or a default value in that case, you can use an
+-- 'Alternative' composition. For example:
 --
--- If there is no such data, `getSData`  silently stop the computation.
--- That may or may not be the desired behaviour.
--- To make sure that this does not get unnoticed, use this construction:
+-- > getSData <|> error "no data"
+-- > getInt = getSData <|> return (0 :: Int)
 --
--- >  getSData <|> error "no data"
---
--- To have the same semantics and guarantees than `get`, use a default value:
---
--- > getInt= getSData <|> return (0 :: Int)
---
--- The default value (0 in this case) has the same role than the initial value in a state monad.
--- The difference is that you can define as many `get` as you need for all your data types.
---
--- To distingish two data with the same types, use newtype definitions.
 getSData ::  Typeable a => TransIO  a
 getSData= Transient getData
 
--- | Synonym for `getSData`
+-- | Same as `getSData`
 getState ::  Typeable a => TransIO  a
 getState= getSData
 
--- | State data is maintained as a 'Map'. The map stores values keyed by their
--- types. This means that only one value of a certain type can be stored.
--- 'setData' sets the session data for the type corresponding to its argument.
--- This data can later be retrieved using 'getData' or 'getSData'.  Note that this
--- is data in a state monad, therefore updates only affect downstream
--- in the monad execution. It is neither a global state nor a per user or per
--- thread state, it is a monadic state like the one of a state monad.
+-- | 'setData' stores a data item in the monad state which can be retrieved
+-- later using 'getData' or 'getSData'. Stored data items are keyed by their
+-- data type, and therefore only one item of a given type can be stored. A
+-- newtype wrapper can be used to distinguish two data items of the same type.
+--
+-- @
+-- import Control.Monad.IO.Class (liftIO)
+-- import Transient.Base
+-- import Data.Typeable
+--
+-- data Person = Person
+--    { name :: String
+--    , age :: Int
+--    } deriving Typeable
+--
+-- main = keep $ do
+--      setData $ Person "Alberto"  55
+--      Person name age <- getSData
+--      liftIO $ print (name, age)
+-- @
+
 setData ::  (MonadState EventF m, Typeable a) => a -> m ()
 setData  x=
   let t= typeOf x in  modify $ \st -> st{mfData= M.insert  t (unsafeCoerce x) (mfData st)}
 
 
--- | Modify state data. It accept a function that get the current state (if exist) as parameter.
--- The state will be deleted or changed depending on function result
+-- | Accepts a function that takes the current value of the stored data type
+-- and returns the modified value. If the function returns 'Nothing' the value
+-- is deleted otherwise updated.
 modifyData :: (MonadState EventF m, Typeable a)  => (Maybe a -> Maybe a) -> m ()
 modifyData f=  modify $ \st -> st{mfData=
        let  t= typeOf $ typeResp f
@@ -763,21 +767,25 @@ modifyData f=  modify $ \st -> st{mfData=
                   Nothing -> Nothing
       in   unsafeCoerce $ f x'
 
--- | Synonym for modifyData
+-- | Same as modifyData
 modifyState :: (MonadState EventF m, Typeable a)  => (Maybe a -> Maybe a) -> m ()
 modifyState= modifyData
 
--- | Synonym for `setData`
+-- | Same as 'setData'
 setState  ::  (MonadState EventF m, Typeable a) => a -> m ()
 setState= setData
 
+-- | Delete the data item of the given type from the monad state.
 delData :: ( MonadState EventF m,Typeable a) => a -> m ()
 delData x=  modify $ \st -> st{mfData= M.delete (typeOf x ) (mfData st)}
 
+-- | Same as 'delData'
 delState :: ( MonadState EventF m,Typeable a) => a -> m ()
 delState= delData
 
--- | Executes the computation and reset the state if it fails.
+-- | Try a computation, and if it results in an empty value undo any
+-- state changes that it might have effected.
+--
 try :: TransIO a -> TransIO a
 try mx= do
     sd <- gets mfData
@@ -807,13 +815,19 @@ instance Read SomeException where
    readsPrec n str=
       let [(s , r)]= read str in [(SomeException $ ErrorCall s,r)]
 
--- | Async calls
+-- | 'StreamData' represents an event in a stream of events.
 
-data StreamData a=  SMore a | SLast a | SDone | SError SomeException deriving (Typeable, Show,Read)
+data StreamData a =
+      SMore a               -- ^ more events to come
+    | SLast a               -- ^ this is the last event
+    | SDone                 -- ^ no more events, we are done
+    | SError SomeException  -- ^ an error occurred
+    deriving (Typeable, Show,Read)
 
 
--- | Run an IO computation forever, in a loop, asynchronously. Return the
--- results as a stream of events.
+-- | An event generator that produces a stream of events by running an IO
+-- computation in a loop. An event is triggered using the output of the
+-- computation. See 'parallel' for notes on the return value.
 --
 waitEvents ::   IO b -> TransIO b
 waitEvents io= do
@@ -822,7 +836,10 @@ waitEvents io= do
      SMore x -> return x
      SError e -> back  e
 
--- | Run an IO computation asynchronously and return the result.
+-- | Run an IO computation asynchronously and generate an event using the
+-- result of the computation when it completes. See 'parallel' for notes on the
+-- return value.
+--
 async  ::  IO b -> TransIO b
 async io= do
    mr <- parallel  (SLast <$> io)
@@ -841,11 +858,15 @@ sync x= do
   delData WasRemote
   return r
 
--- | @spawn= freeThreads . waitEvents@
+-- | @spawn = freeThreads . waitEvents@
 spawn= freeThreads . waitEvents
 
--- | Run an IO computation periodically and return the series of results. A
--- new sample is generated only if it is different from the previous one.
+-- | An event generator that produces a stream of events by running an IO
+-- computation periodically at the specified time interval. The value of the
+-- event is the result of the computation.  A new event is generated only if
+-- the event value is different from the previous one.
+-- See 'parallel' for notes on the return value.
+--
 sample :: Eq a => IO a -> Int -> TransIO a
 sample action interval= do
        v <-  liftIO action
@@ -887,20 +908,18 @@ sample action interval= do
 --                      loop cont ioaction
 
 
--- |  Return empty to the current thread and execute the IO action in a new thread.
--- When the IO action returns, the transient computation continues with this value as the result
--- The IO action may be re-executed or not depending on the result. So parallel can spawn any
--- number of threads/results.
+-- | Run an IO action one or more times to generate a stream of events. The IO
+-- action returns a 'StreamData'. When it returns an 'SMore' or 'SLast' an
+-- event is triggered with the result value. If the return value is 'SMore',
+-- the action is run again to generate the next event in the stream of events,
+-- otherwise event generation stops.
 --
--- If the maximum number of threads, set with `threads` has been reached  `parallel` perform
--- the work sequentially, in the current thread.
--- So `parallel` means that 'it can be parallelized if there are thread available'
+-- When possible the event is generated asynchronously, in a new thread. In
+-- that case, 'parallel' returns a value representing the void stream in the
+-- current thread.  If the maximum number of threads (set with 'threads') has
+-- been reached, `parallel` falls back to working synchronously, in the current
+-- thread.
 --
--- if there is a limitation of threads, when a thread finish, the counter of threads available
--- is increased so another `parallel` can make use of it.
---
--- The behaviour of `parallel` depend on `StreamData`; If `SMore`, `parallel` will excute again the
--- IO action. With `SLast`, `SDone` and `SError`, `parallel` will not repeat the IO action anymore.
 parallel  ::    IO (StreamData b) -> TransIO (StreamData b)
 parallel  ioaction= Transient $ do
     cont <- get                    -- !> "PARALLEL"
@@ -1061,15 +1080,18 @@ killChildren childs  = do
 
 
 
--- | De-invert an event handler.
+-- | Make a transient event generator from an asynchronous callback handler.
 --
--- The first parameter is the setter of the event handler  to be
--- deinverted. Usually it is the primitive provided by a framework to set an event handler
+-- The first parameter is a callback. The second parameter is a value to be
+-- returned to the callback; if the callback expects no return value it
+-- can just be a @return ()@. The callback expects a setter function taking the
+-- @eventdata@ as an argument and returning a value to the callback; this
+-- function is provided by 'react'.
 --
--- the second parameter is the value to return to the event handler. Usually it is `return()`
+-- Callbacks from foreign code can be wrapped into such a handler and hooked
+-- into the transient monad using 'react'. Every time the callback is called it
+-- generates an event for the transient monad.
 --
--- it configures the event handler by calling the setter of the event
--- handler with the current continuation
 react
   :: Typeable eventdata
   => ((eventdata ->  IO response) -> IO ())
@@ -1090,9 +1112,8 @@ react setHandler iob= Transient $ do
             put cont{event=Nothing}
             return $ unsafeCoerce j
 
--- | continue the computation in another thread and return `empty` to the computation in the curren thread.
---
--- Useful for executing alternative computations
+-- | Runs a computation asynchronously without generating any events. Returns
+-- 'empty' in an 'Alternative' composition.
 
 abduce = Transient $ do
    st <-  get
@@ -1123,8 +1144,8 @@ roption= unsafePerformIO $ newMVar []
 
 -- | Waits on stdin in a loop and triggers an event every time the input data
 -- matches the first argument.  The result is the matched value i.e. the first
--- argument  itself. The second argument is a string to identify this option.
--- When the program is run every option is displayed on the stdout.
+-- argument  itself. The second argument is a label for the option. The label
+-- is displayed on the console when the option is activated.
 --
 -- Note that if two independent invocations of 'option' are expecting the same
 -- input, only one of them gets it and triggers an event. It cannot be
@@ -1142,9 +1163,9 @@ option ret message= do
     return ret
 
 
--- | Waits on stdin until the input matches the predicate specified in the
--- first argument.  The second argument is a string to identify this input
--- consumer.
+-- | Waits on stdin and fires an event when a console input matches the
+-- predicate specified in the first argument.  The second argument is a string
+-- displayed on the console before waiting.
 --
 input :: (Typeable a, Read a,Show a) => (a -> Bool) -> String -> TransIO a
 input cond prompt= Transient . liftIO $do
