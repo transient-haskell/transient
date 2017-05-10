@@ -512,10 +512,10 @@ instance MonadIO TransIO where
 waitQSemB sem= atomicModifyIORef sem $ \n -> if n > 0 then(n-1,True) else (n,False)
 signalQSemB sem= atomicModifyIORef sem  $ \n ->  (n + 1,())
 
--- | Set the maximum number of threads for a procedure. When set to 0 it
--- results in fully synchronous operation. It is useful to limit the
--- parallelization of transient code that uses `parallel` `spawn` and
--- `waitEvents`
+-- | Sets the maximum number of new threads that can be created for a task set.
+-- When set to 0, new tasks start synchronously in the current thread. New
+-- threads are created by 'parallel', and APIs that use parallel.
+--
 threads :: Int -> TransIO a -> TransIO a
 threads n proc=  do
    msem <- gets maxThread
@@ -815,19 +815,19 @@ instance Read SomeException where
    readsPrec n str=
       let [(s , r)]= read str in [(SomeException $ ErrorCall s,r)]
 
--- | 'StreamData' represents an event in a stream of events.
+-- | 'StreamData' represents a task in a task stream being generated.
 
 data StreamData a =
-      SMore a               -- ^ more events to come
-    | SLast a               -- ^ this is the last event
-    | SDone                 -- ^ no more events, we are done
+      SMore a               -- ^ more tasks to come
+    | SLast a               -- ^ this is the last task
+    | SDone                 -- ^ no more tasks, we are done
     | SError SomeException  -- ^ an error occurred
     deriving (Typeable, Show,Read)
 
 
--- | An event generator that produces a stream of events by running an IO
--- computation in a loop. An event is triggered using the output of the
--- computation. See 'parallel' for notes on the return value.
+-- | An task stream generator that produces an infinite stream of tasks by
+-- running an IO computation in a loop. A task is triggered carrying the output
+-- of the computation. See 'parallel' for notes on the return value.
 --
 waitEvents ::   IO b -> TransIO b
 waitEvents io= do
@@ -836,9 +836,9 @@ waitEvents io= do
      SMore x -> return x
      SError e -> back  e
 
--- | Run an IO computation asynchronously and generate an event using the
--- result of the computation when it completes. See 'parallel' for notes on the
--- return value.
+-- | Run an IO computation asynchronously and generate a single task carrying
+-- the result of the computation when it completes. See 'parallel' for notes on
+-- the return value.
 --
 async  ::  IO b -> TransIO b
 async io= do
@@ -861,11 +861,11 @@ sync x= do
 -- | @spawn = freeThreads . waitEvents@
 spawn= freeThreads . waitEvents
 
--- | An event generator that produces a stream of events by running an IO
--- computation periodically at the specified time interval. The value of the
--- event is the result of the computation.  A new event is generated only if
--- the event value is different from the previous one.
--- See 'parallel' for notes on the return value.
+-- | An task stream generator that produces an infinite stream of tasks by
+-- running an IO computation periodically at the specified time interval. The
+-- task carries the result of the computation.  A new task is generated only if
+-- the output of the computation is different from the previous one.  See
+-- 'parallel' for notes on the return value.
 --
 sample :: Eq a => IO a -> Int -> TransIO a
 sample action interval= do
@@ -908,17 +908,15 @@ sample action interval= do
 --                      loop cont ioaction
 
 
--- | Run an IO action one or more times to generate a stream of events. The IO
--- action returns a 'StreamData'. When it returns an 'SMore' or 'SLast' an
--- event is triggered with the result value. If the return value is 'SMore',
--- the action is run again to generate the next event in the stream of events,
--- otherwise event generation stops.
+-- | Run an IO action one or more times to generate a stream of tasks. The IO
+-- action returns a 'StreamData'. When it returns an 'SMore' or 'SLast' a new
+-- task is triggered with the result value. If the return value is 'SMore', the
+-- action is run again to generate the next task, otherwise task creation
+-- stops.
 --
--- When possible the event is generated asynchronously, in a new thread. In
--- that case, 'parallel' returns a value representing the void stream in the
--- current thread.  If the maximum number of threads (set with 'threads') has
--- been reached, `parallel` falls back to working synchronously, in the current
--- thread.
+-- Unless the maximum number of threads (set with 'threads') has been reached,
+-- the task is generated in a new thread and the current thread returns a void
+-- task.
 --
 parallel  ::    IO (StreamData b) -> TransIO (StreamData b)
 parallel  ioaction= Transient $ do
@@ -1080,17 +1078,17 @@ killChildren childs  = do
 
 
 
--- | Make a transient event generator from an asynchronous callback handler.
+-- | Make a transient task generator from an asynchronous callback handler.
 --
 -- The first parameter is a callback. The second parameter is a value to be
 -- returned to the callback; if the callback expects no return value it
 -- can just be a @return ()@. The callback expects a setter function taking the
 -- @eventdata@ as an argument and returning a value to the callback; this
--- function is provided by 'react'.
+-- function is supplied by 'react'.
 --
 -- Callbacks from foreign code can be wrapped into such a handler and hooked
 -- into the transient monad using 'react'. Every time the callback is called it
--- generates an event for the transient monad.
+-- generates a new task for the transient monad.
 --
 react
   :: Typeable eventdata
@@ -1142,13 +1140,14 @@ getLineRef= unsafePerformIO $ newTVarIO Nothing
 
 roption= unsafePerformIO $ newMVar []
 
--- | Waits on stdin in a loop and triggers an event every time the input data
--- matches the first argument.  The result is the matched value i.e. the first
--- argument  itself. The second argument is a label for the option. The label
--- is displayed on the console when the option is activated.
+-- | Waits on stdin in a loop and triggers a new task every time the input data
+-- matches the first parameter.  The value contained by the task is the matched
+-- value i.e. the first argument  itself. The second parameter is a label for
+-- the option. The label is displayed on the console when the option is
+-- activated.
 --
 -- Note that if two independent invocations of 'option' are expecting the same
--- input, only one of them gets it and triggers an event. It cannot be
+-- input, only one of them gets it and triggers a task. It cannot be
 -- predicted which one gets it.
 --
 option :: (Typeable b, Show b, Read b, Eq b) =>
@@ -1163,9 +1162,9 @@ option ret message= do
     return ret
 
 
--- | Waits on stdin and fires an event when a console input matches the
--- predicate specified in the first argument.  The second argument is a string
--- displayed on the console before waiting.
+-- | Waits on stdin and triggers a task when a console input matches the
+-- predicate specified in the first argument.  The second parameter is a string
+-- to be displayed on the console before waiting.
 --
 input :: (Typeable a, Read a,Show a) => (a -> Bool) -> String -> TransIO a
 input cond prompt= Transient . liftIO $do
