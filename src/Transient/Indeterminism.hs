@@ -2,7 +2,7 @@
 --
 -- Module      :  Transient.Indeterminism
 -- Copyright   :
--- License     :  GPL (Just (Version {versionBranch = [3], versionTags = []}))
+-- License     :  MIT
 --
 -- Maintainer  :  agocorona@gmail.com
 -- Stability   :
