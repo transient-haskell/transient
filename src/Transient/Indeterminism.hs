@@ -2,7 +2,7 @@
 --
 -- Module      :  Transient.Indeterminism
 -- Copyright   :
--- License     :  GPL (Just (Version {versionBranch = [3], versionTags = []}))
+-- License     :  MIT
 --
 -- Maintainer  :  agocorona@gmail.com
 -- Stability   :
@@ -29,8 +29,9 @@ import Data.Time.Clock
 import Control.Exception
 
 
--- | slurp a list of values and process them in parallel . To limit the number of processing
--- threads, use `threads`
+-- | Converts a list of pure values into a transient task set. You can use the
+-- 'threads' primitive to control the parallelism.
+--
 choose  :: Show a =>  [a] -> TransIO a
 choose []= empty
 choose   xs = do
@@ -42,12 +43,15 @@ choose   xs = do
             x:_  -> x `seq` return $ SMore x
     checkFinalize r
 
--- | alternative definition with more parallelism, as the composition of n `async` sentences
+-- | Same as 'choose' except that the 'threads' combinator cannot be used,
+-- instead the parent thread's limit applies.
+--
 choose' :: [a] -> TransIO a
 choose' xs = foldl (<|>) empty $ map (async . return) xs
 
 
--- | group the output of a possible multithreaded process in groups of n elements.
+-- | Collect the results of a task set in groups of @n@ elements.
+--
 group :: Int -> TransIO a -> TransIO [a]
 group num proc =  do
     v <- liftIO $ newIORef (0,[])
@@ -63,7 +67,9 @@ group num proc =  do
       Nothing -> stop
       Just xs -> return xs
 
--- | group result for a time interval, measured with `diffUTCTime`
+-- | Collect the results of a task set, grouping all results received within
+-- every time interval specified by the first parameter as `diffUTCTime`.
+--
 groupByTime :: Integer -> TransIO a -> TransIO [a]
 
 groupByTime time proc =  do
@@ -82,33 +88,20 @@ groupByTime time proc =  do
 
 
 
--- collect the results of a search done in parallel, usually initiated by
--- `choose` .
+-- | Collect the results of the first @n@ tasks.  Synchronizes concurrent
+-- tasks to collect the results safely and kills all the non-free threads
+-- before returning the results.
 --
--- execute a process and get at least the first n solutions (they could be more).
--- if he find the number of solutions requested, it kill the non-free threads of the process and return
 collect ::  Int -> TransIO a -> TransIO [a]
 collect n = collect' n 0
 
--- | search with a timeout
--- After the  timeout, it stop unconditionally and return the current results.
--- It also stops as soon as there are enough results specified in the first parameter.
--- The results are returned by the original thread
+-- | Collect the results of the first @n@ tasks (first parameter). If timeout
+-- (second parameter) is non-zero, collection stops after the timeout and the
+-- results collected till now are returned.  Synchronizes concurrent tasks to
+-- collect the results safely and kills all the non-free threads before
+-- returning the results. Results are returned in the thread where 'collect''
+-- is called.
 --
--- >     timeout t proc=do
--- >       r <- collect' 1 t proc
--- >       case r of
--- >          []  ->  empty
--- >          r:_ -> return r
---
--- >     timeout 10000 empty <|> liftIO (print "timeout")
---
--- That executes the alternative and will print "timeout".
--- This would not be produced if collect would not return the results to the original thread
---
--- `search` is executed in different threads and his state is lost, so don't rely in state
--- to pass information
-
 collect' :: Int -> Int -> TransIO a -> TransIO [a]
 collect' n t search= do
 
