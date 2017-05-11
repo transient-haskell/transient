@@ -88,19 +88,24 @@ groupByTime time proc =  do
 
 
 
--- | Collect the results of the first @n@ tasks.  Synchronizes concurrent
--- tasks to collect the results safely and kills all the non-free threads
--- before returning the results.
+-- XXX Collect might return before collecting @n@ results if the runtime
+-- detects that there is absolutely no possibility of more tasks to be
+-- collected (using 'BlockedIndefinitelyOnMVar'). This is inconsistent with the
+-- behavior of group. We should perhaps return 'stop' in the failure case to
+-- keep it consistent with group.
+--
+-- | Collect the results of the first @n@ tasks.  Synchronizes concurrent tasks
+-- to collect the results safely and kills all the non-free threads before
+-- returning the results.  Results are returned in the thread where 'collect'
+-- is called.
 --
 collect ::  Int -> TransIO a -> TransIO [a]
 collect n = collect' n 0
 
--- | Collect the results of the first @n@ tasks (first parameter). If timeout
--- (second parameter) is non-zero, collection stops after the timeout and the
--- results collected till now are returned.  Synchronizes concurrent tasks to
--- collect the results safely and kills all the non-free threads before
--- returning the results. Results are returned in the thread where 'collect''
--- is called.
+-- | Like 'collect' but with a timeout. When the timeout is zero it behaves
+-- exactly like 'collect'. If the timeout (second parameter) is non-zero,
+-- collection stops after the timeout and the results collected till now are
+-- returned.
 --
 collect' :: Int -> Int -> TransIO a -> TransIO [a]
 collect' n t search= do

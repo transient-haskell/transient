@@ -91,7 +91,7 @@
 -- == Composing Tasks
 --
 -- The type @TransientIO a@ represents a /task set/ with each task in
--- the set returning a value of type @a@.  An task set could be /finite/ or
+-- the set returning a value of type @a@.  A task set could be /finite/ or
 -- /infinite/; multiple tasks could run simultaneously.  The absence of a task,
 -- a void task set or failure is denoted by a special value 'empty' in an
 -- 'Alternative' composition, or the 'stop' primitive in a monadic composition.
@@ -233,6 +233,10 @@
 module Transient.Base(
 -- * The Monad
 TransIO(..), TransientIO
+
+-- * Task Composition Operators
+, (**>), (<**), (<***), (<|)
+
 -- * Running the monad
 ,keep, keep', stop, exit
 
@@ -250,10 +254,7 @@ TransIO(..), TransientIO
 -- * Thread management
 , threads,addThreads, freeThreads, hookedThreads,oneThread, killChilds
 
--- * Additional operators
-, (**>), (<**),(<***), (<|)
-
--- * exceptions
+-- * Exceptions
 
 ,onException, cutExceptions, continue
 
