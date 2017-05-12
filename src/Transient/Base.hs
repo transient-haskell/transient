@@ -255,6 +255,7 @@ TransIO(..), TransientIO
 , threads,addThreads, freeThreads, hookedThreads,oneThread, killChilds
 
 -- * Exceptions
+-- $exceptions
 
 ,onException, cutExceptions, continue
 
@@ -271,4 +272,10 @@ import    Transient.Internals
 --
 -- These primitives are used to create asynchronous and concurrent tasks from
 -- an IO action.
+--
+
+-- $exceptions
+--
+-- Exception handlers are merely undo actions for the "'SomeException'" undo
+-- track. See 'Transient.Backtrack.back'.
 --

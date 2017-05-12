@@ -1400,7 +1400,7 @@ backCut reason= Transient $ do
      delData $ Backtrack (Just reason)  []
      return $ Just ()
 
--- | 'backCut' for the default track (i.e. @backCut ()@).
+-- | 'backCut' for the default track; equivalent to @backCut ()@.
 undoCut ::  TransientIO ()
 undoCut = backCut ()
 
@@ -1421,7 +1421,7 @@ onBack ac bac = registerBack (typeof bac) $ Transient $ do
      typeof :: (b -> TransIO a) -> b
      typeof = undefined
 
--- | 'onBack' for the default track (i.e. @onBack ()@).
+-- | 'onBack' for the default track; equivalent to @onBack ()@.
 onUndo ::  TransientIO a -> TransientIO a -> TransientIO a
 onUndo x y= onBack x (\() -> y)
 
@@ -1466,7 +1466,7 @@ forward reason= Transient $ do
     setData $ Backtrack(Nothing `asTypeOf` Just reason)  stack
     return $ Just ()
 
--- | 'forward' for the default track (i.e. @forward ()@).
+-- | 'forward' for the default track; equivalent to @forward ()@.
 retry= forward ()
 
 noFinish= forward (FinishReason Nothing)
@@ -1507,7 +1507,7 @@ back reason = Transient $ do
 backStateOf :: (Monad m, Show a, Typeable a) => a -> m (Backtrack a)
 backStateOf reason= return $ Backtrack (Nothing `asTypeOf` (Just reason)) []
 
--- | 'back' for the default track (i.e. @back ()@).
+-- | 'back' for the default track; equivalent to @back ()@.
 --
 undo ::  TransIO a
 undo= back ()
@@ -1548,8 +1548,8 @@ checkFinalize v=
       SMore x -> return x
 
 ------ exceptions ---
--- | Install an exception handler. On exception, installed handlers are
--- executed in a last in first out (LIFO) order.
+-- | Install an exception handler. On exception, currently installed handlers
+-- are executed in reverse (i.e. last in first out) order.
 --
 onException :: Exception e => (e -> TransIO ()) -> TransIO ()
 onException exc= return () `onException'` exc
@@ -1564,10 +1564,12 @@ onException' mx f= onAnyException mx $ \e ->
   onAnyException :: TransIO a -> (SomeException ->TransIO a) -> TransIO a
   onAnyException mx f=  mx `onBack` f
 
--- | stop the backtracking mechanism from executing further handlers
+-- | Delete all the exception handlers registered till now.
 cutExceptions= backCut (undefined :: SomeException)
 
--- | Resume to normal execution at this point
+-- | Used inside an exception handler. Stop executing any further exception
+-- handlers and continue normal execution from this point on.
+--
 continue = forward (undefined :: SomeException)
 
 
