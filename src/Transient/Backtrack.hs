@@ -17,11 +17,11 @@ module Transient.Backtrack (
 
 -- * Multi-track Undo
 -- $multitrack
-onBack, back, forward, backCut,registerBack,
+onBack, back, forward, backCut,
 
 -- * Default Track Undo
 -- $defaulttrack
-onUndo, undo, retry, undoCut,registerUndo,
+onUndo, undo, retry, undoCut,
 
 -- * Finalization Primitives
 finish, onFinish, onFinish' ,initFinish , noFinish,checkFinalize , FinishReason
