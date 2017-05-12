@@ -783,8 +783,8 @@ delData x=  modify $ \st -> st{mfData= M.delete (typeOf x ) (mfData st)}
 delState :: ( MonadState EventF m,Typeable a) => a -> m ()
 delState= delData
 
--- | Try a computation, and if it results in an empty value undo any
--- state changes that it might have effected.
+-- | Run an action, if the result is a void action undo any state changes
+-- that it might have caused.
 --
 try :: TransIO a -> TransIO a
 try mx= do
@@ -1372,7 +1372,8 @@ exit x= do
 
 
 
--- | Alternative operator for maybe values. Used  in infix mode
+-- | If the first parameter is 'Nothing' return the second parameter otherwise
+-- return the first parameter..
 onNothing :: Monad m => m (Maybe b) -> m b -> m b
 onNothing iox iox'= do
        mx <- iox
@@ -1393,16 +1394,22 @@ data Backtrack b= Show b =>Backtrack{backtracking :: Maybe b
 
 
 
--- | Assures that backtracking will not go further back
-backCut :: (Typeable reason, Show reason) => reason -> TransientIO ()
+-- | Delete all the undo actions registered till now for the given track.
+backCut :: (Typeable b, Show b) => b -> TransientIO ()
 backCut reason= Transient $ do
      delData $ Backtrack (Just reason)  []
      return $ Just ()
 
+-- | 'backCut' for the default track (i.e. @backCut ()@).
 undoCut ::  TransientIO ()
 undoCut = backCut ()
 
--- | The second parameter will be executed when backtracking
+-- | Run the action in the first parameter and register the action provided by
+-- the second parameter as the undo action for the given undo track.  The
+-- second parameter is a function that takes an undo track as argument and
+-- returns the corresponding undo action. The type of the undo track argument
+-- identifies the track, its value is never used.
+--
 {-# NOINLINE onBack #-}
 onBack :: (Typeable b, Show b) => TransientIO a -> ( b -> TransientIO a) -> TransientIO a
 onBack ac bac = registerBack (typeof bac) $ Transient $ do
@@ -1414,11 +1421,15 @@ onBack ac bac = registerBack (typeof bac) $ Transient $ do
      typeof :: (b -> TransIO a) -> b
      typeof = undefined
 
+-- | 'onBack' for the default track (i.e. @onBack ()@).
 onUndo ::  TransientIO a -> TransientIO a -> TransientIO a
 onUndo x y= onBack x (\() -> y)
 
 
--- | Register an action that will be executed when backtracking
+-- | Register an undo action to be executed when backtracking. The first
+-- parameter is a "witness" whose data type is used to uniquely identify this
+-- backtracking action. The value of the witness parameter is not used.
+--
 {-# NOINLINE registerUndo #-}
 registerBack :: (Typeable b, Show b) => b -> TransientIO a -> TransientIO a
 registerBack witness f  = Transient $ do
@@ -1443,22 +1454,29 @@ registerBack witness f  = Transient $ do
 registerUndo :: TransientIO a -> TransientIO a
 registerUndo f= registerBack ()  f
 
--- | backtracking is stopped. the exection continues forward from this point on.
+-- XXX Should we enforce retry of the same track which is being undone? If the
+-- user specifies a different track would it make sense?
+--
+-- | For a given undo track, stop backtracking and start executing in the
+-- forward direction. Used inside an undo action.
+--
 forward :: (Typeable b, Show b) => b -> TransIO ()
 forward reason= Transient $ do
     Backtrack _ stack <- getData `onNothing`  (backStateOf reason)
     setData $ Backtrack(Nothing `asTypeOf` Just reason)  stack
     return $ Just ()
 
+-- | 'forward' for the default track (i.e. @forward ()@).
 retry= forward ()
 
 noFinish= forward (FinishReason Nothing)
 
--- | Execute backtracking. It execute the registered actions in reverse order.
+-- | Start the undo process for the given undo track. Performs all the undo
+-- actions registered till now in reverse order. An undo action can use
+-- 'forward' to stop the undo process and start forward execution. If there are
+-- no more undo actions registered execution stops and a 'stop' action is
+-- returned.
 --
--- If the backtracking flag is changed the flow proceed  forward from that point on.
---
--- If the backtrack stack is finished or undoCut executed, the backtracking will stop.
 back :: (Typeable b, Show b) => b -> TransientIO a
 back reason = Transient $ do
   bs <- getData  `onNothing`  backStateOf  reason           -- !!>"GOBACK"
@@ -1489,6 +1507,8 @@ back reason = Transient $ do
 backStateOf :: (Monad m, Show a, Typeable a) => a -> m (Backtrack a)
 backStateOf reason= return $ Backtrack (Nothing `asTypeOf` (Just reason)) []
 
+-- | 'back' for the default track (i.e. @back ()@).
+--
 undo ::  TransIO a
 undo= back ()
 

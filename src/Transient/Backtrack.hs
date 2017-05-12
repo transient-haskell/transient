@@ -1,15 +1,29 @@
 {-# LANGUAGE DeriveDataTypeable #-}
 {-# LANGUAGE ExistentialQuantification #-}
 
--- | <https://www.fpcomplete.com/user/agocorona/the-hardworking-programmer-ii-practical-backtracking-to-undo-actions>
+-- | Transient allows you to pair an action with an undo action. As actions are
+-- executed the corresponding undo actions are saved. At any point an 'undo'
+-- can be triggered which executes all the undo actions registered till now in
+-- reverse order. An undo action can decide to reverse the execution by using
+-- 'retry', forward execution will resume from that point on. Multiple
+-- independent undo tracks can be defined. There is an implicit default track
+-- for common case.
+--
+-- See
+-- <https://www.fpcomplete.com/user/agocorona/the-hardworking-programmer-ii-practical-backtracking-to-undo-actions this blog post>
+-- for more details.
 
-module Transient.Backtrack (onUndo, undo, retry, undoCut,registerUndo,
+module Transient.Backtrack (
 
--- * generalized versions of backtracking with an extra parameter that gives the reason for going back.
--- Different kinds of backtracking with different reasons can be managed in the same program
+-- * Multi-track Undo
+-- $multitrack
 onBack, back, forward, backCut,registerBack,
 
--- * finalization primitives
+-- * Default Track Undo
+-- $defaulttrack
+onUndo, undo, retry, undoCut,registerUndo,
+
+-- * Finalization Primitives
 finish, onFinish, onFinish' ,initFinish , noFinish,checkFinalize , FinishReason
 ) where
 
@@ -23,6 +37,57 @@ import System.Mem.StableName
 import Control.Exception
 import Control.Concurrent.STM hiding (retry)
 import Data.Maybe
+
+-- $defaulttrack
+--
+-- Simpler APIs for the common case using an implicit default undo track @()@.
+--
+-- @
+-- import Control.Concurrent (threadDelay)
+-- import Control.Monad.IO.Class (liftIO)
+-- import Transient.Base (keep)
+-- import Transient.Backtrack (onUndo, undo, retry)
+--
+-- main = keep $ do
+--     step 1 >> tryAgain >> step 2 >> step 3 >> undo >> return ()
+--     where
+--         step n = liftIO (putStrLn ("Do Step: " ++ show n))
+--                  `onUndo`
+--                  liftIO (putStrLn ("Undo Step: " ++ show n))
+--
+--         tryAgain = liftIO (putStrLn "Will retry on undo")
+--                    `onUndo`
+--                    (retry >> liftIO (threadDelay 1000000 >> putStrLn "Retrying..."))
+-- @
+
+-- $multitrack
+--
+-- Track-specific undo primitives. An undo track is identified by a
+-- data type. The data type of each distinct track must be different.
+--
+-- @
+-- import Control.Concurrent (threadDelay)
+-- import Control.Monad.IO.Class (liftIO)
+-- import Transient.Base (keep)
+-- import Transient.Backtrack (onBack, forward, back)
+--
+-- data TrackX = TrackX deriving Show
+--
+-- main = keep $ do
+--     step 1 >> goForward >> step 2 >> step 3 >> back TrackX >> return ()
+--     where
+--           step n = liftIO (putStrLn ("Execute Step: " ++ show n))
+--                    `onBack`
+--                    (\TrackX -> liftIO (putStrLn ("Undo Step: " ++ show n)))
+--
+--           goForward = liftIO (putStrLn "Turning point")
+--                       `onBack` (\TrackX ->
+--                                     (forward TrackX
+--                                      >> liftIO (threadDelay 1000000
+--                                                 >> putStrLn "Going forward..."))
+--                                )
+-- @
+
 --
 --data Backtrack b= Show b =>Backtrack{backtracking :: Maybe b
 --                                    ,backStack :: [EventF] }
