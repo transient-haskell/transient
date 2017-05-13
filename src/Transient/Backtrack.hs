@@ -1,13 +1,42 @@
 {-# LANGUAGE DeriveDataTypeable #-}
 {-# LANGUAGE ExistentialQuantification #-}
 
--- | Transient allows you to pair an action with an undo action. As actions are
--- executed the corresponding undo actions are saved. At any point an 'undo'
--- can be triggered which executes all the undo actions registered till now in
--- reverse order. An undo action can decide to reverse the execution by using
--- 'retry', forward execution will resume from that point on. Multiple
--- independent undo tracks can be defined. There is an implicit default track
--- for common case.
+-- | Transient implements an event handling mechanism ("backtracking") which
+-- allows registration of one or more event handlers to be executed when an
+-- event occurs. This common underlying mechanism called is used to handle
+-- three different types of events:
+--
+-- * User initiated actions to run undo and retry actions on failures
+-- * Finalization actions to run at the end of a task
+-- * Exception handlers to run when exceptions are raised
+--
+-- Backtracking works seamlessly across thread boundaries.  The freedom to put
+-- the undo, exception handling and finalization code where we want it allows
+-- us to write modular and composable code.
+--
+-- Note that backtracking (undo, finalization or exception handling) does not
+-- change or automatically roll back the user defined state in any way. It only
+-- executes the user installed handlers. State changes are only caused via user
+-- defined actions. Any state changes done within the backtracking actions are
+-- accumulated on top of the user state as it was when backtracking started.
+-- This example prints the final state as "world".
+--
+-- @
+-- import Transient.Base (keep, setState, getState)
+-- import Transient.Backtrack (onUndo, undo)
+-- import Control.Monad.IO.Class (liftIO)
+--
+-- main = keep $ do
+--     setState "hello"
+--     oldState <- getState
+--
+--     liftIO (putStrLn "Register undo") \`onUndo` (do
+--         curState <- getState
+--         liftIO $ putStrLn $ "Final state: "  ++ curState
+--         liftIO $ putStrLn $ "Old state: "    ++ oldState)
+--
+--     setState "world" >> undo >> return ()
+-- @
 --
 -- See
 -- <https://www.fpcomplete.com/user/agocorona/the-hardworking-programmer-ii-practical-backtracking-to-undo-actions this blog post>
@@ -24,6 +53,7 @@ onBack, back, forward, backCut,
 onUndo, undo, retry, undoCut,
 
 -- * Finalization Primitives
+-- $finalization
 finish, onFinish, onFinish' ,initFinish , noFinish,checkFinalize , FinishReason
 ) where
 
@@ -40,7 +70,8 @@ import Data.Maybe
 
 -- $defaulttrack
 --
--- Simpler APIs for the common case using an implicit default undo track @()@.
+-- A default undo track with the track id of type @()@ is provided. APIs for
+-- the default track are simpler as they do not require the track id argument.
 --
 -- @
 -- import Control.Concurrent (threadDelay)
@@ -52,18 +83,25 @@ import Data.Maybe
 --     step 1 >> tryAgain >> step 2 >> step 3 >> undo >> return ()
 --     where
 --         step n = liftIO (putStrLn ("Do Step: " ++ show n))
---                  `onUndo`
+--                  \`onUndo`
 --                  liftIO (putStrLn ("Undo Step: " ++ show n))
 --
 --         tryAgain = liftIO (putStrLn "Will retry on undo")
---                    `onUndo`
+--                    \`onUndo`
 --                    (retry >> liftIO (threadDelay 1000000 >> putStrLn "Retrying..."))
 -- @
 
 -- $multitrack
 --
--- Track-specific undo primitives. An undo track is identified by a
--- data type. The data type of each distinct track must be different.
+-- Transient allows you to pair an action with an undo action ('onBack'). As
+-- actions are executed the corresponding undo actions are saved. At any point
+-- an 'undo' can be triggered which executes all the undo actions registered
+-- till now in reverse order. At any point, an undo action can decide to resume
+-- forward execution by using 'forward'.
+--
+-- Multiple independent undo tracks can be defined for different use cases.  An
+-- undo track is identified by a user defined data type. The data type of each
+-- track must be distinct.
 --
 -- @
 -- import Control.Concurrent (threadDelay)
@@ -71,21 +109,41 @@ import Data.Maybe
 -- import Transient.Base (keep)
 -- import Transient.Backtrack (onBack, forward, back)
 --
--- data TrackX = TrackX deriving Show
+-- data Track = Track String deriving Show
 --
 -- main = keep $ do
---     step 1 >> goForward >> step 2 >> step 3 >> back TrackX >> return ()
+--     step 1 >> goForward >> step 2 >> step 3 >> back (Track \"Failed") >> return ()
 --     where
---           step n = liftIO (putStrLn ("Execute Step: " ++ show n))
---                    `onBack`
---                    (\TrackX -> liftIO (putStrLn ("Undo Step: " ++ show n)))
+--           step n = liftIO (putStrLn $ "Execute Step: " ++ show n)
+--                    \`onBack`
+--                    \(Track r) -> liftIO (putStrLn $ show r ++ " Undo Step: " ++ show n)
 --
 --           goForward = liftIO (putStrLn "Turning point")
---                       `onBack` (\TrackX ->
---                                     (forward TrackX
---                                      >> liftIO (threadDelay 1000000
---                                                 >> putStrLn "Going forward..."))
---                                )
+--                       \`onBack` \(Track r) ->
+--                                     forward (Track r)
+--                                     >> (liftIO $ threadDelay 1000000
+--                                                 >> putStrLn "Going forward...")
+-- @
+
+-- $finalization
+--
+-- Several finish handlers can be installed (using 'onFinish') that are called
+-- when the action is finalized using 'finish'. All the handlers installed
+-- until the last 'initFinish' are invoked in reverse order; thread boundaries
+-- do not matter.  The following example prints "3" and then "2".
+--
+-- @
+-- import Control.Monad.IO.Class (liftIO)
+-- import Transient.Base (keep)
+-- import Transient.Backtrack (initFinish, onFinish, finish)
+--
+-- main = keep $ do
+--         onFinish (\\_ -> liftIO $ putStrLn "1")
+--         initFinish
+--         onFinish (\\_ -> liftIO $ putStrLn "2")
+--         onFinish (\\_ -> liftIO $ putStrLn "3")
+--         finish Nothing
+--         return ()
 -- @
 
 --
