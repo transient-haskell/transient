@@ -8,17 +8,41 @@
 -- Stability   :
 -- Portability :
 --
--- |
+-- | The 'logged' primitive is used to save the results of the subcomputations
+-- of a transient computation (including all its threads) in a log buffer. At
+-- any point, a 'suspend' or 'checkpoint' can be used to save the accumulated
+-- log on a persistent storage. A 'restore' reads the saved logs and resumes
+-- the computation from the saved checkpoint. On resumption, the saved results
+-- are used for the computations which have already been performed. The log
+-- contains purely application level state, and is therefore independent of the
+-- underlying machine architecture. The saved logs can be sent across the wire
+-- to another machine and the computation can then be resumed on that machine.
+-- We can also save the log to gather diagnostic information, especially in
+-- 'finish' blocks.
 --
+-- The following example illustrates the APIs. In its first run 'suspend' saves
+-- the state in a directory named @logs@ and exits, in the second run it
+-- resumes from that point and then stops at the 'checkpoint', in the third run
+-- it resumes from the checkpoint and then finishes.
+--
+-- @
+-- main= keep $ restore  $ do
+--      r <- logged $ choose [1..10 :: Int]
+--      logged $ liftIO $ print (\"A",r)
+--      suspend ()
+--      logged $ liftIO $ print (\"B",r)
+--      checkpoint
+--      liftIO $ print (\"C",r)
+-- @
 -----------------------------------------------------------------------------
 {-# LANGUAGE  CPP,ExistentialQuantification, FlexibleInstances, ScopedTypeVariables, UndecidableInstances #-}
 module Transient.Logged(
+Loggable, logged, received, param
 
 #ifndef ghcjs_HOST_OS
-restore,checkpoint,suspend,
+, suspend, checkpoint, restore
 #endif
-
-logged, received,param, Loggable) where
+) where
 
 import Data.Typeable
 import Unsafe.Coerce
@@ -43,24 +67,10 @@ import System.Random
 #ifndef ghcjs_HOST_OS
 logs= "logs/"
 
--- re-excutes all the threads whose state has been logged in the "./logs" folder
--- .Each log is removed when it is executed.
+-- | Reads the saved logs from the @logs@ subdirectory of the current
+-- directory, restores the state of the computation from the logs, and runs the
+-- computation.  The log files are removed after the state has been restored.
 --
--- example: this program, if executed three times will first print hello <number> some times
--- but `suspend` will kill the threads and exit it.
-
--- The second time, it will print "world" <number> and "world22222" <number> and will stay.
---
--- The third time that it is executed, it only present "world22222" <number> messages
---
--- > main= keep $ restore  $ do
--- >    r <- logged $ choose [1..10 :: Int]
--- >    logged $ liftIO $ print ("hello",r)
--- >    suspend ()
--- >    logged $ liftIO $ print ("world",r)
--- >    checkpoint
--- >    logged $ liftIO $ print ("world22222",r)
-
 restore :: TransIO a -> TransIO a
 restore   proc= do
      liftIO $ createDirectory logs  `catch` (\(e :: SomeException) -> return ())
@@ -84,11 +94,13 @@ restore   proc= do
 
 
 
--- | save the state of  the thread that execute it and exit the transient block initiated with `keep` or similar
--- . `keep` will return the value passed by `suspend`.
--- If the process is executed again with `restore` it will reexecute the thread from this point on.
+-- | Saves the logged state of the current computation that has been
+-- accumulated using 'logged', and then 'exit's using the passed parameter as
+-- the exit code. Note that all the computations before a 'suspend' must be
+-- 'logged' to have a consistent log state. The logs are saved in the @logs@
+-- subdirectory of the current directory. Each thread's log is saved in a
+-- separate file.
 --
--- it is useful to insert it in `finish` blocks to gather error information,
 suspend :: Typeable a => a -> TransIO a
 suspend  x= do
    Log recovery _ log <- getData `onNothing` return (Log False [] [])
@@ -96,7 +108,8 @@ suspend  x= do
         logAll  log
         exit x
 
--- | Save the state of every thread at this point. If the process is re-executed with `restore` it will reexecute the thread from this point on..
+-- | Saves the accumulated logs of the current computation, like 'suspend', but
+-- does not exit.
 checkpoint ::  TransIO ()
 checkpoint = do
    Log recovery _ log <- getData `onNothing` return (Log False [] [])
@@ -122,24 +135,14 @@ toIDyn x= IDynamic x
 
 
 
--- | write the result of the computation in  the log and return it.
--- but if there is data in the internal log, it read the data from the log and
--- do not execute the computation.
+-- | Run the computation, write its result in a log in the parent computation
+-- and return the result. If the log already contains the result of this
+-- computation ('restore'd from previous saved state) then that result is used
+-- instead of running the computation again.
 --
--- It accept nested step's. The effect is that if the outer step is executed completely
--- the log of the inner steps are erased. If it is not the case, the inner steps are logged
--- this reduce the log of large computations to the minimum. That is a feature not present
--- in the package Workflow.
---
--- >  r <- logged $ do
--- >          logged this :: TransIO ()
--- >          logged that :: TransIO ()
--- >          logged thatOther
--- >  liftIO $ print r
---
---  when `print` is executed, the log is just the value of r.
---
---  but at the `thatOther` execution the log is: [Exec,(), ()]
+-- 'logged' can be used for computations inside a 'logged' computation. Once
+-- the parent computation is finished its internal (subcomputation) logs are
+-- discarded.
 --
 logged :: Loggable a => TransientIO a -> TransientIO a
 logged mx =  Transient $ do
