@@ -783,8 +783,8 @@ delData x=  modify $ \st -> st{mfData= M.delete (typeOf x ) (mfData st)}
 delState :: ( MonadState EventF m,Typeable a) => a -> m ()
 delState= delData
 
--- | Try a computation, and if it results in an empty value undo any
--- state changes that it might have effected.
+-- | Run an action, if the result is a void action undo any state changes
+-- that it might have caused.
 --
 try :: TransIO a -> TransIO a
 try mx= do
@@ -1372,7 +1372,8 @@ exit x= do
 
 
 
--- | Alternative operator for maybe values. Used  in infix mode
+-- | If the first parameter is 'Nothing' return the second parameter otherwise
+-- return the first parameter..
 onNothing :: Monad m => m (Maybe b) -> m b -> m b
 onNothing iox iox'= do
        mx <- iox
@@ -1393,16 +1394,20 @@ data Backtrack b= Show b =>Backtrack{backtracking :: Maybe b
 
 
 
--- | Assures that backtracking will not go further back
-backCut :: (Typeable reason, Show reason) => reason -> TransientIO ()
+-- | Delete all the undo actions registered till now for the given track id.
+backCut :: (Typeable b, Show b) => b -> TransientIO ()
 backCut reason= Transient $ do
      delData $ Backtrack (Just reason)  []
      return $ Just ()
 
+-- | 'backCut' for the default track; equivalent to @backCut ()@.
 undoCut ::  TransientIO ()
 undoCut = backCut ()
 
--- | The second parameter will be executed when backtracking
+-- | Run the action in the first parameter and register the second parameter as
+-- the undo action. On undo ('back') the second parameter is called with the
+-- undo track id as argument.
+--
 {-# NOINLINE onBack #-}
 onBack :: (Typeable b, Show b) => TransientIO a -> ( b -> TransientIO a) -> TransientIO a
 onBack ac bac = registerBack (typeof bac) $ Transient $ do
@@ -1414,11 +1419,15 @@ onBack ac bac = registerBack (typeof bac) $ Transient $ do
      typeof :: (b -> TransIO a) -> b
      typeof = undefined
 
+-- | 'onBack' for the default track; equivalent to @onBack ()@.
 onUndo ::  TransientIO a -> TransientIO a -> TransientIO a
 onUndo x y= onBack x (\() -> y)
 
 
--- | Register an action that will be executed when backtracking
+-- | Register an undo action to be executed when backtracking. The first
+-- parameter is a "witness" whose data type is used to uniquely identify this
+-- backtracking action. The value of the witness parameter is not used.
+--
 {-# NOINLINE registerUndo #-}
 registerBack :: (Typeable b, Show b) => b -> TransientIO a -> TransientIO a
 registerBack witness f  = Transient $ do
@@ -1443,22 +1452,33 @@ registerBack witness f  = Transient $ do
 registerUndo :: TransientIO a -> TransientIO a
 registerUndo f= registerBack ()  f
 
--- | backtracking is stopped. the exection continues forward from this point on.
+-- XXX Should we enforce retry of the same track which is being undone? If the
+-- user specifies a different track would it make sense?
+--
+-- | For a given undo track id, stop executing more backtracking actions and
+-- resume normal execution in the forward direction. Used inside an undo
+-- action.
+--
 forward :: (Typeable b, Show b) => b -> TransIO ()
 forward reason= Transient $ do
     Backtrack _ stack <- getData `onNothing`  (backStateOf reason)
     setData $ Backtrack(Nothing `asTypeOf` Just reason)  stack
     return $ Just ()
 
+-- | 'forward' for the default undo track; equivalent to @forward ()@.
 retry= forward ()
 
+-- | Abort finish. Stop executing more finish actions and resume normal
+-- execution.  Used inside 'onFinish' actions.
+--
 noFinish= forward (FinishReason Nothing)
 
--- | Execute backtracking. It execute the registered actions in reverse order.
+-- | Start the undo process for the given undo track id. Performs all the undo
+-- actions registered till now in reverse order. An undo action can use
+-- 'forward' to stop the undo process and resume forward execution. If there
+-- are no more undo actions registered execution stops and a 'stop' action is
+-- returned.
 --
--- If the backtracking flag is changed the flow proceed  forward from that point on.
---
--- If the backtrack stack is finished or undoCut executed, the backtracking will stop.
 back :: (Typeable b, Show b) => b -> TransientIO a
 back reason = Transient $ do
   bs <- getData  `onNothing`  backStateOf  reason           -- !!>"GOBACK"
@@ -1489,6 +1509,8 @@ back reason = Transient $ do
 backStateOf :: (Monad m, Show a, Typeable a) => a -> m (Backtrack a)
 backStateOf reason= return $ Backtrack (Nothing `asTypeOf` (Just reason)) []
 
+-- | 'back' for the default undo track; equivalent to @back ()@.
+--
 undo ::  TransIO a
 undo= back ()
 
@@ -1497,23 +1519,31 @@ undo= back ()
 
 newtype FinishReason= FinishReason (Maybe SomeException) deriving (Typeable, Show)
 
--- | Initialize the event variable for finalization.
--- all the following computations in different threads will share it
--- it also isolate this event from other branches that may have his own finish variable
+-- | Clear all finish actions registered till now.
 initFinish= backCut (FinishReason Nothing)
 
--- | Set a computation to be called when the finish event happens
+-- | Register an action that to be run when 'finish' is called. 'onFinish' can
+-- be used multiple times to register multiple actions. Actions are run in
+-- reverse order. Used in infix style.
+--
 onFinish :: ((Maybe SomeException) ->TransIO ()) -> TransIO ()
 onFinish f= onFinish' (return ()) f
 
 
--- | Set a computation to be called when the finish event happens this only apply for
+-- | Run the action specified in the first parameter and register the second
+-- parameter as a finish action to be run when 'finish' is called. Used in
+-- infix style.
+--
 onFinish' ::TransIO a ->((Maybe SomeException) ->TransIO a) -> TransIO a
 onFinish' proc f= proc `onBack`   \(FinishReason reason) ->
     f reason
 
 
--- | Trigger the event, so this closes all the resources
+-- | Execute all the finalization actions registered up to the last
+-- 'initFinish', in reverse order.  Either an exception or 'Nothing' can be
+-- passed to 'finish'.  The argument passed is made available in the 'onFinish'
+-- actions invoked.
+--
 finish :: Maybe SomeException -> TransIO a
 finish reason= back (FinishReason reason)
 
@@ -1528,8 +1558,10 @@ checkFinalize v=
       SMore x -> return x
 
 ------ exceptions ---
--- | Install an exception handler. On exception, installed handlers are
--- executed in a last in first out (LIFO) order.
+--
+-- | Install an exception handler.  On exception, currently installed handlers
+-- are executed in reverse (i.e. last in first out) order. Note that multiple
+-- handlers can be installed for the same exception type.
 --
 onException :: Exception e => (e -> TransIO ()) -> TransIO ()
 onException exc= return () `onException'` exc
@@ -1544,10 +1576,12 @@ onException' mx f= onAnyException mx $ \e ->
   onAnyException :: TransIO a -> (SomeException ->TransIO a) -> TransIO a
   onAnyException mx f=  mx `onBack` f
 
--- | stop the backtracking mechanism from executing further handlers
+-- | Delete all the exception handlers registered till now.
 cutExceptions= backCut (undefined :: SomeException)
 
--- | Resume to normal execution at this point
+-- | Used inside an exception handler. Stop executing any further exception
+-- handlers and resume normal execution from this point on.
+--
 continue = forward (undefined :: SomeException)
 
 
