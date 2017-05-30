@@ -1,5 +1,5 @@
 name: transient
-version: 0.5.4
+version: 0.5.5
 author: Alberto G. Corona
 extra-source-files:
     ChangeLog.md README.md
@@ -12,8 +12,8 @@ homepage: http://www.fpcomplete.com/user/agocorona
 bug-reports: https://github.com/agocorona/transient/issues
 synopsis: composing programs with multithreading, events and distributed computing
 description: See <http://github.com/agocorona/transient>
-             In this release distributed primitives have been moved to the transient-universe package, and web primitives have been moved to the ghcjs-hplay package.
-category: Control
+             Distributed primitives are in the transient-universe package. Web primitives are in the axiom package.
+category: Control, Concurrency
 data-dir: ""
 
 flag debug
