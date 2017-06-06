@@ -65,6 +65,7 @@ infixr 0 !>
 (!>) :: a -> b -> a
 (!>) = const
 
+
 #endif
 
 type StateIO = StateT EventF IO
@@ -1125,6 +1126,7 @@ killChildren childs  = do
 -- into the transient monad using 'react'. Every time the callback is called it
 -- generates a new task for the transient monad.
 --
+
 react
   :: Typeable eventdata
   => ((eventdata ->  IO response) -> IO ())
@@ -1148,24 +1150,25 @@ react setHandler iob= Transient $ do
 -- | Runs a computation asynchronously without generating any events. Returns
 -- 'empty' in an 'Alternative' composition.
 
-abduce = Transient $ do
-   st <-  get
-   case  event st of
-          Just _ -> do
-               put st{event=Nothing}
-               return $ Just ()
-          Nothing -> do
-               chs <- liftIO $ newMVar []
-
-               label <-  liftIO $ newIORef (Alive, BS.pack "abduce")
-               liftIO $ forkIO $ do
-                   th <- myThreadId
-                   let st' = st{event= Just (),parent=Just st,children=   chs, threadId=th,labelth= label}
-                   liftIO $ hangThread st st'
-
-                   runCont' st'
-                   return()
-               return Nothing
+abduce = async $ return ()
+--  Transient $ do
+--   st <-  get
+--   case  event st of
+--          Just _ -> do
+--               put st{event=Nothing}
+--               return $ Just ()
+--          Nothing -> do
+--               chs <- liftIO $ newMVar []
+--
+--               label <-  liftIO $ newIORef (Alive, BS.pack "abduce")
+--               liftIO $ forkIO $ do
+--                   th <- myThreadId
+--                   let st' = st{event= Just (),parent=Just st,children=   chs, threadId=th,labelth= label}
+--                   liftIO $ hangThread st st'
+--
+--                   runCont' st'
+--                   return()
+--               return Nothing
 
 
 -- * non-blocking keyboard input
@@ -1446,10 +1449,12 @@ undoCut = backCut ()
 {-# NOINLINE onBack #-}
 onBack :: (Typeable b, Show b) => TransientIO a -> ( b -> TransientIO a) -> TransientIO a
 onBack ac bac = registerBack (typeof bac) $ Transient $ do
-     Backtrack mreason _  <- getData `onNothing` backStateOf (typeof bac)
+     Backtrack mreason stack  <- getData `onNothing` backStateOf (typeof bac)
      runTrans $ case mreason of
                   Nothing     -> ac
-                  Just reason -> bac reason
+                  Just reason -> do
+                      setState $ Backtrack mreason $ tail stack -- to avoid recursive call tot he same handler
+                      bac reason
      where
      typeof :: (b -> TransIO a) -> b
      typeof = undefined
@@ -1457,6 +1462,7 @@ onBack ac bac = registerBack (typeof bac) $ Transient $ do
 -- | 'onBack' for the default track; equivalent to @onBack ()@.
 onUndo ::  TransientIO a -> TransientIO a -> TransientIO a
 onUndo x y= onBack x (\() -> y)
+
 
 
 -- | Register an undo action to be executed when backtracking. The first
@@ -1523,17 +1529,12 @@ back reason = Transient $ do
 
   goBackt (Backtrack _ [] )= return Nothing                      -- !!> "END"
   goBackt (Backtrack b (stack@(first : bs)) )= do
-        (setData $ Backtrack (Just reason) stack)
+        setData $ Backtrack (Just reason) stack
 
         mr <-  runClosure first                                  -- !> "RUNCLOSURE"
 
         Backtrack back _ <- getData `onNothing`  backStateOf  reason
                                                                  -- !> "END RUNCLOSURE"
---        case back of
---           Nothing -> case mr of
---                   Nothing ->  return empty                      -- !> "FORWARD END"
---                   Just x  ->  runContinuation first x           -- !> "FORWARD EXEC"
---           justreason -> goBackt $ Backtrack justreason bs       -- !> ("BACK AGAIN",back)
 
         case mr of
            Nothing -> return empty                                      -- !> "END EXECUTION"
