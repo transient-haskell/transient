@@ -615,7 +615,7 @@ oneThread comp = do
 #endif
 
 -- | Add a label to the current passing threads so it can be printed by debugging calls like `showThreads`
-labelState :: String -> TransIO ()
+labelState :: (MonadIO m,MonadState EventF m) => String -> m ()
 labelState l =  do
   st <- get
   liftIO $ atomicModifyIORef (labelth st) $ \(status,_) -> ((status, BS.pack l), ())
@@ -1204,8 +1204,10 @@ option ret message= do
 -- predicate specified in the first argument.  The second parameter is a string
 -- to be displayed on the console before waiting.
 --
-input :: (Typeable a, Read a,Show a) => (a -> Bool) -> String -> TransIO a
-input cond prompt= Transient . liftIO $do
+input cond prompt= input' Nothing cond prompt
+
+input' :: (Typeable a, Read a,Show a) => Maybe a -> (a -> Bool) -> String -> TransIO a
+input' mv cond prompt= Transient . liftIO $do
    putStr prompt >> hFlush stdout
    atomically $ do
        mr <- readTVar getLineRef
@@ -1219,8 +1221,9 @@ input cond prompt= Transient . liftIO $do
                        writeTVar  getLineRef Nothing -- !>"match"
                        return $ Just s
 
-                     else return Nothing
-            _ -> return Nothing
+                     else return mv
+            _ -> return mv
+
 
 -- | Non blocking `getLine` with a validator
 getLine' cond=    do
@@ -1245,7 +1248,7 @@ reads1 s=x where
 
 
 inputLoop= do
-           r<- getLine
+           r <- getLine
            -- XXX hoping that the previous value has been consumed by now.
            -- otherwise its just lost by overwriting.
            atomically $ writeTVar getLineRef Nothing
@@ -1610,7 +1613,30 @@ onException' mx f= onAnyException mx $ \e ->
        Just e'  -> f e'
   where
   onAnyException :: TransIO a -> (SomeException ->TransIO a) -> TransIO a
-  onAnyException mx f=  mx `onBack` f
+  onAnyException mx f=   ioexp  `onBack` f
+       
+  ioexp = Transient $ do 
+    st <- get
+    (mx,st') <- liftIO $ (runStateT (do
+
+        case event st of 
+          Nothing -> do
+                r <- runTrans   mx  
+
+                modify $ \s -> s{event= Just $ unsafeCoerce r}
+                st' <- get
+               
+                runCont st'
+                was <- getData `onNothing` return NoRemote
+                when (was /= WasRemote) $ setData WasParallel
+
+                return Nothing
+          Just r -> do
+               modify $ \s ->  s{event=Nothing}  
+               return  $ unsafeCoerce r) st)
+      `catch` \(e ::SomeException) ->  runStateT ( runTrans $ back e  ) st
+    put st'
+    return mx
 
 -- | Delete all the exception handlers registered till now.
 cutExceptions= backCut (undefined :: SomeException)
@@ -1630,6 +1656,6 @@ catcht mx exc=  sandbox $ do
      mx
        <*** setState exState
 
-
-
+throwt :: Exception e => e -> TransIO a
+throwt= back . toException
 

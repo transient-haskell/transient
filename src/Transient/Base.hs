@@ -241,7 +241,7 @@ TransIO(..), TransientIO
 ,keep, keep', stop, exit
 
 -- * Asynchronous console IO
-,option, input
+,option, input,input'
 
 -- * Task Creation
 -- $taskgen
@@ -257,7 +257,7 @@ TransIO(..), TransientIO
 -- * Exceptions
 -- $exceptions
 
-,onException, cutExceptions, continue
+,onException, cutExceptions, continue, catcht, throwt
 
 -- * Utilities
 ,genId
