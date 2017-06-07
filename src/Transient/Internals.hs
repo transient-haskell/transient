@@ -348,13 +348,14 @@ instance Monad TransIO where
       Nothing -> return Nothing
 
 instance MonadIO TransIO where
-  liftIO mx = do
-    ex <- liftIO' $ (mx >>= return . Right) `catch`
-                    (\(e :: SomeException) -> return $ Left e)
-    case ex of
-      Left  e -> back e  -- finish $ Just e
-      Right x -> return x
-    where liftIO' x = Transient $ liftIO x >>= return . Just
+  -- liftIO mx = do
+  --   ex <- liftIO' $ (mx >>= return . Right) `catch`
+  --                   (\(e :: SomeException) -> return $ Left e)
+  --   case ex of
+  --     Left  e -> back e  -- finish $ Just e
+  --     Right x -> return x
+  --   where 
+  liftIO x = Transient $ liftIO x >>= return . Just
               --     let x= liftIO io in x `seq` lift x
 
 instance Monoid a => Monoid (TransIO a) where
