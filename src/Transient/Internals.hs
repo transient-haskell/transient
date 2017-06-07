@@ -248,9 +248,7 @@ instance Applicative TransIO where
   f <*> g = Transient $ do
          rf <- liftIO $ newIORef (Nothing,[])
          rg <- liftIO $ newIORef (Nothing,[])
-#ifdef DEBUG
-                 !> "NEWIOREF"
-#endif
+
 
          fs <- getContinuations
 
@@ -260,45 +258,39 @@ instance Applicative TransIO where
              appf k = Transient $  do
                    Log rec _ full <- getData `onNothing` return (Log False [] [])
                    (liftIO $ writeIORef rf  (Just k,full))
-#ifdef DEBUG
-                               !> ( show $ unsafePerformIO myThreadId) ++"APPF"
-#endif
+                               -- !> ( show $ unsafePerformIO myThreadId) ++"APPF"
+
                    (x, full2)<- liftIO $ readIORef rg
                    when (hasWait  full ) $
-#ifdef DEBUG
-                       (!> (hasWait full,"full",full, "\nfull2",full2)) $
-#endif
+                       -- (!> (hasWait full,"full",full, "\nfull2",full2)) $
                         let full'= head full: full2
                         in (setData $ Log rec full' full')
-#ifdef DEBUG
-                           !> ("result1",full')
-#endif
+                          -- !> ("result1",full')
+
                    return $ Just k <*> x
 
              appg x = Transient $  do
                    Log rec _ full <- getData `onNothing` return (Log False [] [])
                    liftIO $ writeIORef rg (Just x, full)
-#ifdef DEBUG
-                     !> ( show $ unsafePerformIO myThreadId) ++ "APPG"
-#endif
+
+                        -- !> ( show $ unsafePerformIO myThreadId) ++ "APPG"
+
                    (k,full1) <- liftIO $ readIORef rf
                    when (hasWait  full) $
-#ifdef DEBUG
-                       (!> ("full", full, "\nfull1",full1)) $
-#endif
+
+                      -- (!> ("full", full, "\nfull1",full1)) $
+
                         let full'= head full: full1
                         in (setData $ Log rec full' full')
-#ifdef DEBUG
-                           !> ("result2",full')
-#endif
+                             -- !> ("result2",full')
+
                    return $ k <*> Just x
 
          setContinuation f appf fs
 
          k <- runTrans f
-#ifdef DEBUG
-                  !> ( show $ unsafePerformIO myThreadId)++ "RUN f"
-#endif
+                --  !> ( show $ unsafePerformIO myThreadId)++ "RUN f"
+
          was <- getData `onNothing` return NoRemote
          when (was == WasParallel) $  setData NoRemote
 
@@ -307,9 +299,8 @@ instance Applicative TransIO where
 
 
          if was== WasRemote  || (not recovery && was == NoRemote  && isNothing k )
-#ifdef DEBUG
-              !>  ("was,recovery,isNothing=",was,recovery, isNothing k)
-#endif
+             -- !>  ("was,recovery,isNothing=",was,recovery, isNothing k)
+
          -- if the first operand was a remote request
          -- (so this node is not master and hasn't to execute the whole expression)
          -- or it was not an asyncronous term (a normal term without async or parallel
@@ -324,9 +315,8 @@ instance Applicative TransIO where
              setContinuation g appg fs
 
              x <- runTrans g
-#ifdef DEBUG
-                     !> ( show $ unsafePerformIO myThreadId) ++ "RUN g"
-#endif
+                    -- !> ( show $ unsafePerformIO myThreadId) ++ "RUN g"
+
              Log recovery _ full' <- getData `onNothing` return (Log False [] [])
              liftIO $ writeIORef rg  (x,full')
              restoreStack fs
@@ -355,7 +345,7 @@ instance MonadIO TransIO where
   --     Left  e -> back e  -- finish $ Just e
   --     Right x -> return x
   --   where 
-  liftIO x = Transient $ liftIO x >>= return . Just
+      liftIO x = Transient $ liftIO x >>= return . Just
               --     let x= liftIO io in x `seq` lift x
 
 instance Monoid a => Monoid (TransIO a) where
@@ -370,20 +360,14 @@ instance MonadPlus TransIO where
   mzero     = empty
   mplus x y = Transient $ do
     mx <- runTrans x
-#ifdef DEBUG
-            !> "RUNTRANS11111"
-#endif
+
     was <- getData `onNothing` return NoRemote
     if was == WasRemote
-#ifdef DEBUG
-        !> was
-#endif
+
       then return Nothing
       else case mx of
             Nothing -> runTrans y
-#ifdef DEBUG
-                          !> "RUNTRANS22222"
-#endif
+
             justx -> return justx
 
 readWithErr :: (Typeable a, Read a) => String -> IO [(a, String)]
@@ -484,14 +468,7 @@ instance AdditionalOperators TransIO where
   (<**) ma mb =
     Transient $ do
       a <- runTrans ma
-#ifdef DEBUG
-             !> "ma"
-#endif
-
       runTrans  mb
-#ifdef DEBUG
-        !> "mb"
-#endif
       return a
 
 infixr 1 <***, <**, **>
@@ -519,9 +496,6 @@ infixr 1 <***, <**, **>
 setEventCont :: TransIO a -> (a -> TransIO b) -> StateIO EventF
 setEventCont x f  = do
   EventF { fcomp = fs, .. } <- get
-#ifdef DEBUG
-                   !> "SET"
-#endif
   let cont = EventF { xcomp = x
                     , fcomp = unsafeCoerce f : fs
                     , .. }
@@ -533,9 +507,6 @@ setEventCont x f  = do
 -- resetEventCont :: Maybe a -> EventF -> StateIO (TransIO b -> TransIO b)
 resetEventCont mx _ = do
   EventF { fcomp = fs, .. } <- get
-#ifdef DEBUG
-                   !> "reset"
-#endif
   let f mx = case mx of
         Nothing -> empty
         Just x  -> unsafeCoerce (head fs) x
@@ -598,9 +569,7 @@ oneThread comp = do
   put st'
   x   <- comp
   th  <- liftIO myThreadId
-#ifdef DEBUG
-          !> ("FATHER:", threadId st)
-#endif
+          -- !> ("FATHER:", threadId st)
   chs <- liftIO $ readMVar chs -- children st'
   liftIO $ mapM_ (killChildren1 th) chs
   return x
@@ -611,9 +580,7 @@ oneThread comp = do
                     return (inn, ths')
           mapM_ (killChildren1  th) ths'
           mapM_ (killThread . threadId) ths'
-#ifdef DEBUG
-            !> ("KILLEVENT1 ", map threadId ths' )
-#endif
+            -- !> ("KILLEVENT1 ", map threadId ths' )
 
 -- | Add a label to the current passing threads so it can be printed by debugging calls like `showThreads`
 labelState :: (MonadIO m,MonadState EventF m) => String -> m ()
@@ -628,9 +595,7 @@ printBlock = unsafePerformIO $ newMVar ()
 showThreads :: MonadIO m => EventF -> m ()
 showThreads st = liftIO $ withMVar printBlock $ const $ do
   mythread <- myThreadId
-#ifdef DEBUG
-                !> "showThreads"
-#endif
+
   putStrLn "---------Threads-----------"
   let showTree n ch = do
         liftIO $ do
@@ -727,9 +692,7 @@ killChilds = noTrans $ do
   liftIO $ do
     killChildren $ children cont
     writeIORef (labelth cont) (Alive, mempty)
-#ifdef DEBUG
-      !> (threadId cont,"relabeled")
-#endif
+       -- !> (threadId cont,"relabeled")
   return ()
 
 -- | Kill the current thread and the childs.
@@ -959,9 +922,7 @@ sample action interval = do
 parallel :: IO (StreamData b) -> TransIO (StreamData b)
 parallel ioaction = Transient $ do
   cont <- get
-#ifdef DEBUG
-            !> "PARALLEL"
-#endif
+          --  !> "PARALLEL"
   case event cont of
     j@(Just _) -> do
       put cont { event = Nothing }
@@ -1622,12 +1583,11 @@ onException' mx f= onAnyException mx $ \e ->
 
         case event st of 
           Nothing -> do
-                r <- runTrans   mx  
+                r <- runTrans   mx  -- !> "mx"
 
                 modify $ \s -> s{event= Just $ unsafeCoerce r}
-                st' <- get
                
-                runCont st'
+                runCont st  -- !> "runcont"
                 was <- getData `onNothing` return NoRemote
                 when (was /= WasRemote) $ setData WasParallel
 
@@ -1635,7 +1595,7 @@ onException' mx f= onAnyException mx $ \e ->
           Just r -> do
                modify $ \s ->  s{event=Nothing}  
                return  $ unsafeCoerce r) st)
-      `catch` \(e ::SomeException) ->  runStateT ( runTrans $ back e  ) st
+                   `catch` \(e ::SomeException) ->  runStateT ( runTrans $ back e  ) st
     put st'
     return mx
 
@@ -1648,7 +1608,7 @@ cutExceptions= backCut (undefined :: SomeException)
 continue = forward (undefined :: SomeException)
 
 
-catcht mx exc=  sandbox $ do
+catcht mx exc= sandbox $ do
          cutExceptions
          onException' mx exc
    where
