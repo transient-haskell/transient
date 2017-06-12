@@ -342,11 +342,11 @@ instance MonadIO TransIO where
   --   ex <- liftIO' $ (mx >>= return . Right) `catch`
   --                   (\(e :: SomeException) -> return $ Left e)
   --   case ex of
-  --     Left  e -> back e  -- finish $ Just e
+  --     Left  e -> back e 
   --     Right x -> return x
   --   where 
       liftIO x = Transient $ liftIO x >>= return . Just
-              --     let x= liftIO io in x `seq` lift x
+             
 
 instance Monoid a => Monoid (TransIO a) where
   mappend x y = mappend <$> x <*> y
@@ -1418,7 +1418,7 @@ onBack ac bac = registerBack (typeof bac) $ Transient $ do
      runTrans $ case mreason of
                   Nothing     -> ac
                   Just reason -> do
-                      setState $ Backtrack mreason $ tail stack -- to avoid recursive call tot he same handler
+                      -- setState $ Backtrack mreason $ tail stack -- to avoid recursive call tot he same handler
                       bac reason
      where
      typeof :: (b -> TransIO a) -> b
@@ -1477,7 +1477,7 @@ retry= forward ()
 -- | Abort finish. Stop executing more finish actions and resume normal
 -- execution.  Used inside 'onFinish' actions.
 --
-noFinish= forward (FinishReason Nothing)
+noFinish= continue
 
 -- | Start the undo process for the given undo track id. Performs all the undo
 -- actions registered till now in reverse order. An undo action can use
@@ -1487,8 +1487,8 @@ noFinish= forward (FinishReason Nothing)
 --
 back :: (Typeable b, Show b) => b -> TransientIO a
 back reason = Transient $ do
-  bs <- getData  `onNothing`  backStateOf  reason           -- !!>"GOBACK"
-  goBackt  bs
+  bs <- getData  `onNothing`  backStateOf  reason           
+  goBackt  bs                                                   -- !!>"GOBACK"
 
   where
 
@@ -1496,16 +1496,16 @@ back reason = Transient $ do
   goBackt (Backtrack b (stack@(first : bs)) )= do
         setData $ Backtrack (Just reason) stack
 
-        mr <-  runClosure first                                  -- !> "RUNCLOSURE"
+        mr <-  runClosure first                                   !> ("RUNCLOSURE",length stack)
 
         Backtrack back _ <- getData `onNothing`  backStateOf  reason
-                                                                 -- !> "END RUNCLOSURE"
+                                                                  !> "END RUNCLOSURE"
 
         case mr of
-           Nothing -> return empty                                      -- !> "END EXECUTION"
+           Nothing -> return empty                                       !> "END EXECUTION"
            Just x -> case back of
-                 Nothing -> runContinuation first x                     -- !> "FORWARD EXEC"
-                 justreason -> goBackt $ Backtrack justreason bs        -- !> ("BACK AGAIN",back)
+                 Nothing -> runContinuation first x                      !> "FORWARD EXEC"
+                 justreason -> goBackt $ Backtrack justreason bs         !> ("BACK AGAIN",back)
 
 backStateOf :: (Monad m, Show a, Typeable a) => a -> m (Backtrack a)
 backStateOf reason= return $ Backtrack (Nothing `asTypeOf` (Just reason)) []
@@ -1518,35 +1518,39 @@ undo= back ()
 
 ------ finalization
 
-newtype FinishReason= FinishReason (Maybe SomeException) deriving (Typeable, Show)
+newtype Finish= Finish String deriving Show
+
+instance Exception Finish 
+
+-- newtype FinishReason= FinishReason (Maybe SomeException) deriving (Typeable, Show)
 
 -- | Clear all finish actions registered till now.
-initFinish= backCut (FinishReason Nothing)
+-- initFinish= backCut (FinishReason Nothing)
 
 -- | Register an action that to be run when 'finish' is called. 'onFinish' can
 -- be used multiple times to register multiple actions. Actions are run in
 -- reverse order. Used in infix style.
 --
-onFinish :: ((Maybe SomeException) ->TransIO ()) -> TransIO ()
-onFinish f= onFinish' (return ()) f
+onFinish :: (Finish ->TransIO ()) -> TransIO ()
+onFinish f= onException' (return ()) f
 
 
 -- | Run the action specified in the first parameter and register the second
 -- parameter as a finish action to be run when 'finish' is called. Used in
 -- infix style.
 --
-onFinish' ::TransIO a ->((Maybe SomeException) ->TransIO a) -> TransIO a
-onFinish' proc f= proc `onBack`   \(FinishReason reason) ->
-    f reason
+onFinish' ::TransIO a ->(Finish ->TransIO a) -> TransIO a
+onFinish' proc f= proc `onException'` f
 
 
 -- | Execute all the finalization actions registered up to the last
 -- 'initFinish', in reverse order.  Either an exception or 'Nothing' can be
+initFinish = cutExceptions
 -- passed to 'finish'.  The argument passed is made available in the 'onFinish'
 -- actions invoked.
 --
-finish :: Maybe SomeException -> TransIO a
-finish reason= back (FinishReason reason)
+finish :: String -> TransIO a
+finish reason= throwt $ Finish reason
 
 
 
@@ -1555,15 +1559,15 @@ checkFinalize v=
    case v of
       SDone ->  stop
       SLast x ->  return x
-      SError e -> back  e
+      SError e -> throwt  e
       SMore x -> return x
 
 ------ exceptions ---
 --
--- | Install an exception handler.  On exception, currently installed handlers
--- are executed in reverse (i.e. last in first out) order. Note that multiple
--- handlers can be installed for the same exception type.
+-- | Install an exception handler. Handlers are executed in reverse (i.e. last in, first out) order when such exception happens in the
+-- continuation. Note that multiple handlers can be installed for the same exception type.
 --
+-- The semantic is thus very different than the one of `Control.Exception.Base.onException`
 onException :: Exception e => (e -> TransIO ()) -> TransIO ()
 onException exc= return () `onException'` exc
 
@@ -1575,9 +1579,9 @@ onException' mx f= onAnyException mx $ \e ->
        Just e'  -> f e'
   where
   onAnyException :: TransIO a -> (SomeException ->TransIO a) -> TransIO a
-  onAnyException mx f=   ioexp  `onBack` f
-       
-  ioexp = Transient $ do 
+  onAnyException mx f= ioexp  `onBack` f
+
+  ioexp  = Transient $ do
     st <- get
     (mx,st') <- liftIO $ (runStateT (do
 
@@ -1586,18 +1590,28 @@ onException' mx f= onAnyException mx $ \e ->
                 r <- runTrans   mx  -- !> "mx"
 
                 modify $ \s -> s{event= Just $ unsafeCoerce r}
-               
-                runCont st  -- !> "runcont"
+                
+
+                runCont st  
                 was <- getData `onNothing` return NoRemote
                 when (was /= WasRemote) $ setData WasParallel
 
                 return Nothing
+
           Just r -> do
-               modify $ \s ->  s{event=Nothing}  
-               return  $ unsafeCoerce r) st)
-                   `catch` \(e ::SomeException) ->  runStateT ( runTrans $ back e  ) st
+                modify $ \s ->  s{event=Nothing}  
+                return  $ unsafeCoerce r) st)
+                   `catch` ch2 st
     put st'
     return mx
+    where
+    ch2 st = \(e ::SomeException) -> do  -- recursive catch itself
+                      -- return () !> "CATCH" 
+                      runStateT ( runTrans $  back e ) st
+                `catch` ch2 st
+
+
+  
 
 -- | Delete all the exception handlers registered till now.
 cutExceptions= backCut (undefined :: SomeException)
@@ -1605,18 +1619,46 @@ cutExceptions= backCut (undefined :: SomeException)
 -- | Used inside an exception handler. Stop executing any further exception
 -- handlers and resume normal execution from this point on.
 --
-continue = forward (undefined :: SomeException)
+continue = forward (undefined :: SomeException) !> "CONTINUE"
 
 
-catcht mx exc= sandbox $ do
-         cutExceptions
-         onException' mx exc
-   where
-   sandbox mx= do
-     exState <- getState <|> backStateOf (undefined :: SomeException)
-     mx
-       <*** setState exState
+-- catcht mx exc= sandbox $ do
+--          cutExceptions
+--          onException' mx exc
+--    where
+--    sandbox mx= do
+--      exState <- getState <|> backStateOf (undefined :: SomeException)
+--      mx
+--        <*** setState exState
 
+-- | throw an exception in the Transient monad
 throwt :: Exception e => e -> TransIO a
 throwt= back . toException
 
+-- | catch an exception in a Transient block
+--
+-- The semantic is the same than `catch` 
+catcht  :: Exception e => TransIO a -> (e ->TransIO a) -> TransIO a
+catcht mx exc=   Transient $ do 
+        st <- get
+    
+        case event st of 
+          Nothing -> do
+                (mx,st') <- liftIO $ (runStateT(runTrans   mx) st ) `catch` \(e ::SomeException) ->  
+                                          runStateT ( runTrans $ f e  ) st
+                put st'
+                modify $ \s -> s{event= Just $ unsafeCoerce mx}
+                runCont st
+                was <- getData `onNothing` return NoRemote
+                when (was /= WasRemote) $ setData WasParallel
+
+                return Nothing
+
+          Just r -> do
+                modify $ \s ->  s{event=Nothing}  
+                return  $ unsafeCoerce r
+                   
+    where
+    f e=case fromException e of
+       Nothing -> empty
+       Just e'  -> exc e'
