@@ -73,6 +73,9 @@ matrix:
     os: osx
 
   allow_failures:
+  - env: BUILD=stack ARGS="--resolver lts-7"
+    compiler: ": #stack 8.0.1 LTS 7 (OS X)"
+    os: osx
   - env: BUILD=ghcjs ARGS="--stack-yaml=stack-ghcjs.yaml"
   - env: BUILD=cabal GHCVER=head  CABALVER=head
   - env: BUILD=stack ARGS="--resolver nightly"
