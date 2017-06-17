@@ -1,5 +1,5 @@
 name: transient
-version: 0.5.7
+version: 0.5.8
 author: Alberto G. Corona
 extra-source-files:
     ChangeLog.md README.md
