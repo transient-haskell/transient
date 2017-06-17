@@ -7,7 +7,7 @@
 [![Build Status](https://api.travis-ci.org/transient-haskell/transient.png?branch=master)](https://travis-ci.org/transient-haskell/transient)
 [![Gitter](https://badges.gitter.im/theam/haskell-do.svg)](https://gitter.im/Transient-Transient-Universe-HPlay/Lobby?utm_source=share-link&utm_medium=link&utm_campaign=share-link)
 
-NOTE: distributed computing and web primitives have been moved to [transient-universe](https://github.com/agocorona/transient-universe) and [ghcjs-hplay](https://github.com/agocorona/ghcjs-hplay)
+NOTE: distributed computing and web primitives have been moved to [transient-universe](https://github.com/transient-haskell/transient-universe) and [axiom](https://github.com/transient-haskell/axiom)
 
 
 ## Some feedback on `transient`:
