@@ -249,7 +249,7 @@ TransIO(..), TransientIO
 ,parallel, async, waitEvents, sample, spawn, react
 
 -- * State management
-,setData, getSData, getData, delData, modifyData, try, setState, getState, delState, modifyState
+,setData, getSData, getData, delData, modifyData, try, setState, getState, delState, getRState,setRState, modifyState
 
 -- * Thread management
 , threads,addThreads, freeThreads, hookedThreads,oneThread, killChilds
