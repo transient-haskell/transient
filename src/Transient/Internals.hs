@@ -992,10 +992,11 @@ loop parentc rec = forkMaybe parentc $ \cont -> do
 
 
 
-            _ ->
+            _ -> do
              case maxThread cont of
                Just sem -> signalQSemB sem      -- !> "freed thread"
-               Nothing -> when(not $ freeTh parent  )  $ do -- if was not a free thread
+               Nothing -> return ()
+             when(not $ freeTh parent  )  $ do -- if was not a free thread
 
                  th <- myThreadId
                  (can,label) <- atomicModifyIORef (labelth cont) $ \(l@(status,label)) ->
@@ -1011,7 +1012,7 @@ loop parentc rec = forkMaybe parentc $ \cont -> do
        mask $ \restore ->  forkIO $ Control.Exception.try (restore action) >>= and_then
        
 free th env= do
---       return ()                                       !> ("freeing",th,"in",threadId env)
+       return ()                                       !> ("freeing",th,"in",threadId env)
        let sibling=  children env
 
        (sbs',found) <- modifyMVar sibling $ \sbs -> do
@@ -1529,13 +1530,13 @@ onFinish' proc f= proc `onException'` f
 
 
 -- | Execute all the finalization actions registered up to the last
--- 'initFinish', in reverse order.  Either an exception or 'Nothing' can be
+-- 'initFinish', in reverse order and continue the execution.  Either an exception or 'Nothing' can be
 initFinish = cutExceptions
 -- passed to 'finish'.  The argument passed is made available in the 'onFinish'
--- actions invoked.
+-- actions invoked. 
 --
-finish :: String -> TransIO a
-finish reason= throwt $ Finish reason
+finish :: String -> TransIO ()
+finish reason= (throwt $ Finish reason) <|> return()
 
 
 
