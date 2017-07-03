@@ -330,9 +330,9 @@ instance Applicative TransIO where
 instance Monad TransIO where
   return   = pure
   x >>= f  = Transient $ do
-    c  <- setEventCont x f
+    setEventCont x f
     mk <- runTrans x
-    resetEventCont mk c
+    resetEventCont mk
     case mk of
       Just k  -> runTrans (f k)
       Nothing -> return Nothing
@@ -505,7 +505,7 @@ setEventCont x f  = do
 -- | Reset the closure and continuation. Remove inner binds than the previous
 -- computations may have stacked in the list of continuations.
 -- resetEventCont :: Maybe a -> EventF -> StateIO (TransIO b -> TransIO b)
-resetEventCont mx _ = do
+resetEventCont mx  = do
   EventF { fcomp = fs, .. } <- get
   let f mx = case mx of
         Nothing -> empty
@@ -963,7 +963,7 @@ loop parentc rec = forkMaybe parentc $ \cont -> do
   loop'
   return ()
   where
-
+  {-# INLINABLE forkMaybe #-}
   forkMaybe parent  proc = do
      case maxThread parent  of
        Nothing -> forkIt parent  proc
@@ -1012,7 +1012,7 @@ loop parentc rec = forkMaybe parentc $ \cont -> do
        mask $ \restore ->  forkIO $ Control.Exception.try (restore action) >>= and_then
        
 free th env= do
-       return ()                                       !> ("freeing",th,"in",threadId env)
+   --    return ()                                       !> ("freeing",th,"in",threadId env)
        let sibling=  children env
 
        (sbs',found) <- modifyMVar sibling $ \sbs -> do
