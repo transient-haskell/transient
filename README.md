@@ -7,7 +7,9 @@
 [![Build Status](https://api.travis-ci.org/transient-haskell/transient.png?branch=master)](https://travis-ci.org/transient-haskell/transient)
 [![Gitter](https://badges.gitter.im/theam/haskell-do.svg)](https://gitter.im/Transient-Transient-Universe-HPlay/Lobby?utm_source=share-link&utm_medium=link&utm_campaign=share-link)
 
-NOTE: distributed computing and web primitives have been moved to [transient-universe](https://github.com/transient-haskell/transient-universe) and [axiom](https://github.com/transient-haskell/axiom)
+[![Donate](https://www.paypalobjects.com/en_US/i/btn/btn_donate_LG.gif)](https://agocorona.github.io/donation.html)
+
+NOTE: distributed computing and web primitives Are in [transient-universe](https://github.com/transient-haskell/transient-universe) and [axiom](https://github.com/transient-haskell/axiom). Some examples at [transient-examples](https://github.com/transient-haskell/transient-examples) 
 
 
 ## Some feedback on `transient`:
@@ -39,7 +41,7 @@ are possible if the types match, and generate new applications that are composab
 
 Transient does exactly that.
 
-The operators `<$>` `<*>` and `<>` express concurrency, the operator `<|>` express parallelism and `>>=` for sequencing of threads and/or distributed processes. So even in the presence of these effects and others, everything is composable.
+The operators `<$>` `<*>` and `<>` express concurrency, the operator `<|>` express parallelism and `>>=` for sequencing of threads, distributed processes or web widgets. So even in the presence of these effects and others, everything is composable.
 
 For this purpose transient is an extensible effects monad with all major effects and primitives for parallelism, events, asynchronous IO, early termination, non-determinism logging and distributed computing. Since it is possible to extend it with more effects without adding monad transformers, the composability is assured.
 
@@ -60,3 +62,25 @@ The articles are more technical:
 - [Distributed streaming, map-reduce](https://www.schoolofhaskell.com/user/agocorona/estimation-of-using-distributed-computing-streaming-transient-effects-vi-1)
 
 These articles contain executable examples (not now, since the site no longer support the execution of haskell snippets).
+
+
+Plans
+=====
+Once composability in the large is possible, there are a infinite quantity of ideas that may be realized. There are short term and long term goals. An status of development is regularly published in [![Gitter](https://badges.gitter.im/theam/haskell-do.svg)](https://gitter.im/Transient-Transient-Universe-HPlay/Lobby?utm_source=share-link&utm_medium=link&utm_campaign=share-link).  
+
+Among the most crazy ones is the possibility of extending this framework to other languages and make them interoperable. treating whole packaged applications as components, and docking them as lego pieces in a new layer of the Operating system where the shell allows such kind of type safe docking. this composable docker allows all kinds of composability, while the current docker platform is just a monoid.
+
+Contribute:
+==========
+Wanna contribute? Make sure that you've read our [contributor guidelines](https://github.com/transient-haskell/transient/blob/master/CONTRIBUTING.md). We'd like to hear from you and your ideas, get in touch with other contributors through:
+
+- [![Gitter](https://badges.gitter.im/theam/haskell-do.svg)](https://gitter.im/Transient-Transient-Universe-HPlay/Lobby?utm_source=share-link&utm_medium=link&utm_campaign=share-link)
+
+- [The issues page for transient](https://github.com/transient-haskell/transient/issues) 
+- [The issues page for transient-universe](https://github.com/transient-haskell/transient-universe/issues) 
+- [The issues page for axiom](https://github.com/transient-haskell/axiom/issues) 
+
+Once you learn something interesting, you can [contribute to the wiki](https://github.com/transient-haskell/transient/wiki)
+
+[You can also donate](https://agocorona.github.io/donation.html) to the lead developer in order to make possible the dedication of more time to fullfil the potential advantages of true software composability across the whole stack.
+
