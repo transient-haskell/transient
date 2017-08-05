@@ -47,6 +47,8 @@ import           System.Environment
 import           System.IO
 
 import qualified Data.ByteString.Char8 as BS
+import           Data.Atomics
+import           Data.Typeable
 
 #ifdef DEBUG
 
@@ -83,9 +85,7 @@ data LifeCycle = Alive | Parent | Listener | Dead
 
 -- | EventF describes the context of a TransientIO computation:
 data EventF = forall a b. EventF
-  { meffects     :: ()
-
-  , event       :: Maybe SData
+  { event       :: Maybe SData
     -- ^ Not yet consumed result (event) from the last asynchronous run of the
     -- computation
 
@@ -114,9 +114,7 @@ data EventF = forall a b. EventF
     -- ^ Label the thread with its lifecycle state and a label string
   } deriving Typeable
 
-type Effects =
-  forall a b c. TransIO a -> TransIO a -> (a -> TransIO b)
-    -> StateIO (StateIO (Maybe c) -> StateIO (Maybe c), Maybe a)
+
 
 instance MonadState EventF TransIO where
   get     = Transient $ get   >>= return . Just
@@ -135,8 +133,7 @@ noTrans x = Transient $ x >>= return . Just
 
 emptyEventF :: ThreadId -> IORef (LifeCycle, BS.ByteString) -> MVar [EventF] -> EventF
 emptyEventF th label childs =
-  EventF { meffects   = mempty
-         , event      = mempty
+  EventF { event      = mempty
          , xcomp      = empty
          , fcomp      = []
          , mfData     = mempty
@@ -189,6 +186,7 @@ runCont cont = do
 -}
 
 -- | Compose a list of continuations.
+{-# INLINE compose #-}
 compose :: [a -> TransIO a] -> (a -> TransIO b)
 compose []     = const empty
 compose (f:fs) = \x -> f x >>= compose fs
@@ -326,6 +324,13 @@ instance Applicative TransIO where
                         return k'
                       else return k
              return $ k'' <*> x
+
+-- instance Monad (Cont r) where
+--     return a = Cont ($ a)
+--     m >>= k  = Cont $ \c -> runCont m $ \a -> runCont (k a) c
+
+-- instance MonadCont (Cont r) where
+--     callCC f = Cont $ \c -> runCont (f (\a -> Cont $ \_ -> c a)) c
 
 instance Monad TransIO where
   return   = pure
@@ -493,44 +498,34 @@ infixr 1 <***, <**, **>
                     return $ Just x
 
 -- | Set the current closure and continuation for the current statement
-setEventCont :: TransIO a -> (a -> TransIO b) -> StateIO EventF
-setEventCont x f  = do
-  EventF { fcomp = fs, .. } <- get
-  let cont = EventF { xcomp = x
-                    , fcomp = unsafeCoerce f : fs
-                    , .. }
-  put cont
-  return cont
+{-# INLINABLE setEventCont #-}
+setEventCont :: TransIO a -> (a -> TransIO b) -> StateIO ()
+setEventCont x f  = modify $ \EventF { fcomp = fs, .. } 
+                           -> EventF { xcomp = x
+                                     , fcomp = unsafeCoerce f :  fs
+                                     , .. }
+
 
 -- | Reset the closure and continuation. Remove inner binds than the previous
 -- computations may have stacked in the list of continuations.
--- resetEventCont :: Maybe a -> EventF -> StateIO (TransIO b -> TransIO b)
-resetEventCont mx  = do
-  EventF { fcomp = fs, .. } <- get
-  let f mx = case mx of
-        Nothing -> empty
-        Just x  -> unsafeCoerce (head fs) x
-  put $ EventF { xcomp = f mx
-               , fcomp = tailsafe fs
-               , .. }
-  return  id
+-- resetEventCont :: Maybe a -> EventF -> StateIO ()
+{-# INLINABLE resetEventCont #-}
+resetEventCont mx  =
+   modify $ \EventF { fcomp = fs, .. } 
+          -> EventF { xcomp = case mx of
+                        Nothing -> empty
+                        Just x  -> unsafeCoerce (head fs) x
+                    , fcomp = tailsafe fs
+                    , .. }
+  
 
 -- | Total variant of `tail` that returns an empty list when given an empty list.
+{-# INLINE tailsafe #-}
 tailsafe :: [a] -> [a]
 tailsafe []     = []
-tailsafe (x:xs) = xs
+tailsafe (_:xs) = xs
 
---refEventCont= unsafePerformIO $ newIORef baseEffects
 
--- effects not used
--- {-# INLINE baseEffects #-}
---baseEffects :: Effects
---
---baseEffects x  x' f' = do
---            c <- setEventCont x'  f'
---            mk <- runTrans x
---            t <- resetEventCont mk c
---            return (t,mk)
 
 
 --instance MonadTrans (Transient ) where
@@ -538,9 +533,9 @@ tailsafe (x:xs) = xs
 
 -- * Threads
 
-waitQSemB   sem = atomicModifyIORef sem $ \n ->
+waitQSemB   sem = atomicModifyIORefCAS sem $ \n ->
                     if n > 0 then(n - 1, True) else (n, False)
-signalQSemB sem = atomicModifyIORef sem $ \n -> (n + 1, ())
+signalQSemB sem = atomicModifyIORefCAS sem $ \n -> (n + 1, ())
 
 -- | Sets the maximum number of threads that can be created for the given task
 -- set.  When set to 0, new tasks start synchronously in the current thread.
@@ -586,7 +581,7 @@ oneThread comp = do
 labelState :: (MonadIO m,MonadState EventF m) => String -> m ()
 labelState l =  do
   st <- get
-  liftIO $ atomicModifyIORef (labelth st) $ \(status,_) -> ((status, BS.pack l), ())
+  liftIO $ atomicModifyIORefCAS (labelth st) $ \(status,_) -> ((status, BS.pack l), ())
 
 printBlock :: MVar ()
 printBlock = unsafePerformIO $ newMVar ()
@@ -807,7 +802,7 @@ newtype Ref a = Ref (IORef a)
 setRState:: Typeable a => a -> TransIO ()
 setRState x= do
      Ref ref <- getSData
-     liftIO $ atomicModifyIORef ref $ const (x,())
+     liftIO $ atomicModifyIORefCAS ref $ const (x,())
    <|> do
      ref <- liftIO (newIORef x)
      setData $ Ref ref
@@ -817,8 +812,12 @@ getRState= do
     Ref ref <- getSData
     liftIO $ readIORef ref
 
--- | Run an action, if the result is a void action undo any state changes
--- that it might have caused.
+delRState x= delState (undefined `asTypeOf` ref x)
+  where ref :: a -> IORef a 
+        ref= undefined
+
+-- | Run an action, if it does not succeed, undo any state changes
+-- that it might have caused and allow aternative actions to run with the original state
 try :: TransIO a -> TransIO a
 try mx = do
   sd <- gets mfData
@@ -926,7 +925,7 @@ parallel ioaction = Transient $ do
       put cont { event = Nothing }
       return $ unsafeCoerce j
     Nothing    -> do
-      liftIO $ atomicModifyIORef (labelth cont) $ \(_, lab) -> ((Parent, lab), ())
+      liftIO $ atomicModifyIORefCAS (labelth cont) $ \(_, lab) -> ((Parent, lab), ())
       liftIO $ loop cont ioaction
       was <- getData `onNothing` return NoRemote
       when (was /= WasRemote) $ setData WasParallel
@@ -938,7 +937,7 @@ parallel ioaction = Transient $ do
 loop ::  EventF -> IO (StreamData t) -> IO ()
 loop parentc rec = forkMaybe parentc $ \cont -> do
   -- Execute the IO computation and then the closure-continuation
-  liftIO $ atomicModifyIORef (labelth cont) $ const ((Listener,BS.pack "wait"),())
+  liftIO $ atomicModifyIORefCAS (labelth cont) $ const ((Listener,BS.pack "wait"),())
   let loop'=   do
          mdat <- rec `catch` \(e :: SomeException) -> return $ SError e
          case mdat of
@@ -951,7 +950,7 @@ loop parentc rec = forkMaybe parentc $ \cont -> do
                   loop'
 
          where
-         setworker cont= liftIO $ atomicModifyIORef (labelth cont) $ const ((Alive,BS.pack "work"),())
+         setworker cont= liftIO $ atomicModifyIORefCAS (labelth cont) $ const ((Alive,BS.pack "work"),())
 
          iocont  dat cont = do
 
@@ -999,7 +998,7 @@ loop parentc rec = forkMaybe parentc $ \cont -> do
              when(not $ freeTh parent  )  $ do -- if was not a free thread
 
                  th <- myThreadId
-                 (can,label) <- atomicModifyIORef (labelth cont) $ \(l@(status,label)) ->
+                 (can,label) <- atomicModifyIORefCAS (labelth cont) $ \(l@(status,label)) ->
                     ((if status== Alive then Dead else status, label),l)
 
 
@@ -1422,17 +1421,19 @@ onUndo x y= onBack x (\() -> y)
 {-# NOINLINE registerUndo #-}
 registerBack :: (Typeable b, Show b) => b -> TransientIO a -> TransientIO a
 registerBack witness f  = Transient $ do
-   cont@(EventF _ _ x _ _ _ _ _ _ _ _ _)  <- get   -- !!> "backregister"
+   cont@(EventF  _ x _ _ _ _ _ _ _ _ _)  <- get   -- !!> "backregister"
 
    md <- getData `asTypeOf` (Just <$> backStateOf witness)
 
    case md of
-        Just (Backtrack _ []) -> empty
-        Just (bss@(Backtrack b (bs@((EventF _ _ x'  _ _ _ _ _ _ _ _ _):_)))) ->
-           when (isNothing b) $ do
-               addrx  <- addr x
-               addrx' <- addr x'         -- to avoid duplicate backtracking points
-               setData $ if addrx == addrx' then bss else  Backtrack mwit (cont:bs)
+        Just (Backtrack b []) ->  setData $ Backtrack b  [cont]
+        Just (bss@(Backtrack b (bs@((EventF _ x'  _ _ _ _ _ _ _ _ _):_)))) ->
+          --  when (isNothing b) $ do
+          --      addrx  <- addr x
+          --      addrx' <- addr x'         -- to avoid duplicate backtracking points
+          --      setData $ if addrx == addrx' then bss else  Backtrack mwit (cont:bs)
+               setData $ Backtrack b (cont:bs)
+
         Nothing ->  setData $ Backtrack mwit [cont]
 
    runTrans f
@@ -1491,7 +1492,10 @@ back reason = Transient $ do
            Nothing -> return empty                                     --  !> "END EXECUTION"
            Just x -> case back of
                  Nothing -> runContinuation first x                    --  !> "FORWARD EXEC"
-                 justreason -> goBackt $ Backtrack justreason bs       --  !> ("BACK AGAIN",back)
+                 justreason ->do
+                        setData $ Backtrack justreason bs
+                        goBackt $ Backtrack justreason bs
+                        empty       --  !> ("BACK AGAIN",back)
 
 backStateOf :: (Monad m, Show a, Typeable a) => a -> m (Backtrack a)
 backStateOf reason= return $ Backtrack (Nothing `asTypeOf` (Just reason)) []
