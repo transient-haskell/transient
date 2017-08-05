@@ -27,6 +27,7 @@ import Control.Monad.State
 import GHC.Conc
 import Data.Time.Clock
 import Control.Exception
+import Data.Atomics 
 
 
 -- | Converts a list of pure values into a transient task set. You can use the
@@ -37,7 +38,7 @@ choose []= empty
 choose   xs = do
     evs <- liftIO $ newIORef xs
     r <- parallel $ do
-           es <- atomicModifyIORef' evs $ \es -> let tes= tail es in (tes,es)
+           es <- atomicModifyIORefCAS evs $ \es -> let tes= tail es in (tes,es)
            case es  of
             [x]  -> x `seq` return $ SLast x
             x:_  -> x `seq` return $ SMore x
@@ -57,7 +58,7 @@ group num proc =  do
     v <- liftIO $ newIORef (0,[])
     x <- proc
 
-    mn <- liftIO $ atomicModifyIORef' v $ \(n,xs) ->
+    mn <- liftIO $ atomicModifyIORefCAS v $ \(n,xs) ->
             let n'=n +1
             in  if n'== num
 
@@ -73,15 +74,17 @@ group num proc =  do
 groupByTime :: Integer -> TransIO a -> TransIO [a]
 
 groupByTime time proc =  do
-    v  <- liftIO $ newIORef (0,[])
     t  <- liftIO getCurrentTime
+
+    v  <- liftIO $ newIORef (0,t,[])
+    
     x  <- proc
     t' <- liftIO getCurrentTime
-    mn <- liftIO $ atomicModifyIORef' v $ \(n,xs) -> let n'=n +1
+    mn <- liftIO $ atomicModifyIORefCAS v $ \(n,t,xs) -> let n'=n +1
             in
             if diffUTCTime t' t < fromIntegral time
-             then ((n', x:xs),Nothing)
-             else   ((0,[]), Just $ x:xs)
+             then   ((n',t, x:xs),Nothing)
+             else   ((0 ,t',[]), Just $ x:xs)
     case mn of
       Nothing -> stop
       Just xs -> return xs
@@ -109,7 +112,7 @@ collect n = collect' n 0
 --
 collect' :: Int -> Int -> TransIO a -> TransIO [a]
 collect' n t search= do
-
+  addThreads 1
   rv <- liftIO $ newEmptyMVar     -- !> "NEWMVAR"
 
   results <- liftIO $ newIORef (0,[])
