@@ -1,20 +1,14 @@
 {-# LANGUAGE DeriveDataTypeable #-}
 module Transient.EVars where
 
-import Transient.Base
-import Transient.Internals(runTransState,onNothing, EventF(..), killChildren)
-import qualified Data.Map as M
+import Transient.Internals
 import Data.Typeable
 
-import Control.Concurrent
 import Control.Applicative
 import Control.Concurrent.STM
 import Control.Monad.IO.Class
-import Control.Exception(SomeException)
 
-import Data.List(nub)
-import Control.Monad.State
-import Data.IORef
+
 
 
 
@@ -70,6 +64,7 @@ readEVar (EVar  ref1)=  do
 
 -- |  update the EVar and execute all readEVar blocks with "last in-first out" priority
 --
+writeEVar :: EVar a -> a -> TransIO ()
 writeEVar (EVar  ref1) x= liftIO $ atomically $ do
        writeTChan  ref1 $ SMore x
 

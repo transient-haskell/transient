@@ -1489,13 +1489,13 @@ back reason = Transient $ do
                                                                  -- !> "END RUNCLOSURE"
 
         case mr of
-           Nothing -> return empty                                     --  !> "END EXECUTION"
+           Nothing -> return Nothing                                     --  !> "END EXECUTION"
            Just x -> case back of
                  Nothing -> runContinuation first x                    --  !> "FORWARD EXEC"
                  justreason ->do
                         setData $ Backtrack justreason bs
                         goBackt $ Backtrack justreason bs
-                        empty       --  !> ("BACK AGAIN",back)
+                        return Nothing       --  !> ("BACK AGAIN",back)
 
 backStateOf :: (Monad m, Show a, Typeable a) => a -> m (Backtrack a)
 backStateOf reason= return $ Backtrack (Nothing `asTypeOf` (Just reason)) []

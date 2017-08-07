@@ -232,10 +232,10 @@
 
 module Transient.Base(
 -- * The Monad
-TransIO(..), TransientIO
+TransIO, TransientIO
 
 -- * Task Composition Operators
-, (**>), (<**), (<***), (<|)
+, (**>), (<**), (<***)
 
 -- * Running the monad
 ,keep, keep', stop, exit

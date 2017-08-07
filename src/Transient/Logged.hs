@@ -49,13 +49,13 @@ import Unsafe.Coerce
 import Transient.Base
 import Transient.Internals(Loggable)
 import Transient.Indeterminism(choose)
-import Transient.Internals(onNothing,reads1,IDynamic(..),Log(..),LogElem(..),RemoteStatus(..),StateIO)
+import Transient.Internals -- (onNothing,reads1,IDynamic(..),Log(..),LogElem(..),RemoteStatus(..),StateIO)
 import Control.Applicative
 import Control.Monad.IO.Class
 import System.Directory
 import Control.Exception
 import Control.Monad
-
+import Control.Concurrent.MVar
 
 
 #ifndef ghcjs_HOST_OS
@@ -119,7 +119,7 @@ checkpoint = do
 logAll log= do
         newlogfile <- liftIO $  (logs ++) <$> replicateM 7 (randomRIO ('a','z'))
         liftIO $ writeFile newlogfile $ show log
-      :: TransIO ()
+      -- :: TransIO ()
 
 #endif
 
@@ -144,8 +144,8 @@ toIDyn x= IDynamic x
 -- the parent computation is finished its internal (subcomputation) logs are
 -- discarded.
 --
-logged :: Loggable a => TransientIO a -> TransientIO a
-logged mx =  Transient $ do
+logged :: Loggable a => TransIO a -> TransIO a
+logged mx =  Transient $  do
    Log recover rs full <- getData `onNothing` return ( Log False  [][])
    runTrans $
     case (recover ,rs)   of                               --    !> ("logged enter",recover,rs) of
@@ -193,7 +193,7 @@ logged mx =  Transient $ do
 -------- parsing the log for API's
 
 received :: Loggable a => a -> TransIO ()
-received n=Transient $ do
+received n=Transient $  do
    Log recover rs full <- getData `onNothing` return ( Log False  [][])
    case rs of
      [] -> return Nothing
@@ -208,7 +208,7 @@ received n=Transient $ do
 
 param :: Loggable a => TransIO a
 param= res where
- res= Transient $ do
+ res= Transient $  do
    Log recover rs full <- getData `onNothing` return ( Log False  [][])
    case rs of
      [] -> return Nothing
