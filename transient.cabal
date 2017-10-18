@@ -8,8 +8,8 @@ cabal-version: >=1.10
 build-type: Simple
 license: MIT
 license-file: LICENSE
-homepage: http://www.fpcomplete.com/user/agocorona
-bug-reports: https://github.com/agocorona/transient/issues
+homepage: https://github.com/transient-haskell/transient
+bug-reports: https://github.com/transient-haskell/transient/issues
 synopsis: composing programs with multithreading, events and distributed computing
 description: See <http://github.com/agocorona/transient>
              Distributed primitives are in the transient-universe package. Web primitives are in the axiom package.
