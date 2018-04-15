@@ -886,7 +886,7 @@ sandbox mx = do
   sd <- gets mfData
   mx <*** modify (\s ->s { mfData = sd})
 
-  -- | generates an identifier that is unique within the current program execution
+-- | generates an identifier that is unique within the current program execution
 genGlobalId  :: MonadIO m => m Int
 genGlobalId= liftIO $ atomicModifyIORefCAS rglobalId $ \n -> (n +1,n)
 
