@@ -19,8 +19,8 @@ import Control.Monad.IO.Class
 import System.Directory
 import System.Random
 import Control.Exception
-
-
+import Control.Concurrent.MVar 
+import Control.Concurrent
 --logs= "logs/"
 --
 --suspend :: a -> TransIO a
@@ -64,7 +64,7 @@ import Control.Exception
 --
 --     remove f=  removeFile f `catch` (\(e::SomeException) -> remove f)
 
-main= keep $ restore  $ do
+main2= keep $ restore  $ do
      r <- logged $ choose [1..10 :: Int]
      logged $ liftIO $ print ("hello",r)
      suspend ()
@@ -72,11 +72,19 @@ main= keep $ restore  $ do
      checkpoint
      logged $ liftIO $ print ("world22222",r)
 
-main2= keep $ do
+main4= keep $ do
     ev <- newEVar
 
     readers ev 100 <|> writers ev 100
 
+
+
+main=  keep' $ liftIO $ print "hello"
+--  do
+--     mv <- newEmptyMVar
+--     forkIO $ putMVar mv "hello"
+--     r <- takeMVar mv
+--     print r
 
 
 readers ev n= foldr (<>) mempty $ take n $ repeat $ readEVar ev

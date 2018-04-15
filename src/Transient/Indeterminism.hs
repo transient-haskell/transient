@@ -11,7 +11,7 @@
 -- | see <https://www.fpcomplete.com/user/agocorona/beautiful-parallel-non-determinism-transient-effects-iii>
 --
 -----------------------------------------------------------------------------
-{-# LANGUAGE  ScopedTypeVariables #-}
+{-# LANGUAGE  ScopedTypeVariables, CPP #-}
 module Transient.Indeterminism (
 choose, choose', collect, collect', group, groupByTime
 ) where
@@ -21,13 +21,16 @@ import Transient.Internals hiding (retry)
 import Data.IORef
 import Control.Applicative
 import Data.Monoid
-import Control.Concurrent
+import Control.Concurrent 
 import Data.Typeable
 import Control.Monad.State
 import GHC.Conc
 import Data.Time.Clock
-import Control.Exception
-import Data.Atomics 
+import Control.Exception 
+
+#ifndef ETA_VERSION
+import Data.Atomics
+#endif 
 
 
 -- | Converts a list of pure values into a transient task set. You can use the
@@ -90,13 +93,6 @@ groupByTime time proc =  do
       Just xs -> return xs
 
 
-
--- XXX Collect might return before collecting @n@ results if the runtime
--- detects that there is absolutely no possibility of more tasks to be
--- collected (using 'BlockedIndefinitelyOnMVar'). This is inconsistent with the
--- behavior of group. We should perhaps return 'stop' in the failure case to
--- keep it consistent with group.
---
 -- | Collect the results of the first @n@ tasks.  Synchronizes concurrent tasks
 -- to collect the results safely and kills all the non-free threads before
 -- returning the results.  Results are returned in the thread where 'collect'

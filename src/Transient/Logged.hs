@@ -35,25 +35,26 @@
 --      liftIO $ print (\"C",r)
 -- @
 -----------------------------------------------------------------------------
-{-# LANGUAGE  CPP,ExistentialQuantification, FlexibleInstances, ScopedTypeVariables, UndecidableInstances #-}
+{-# LANGUAGE  CPP, ExistentialQuantification, FlexibleInstances, ScopedTypeVariables, UndecidableInstances #-}
 module Transient.Logged(
-Loggable, logged, received, param
-
+Loggable, logged, received, param,
 #ifndef ghcjs_HOST_OS
-, suspend, checkpoint, restore
+ suspend, checkpoint, restore,
 #endif
+-- * low level
+fromIDyn,maybeFromIDyn,toIDyn
 ) where
 
 import Data.Typeable
 import Unsafe.Coerce
 import Transient.Base
-import Transient.Internals(Loggable)
+import Transient.Internals(Loggable,read')
 import Transient.Indeterminism(choose)
 import Transient.Internals -- (onNothing,reads1,IDynamic(..),Log(..),LogElem(..),RemoteStatus(..),StateIO)
 import Control.Applicative
-import Control.Monad.IO.Class
+import Control.Monad.State
 import System.Directory
-import Control.Exception
+import Control.Exception 
 import Control.Monad
 import Control.Concurrent.MVar
 
@@ -76,7 +77,7 @@ restore   proc= do
      liftIO $ createDirectory logs  `catch` (\(e :: SomeException) -> return ())
      list <- liftIO $ getDirectoryContents logs
                  `catch` (\(e::SomeException) -> return [])
-     if length list== 2 then proc else do
+     if null list || length list== 2 then proc else do
 
          let list'= filter ((/=) '.' . head) list
          file <- choose  list'       -- !> list'
@@ -103,7 +104,7 @@ restore   proc= do
 --
 suspend :: Typeable a => a -> TransIO a
 suspend  x= do
-   Log recovery _ log <- getData `onNothing` return (Log False [] [])
+   Log recovery _ log _ <- getData `onNothing` return (Log False [] [] 0)
    if recovery then return x else do
         logAll  log
         exit x
@@ -112,22 +113,32 @@ suspend  x= do
 -- does not exit.
 checkpoint ::  TransIO ()
 checkpoint = do
-   Log recovery _ log <- getData `onNothing` return (Log False [] [])
+   Log recovery _ log _ <- getData `onNothing` return (Log False [] [] 0)
    if recovery then return () else logAll log
 
 
-logAll log= do
-        newlogfile <- liftIO $  (logs ++) <$> replicateM 7 (randomRIO ('a','z'))
-        liftIO $ writeFile newlogfile $ show log
+logAll log= liftIO $do
+        newlogfile <- (logs ++) <$> replicateM 7 (randomRIO ('a','z'))
+        logsExist <- doesDirectoryExist logs
+        when (not logsExist) $ createDirectory logs
+        writeFile newlogfile $ show log
       -- :: TransIO ()
 
 #endif
 
+maybeFromIDyn :: Loggable a => IDynamic -> Maybe a
+maybeFromIDyn (IDynamic x)= r
+   where
+   r= if typeOf (Just x) == typeOf r then Just $ unsafeCoerce x else Nothing 
+
+maybeFromIDyn (IDyns s) = case reads s of
+                            [] -> Nothing
+                            [(x,"")] -> Just x
 
 fromIDyn :: Loggable a => IDynamic -> a
 fromIDyn (IDynamic x)=r where r= unsafeCoerce x     -- !> "coerce" ++ " to type "++ show (typeOf r)
 
-fromIDyn (IDyns s)=r `seq`r where r= read s         -- !> "read " ++ s ++ " to type "++ show (typeOf r)
+fromIDyn (IDyns s)=r `seq`r where r= read' s         -- !> "read " ++ s ++ " to type "++ show (typeOf r)
 
 
 
@@ -145,48 +156,50 @@ toIDyn x= IDynamic x
 -- discarded.
 --
 logged :: Loggable a => TransIO a -> TransIO a
-logged mx =  Transient $  do
-   Log recover rs full <- getData `onNothing` return ( Log False  [][])
-   runTrans $
-    case (recover ,rs)   of                               --    !> ("logged enter",recover,rs) of
-      (True, Var x: rs') -> do
-            setData $ Log True rs' full
-            return $ fromIDyn x
---                                                  !> ("Var:", x)
-
-      (True, Exec:rs') -> do
-            setData $ Log True  rs' full
-            mx
---                                                  !> "Exec"
-
-      (True, Wait:rs') -> do
-            setData (Log True  rs' full)          -- !> "Wait"
-            empty
-
-      _ -> do
---            let add= Exec: full
-            setData $ Log False (Exec : rs) (Exec: full)     -- !> ("setLog False", Exec:rs)
-
-            r <-  mx <** ( do  -- when   p1 <|> p2, to avoid the re-execution of p1 at the
-                                -- recovery when p1 is asynchronous
-                            r <- getSData <|> return NoRemote
-                            case r of
-                                      WasParallel ->
---                                         let add= Wait: full
-                                           setData $ Log False (Wait: rs) (Wait: full)
-                                      _ -> return ())
-
-            Log recoverAfter lognew _ <- getData `onNothing` return ( Log False  [][])
-            let add= Var (toIDyn r):  full
-            if recoverAfter && (not $ null lognew)      -- !> ("recoverAfter", recoverAfter)
-              then  (setData $ Log True lognew (reverse lognew ++ add) )
-                                                        -- !> ("recover",reverse lognew ,add)
-              else if recoverAfter && (null lognew) then
-                   setData $ Log False [] add
-              else
-                  (setData $ Log False (Var (toIDyn r):rs) add)  -- !> ("restore", (Var (toIDyn r):rs))
-            return  r
-
+logged mx = Transient $  do
+       Log recover rs full hash <- getData `onNothing` return ( Log False  [][] 0)
+       runTrans $
+        case (recover ,rs)    of                     --   !> ("logged enter",recover,rs,reverse full) of
+          (True, Var x: rs') -> do
+                return ()                                --  !> ("Var:", x)
+                setData $ Log True rs' full (hash+ 10000000)
+                return $ fromIDyn x
+                                                   
+    
+          (True, Exec:rs') -> do
+                setData $ Log True  rs' full (hash + 1000)
+                mx                                       -- !> "Exec"
+    
+          (True, Wait:rs') -> do
+                setData $ Log True  rs' full (hash + 100000)          
+                empty                                   !> "Wait"
+    
+          _ -> do
+    --            let add= Exec: full
+                setData $ Log False (Exec : rs) (Exec: full)  (hash + 1000)     -- !> ("setLog False", Exec:rs)
+    
+                r <-  mx <** ( do  -- when   p1 <|> p2, to avoid the re-execution of p1 at the
+                                    -- recovery when p1 is asynchronous
+                                r <- getSData <|> return NoRemote
+                                case r of
+                                          WasParallel ->
+                                               setData $ Log False (Wait: rs) (Wait: full)  (hash+ 100000) 
+                                          _ -> return ())
+    
+                Log recoverAfter lognew _ _ <- getData `onNothing` return ( Log False  [][] 0)
+                let add= Var (toIDyn r):  full
+                if recoverAfter && (not $ null lognew)        --  !> ("recoverAfter", recoverAfter)
+                  then  do
+                    (setData $ Log True lognew (reverse lognew ++ add)  (hash + 10000000) )
+                                                                          -- !> ("recover",reverse (reverse lognew ++add))
+                  else if recoverAfter && (null lognew) then do 
+                       -- showClosure
+                       setData $ Log False [] add  (hash + 10000000)      --  !> ("recover2",reverse add)
+                  else do
+                      -- showClosure
+                    (setData $ Log False (Var (toIDyn r):rs) add (hash +10000000))  --  !> ("restore", reverse $ (Var (toIDyn r):rs))
+           
+                return  r
 
 
 
@@ -194,12 +207,12 @@ logged mx =  Transient $  do
 
 received :: Loggable a => a -> TransIO ()
 received n=Transient $  do
-   Log recover rs full <- getData `onNothing` return ( Log False  [][])
+   Log recover rs full hash <- getData `onNothing` return ( Log False  [][] 0)
    case rs of
      [] -> return Nothing
      Var (IDyns s):t -> if s == show1 n
           then  do
-            setData $ Log recover t full
+            setData $ Log recover t full hash
             return $ Just ()
           else return Nothing
      _  -> return Nothing
@@ -209,11 +222,11 @@ received n=Transient $  do
 param :: Loggable a => TransIO a
 param= res where
  res= Transient $  do
-   Log recover rs full <- getData `onNothing` return ( Log False  [][])
+   Log recover rs full hash<- getData `onNothing` return ( Log False  [][] 0)
    case rs of
      [] -> return Nothing
      Var (IDynamic v):t ->do
-           setData $ Log recover t full
+           setData $ Log recover t full hash
            return $ cast v
      Var (IDyns s):t -> do
        let mr = reads1  s `asTypeOf` type1 res

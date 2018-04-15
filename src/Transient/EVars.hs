@@ -6,7 +6,7 @@ import Data.Typeable
 
 import Control.Applicative
 import Control.Concurrent.STM
-import Control.Monad.IO.Class
+import Control.Monad.State
 
 
 

@@ -25,7 +25,7 @@ instance Monoid Int where
    mappend = (+)
 
 main= do
-   keep $ do
+   keep' $ do
        let genElem :: a -> TransIO a
            genElem x= do
                 isasync <- liftIO randomIO

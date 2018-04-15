@@ -246,10 +246,10 @@ TransIO, TransientIO
 -- * Task Creation
 -- $taskgen
 , StreamData(..)
-,parallel, async, waitEvents, sample, spawn, react
+,parallel, async, waitEvents, sample, spawn, react, abduce
 
 -- * State management
-,setData, getSData, getData, delData, modifyData, try, setState, getState, delState, getRState,setRState, modifyState
+,setData, getSData, getData, delData, modifyData, modifyData', try, setState, getState, delState, getRState,setRState, modifyState
 
 -- * Thread management
 , threads,addThreads, freeThreads, hookedThreads,oneThread, killChilds
@@ -257,7 +257,7 @@ TransIO, TransientIO
 -- * Exceptions
 -- $exceptions
 
-,onException, cutExceptions, continue, catcht, throwt
+,onException, onException', cutExceptions, continue, catcht, throwt
 
 -- * Utilities
 ,genId
