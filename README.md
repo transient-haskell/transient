@@ -50,7 +50,9 @@ Motivating example
 This program, will stream "hello world"  from N nodes if you enter "fire" in the console
 
 ```Haskell
-main= keep $ initNode $ inputNodes $ do
+main= keep $ initNode $ inputNodes <|> distribStream
+
+distribStream= do
       local $ choose "fire" "fire"
       r <- clustered $ local  choose $ repeat "hello world"
       localIO $ print r
@@ -61,7 +63,9 @@ This program will present a link in the browser and stream fibonnacci numbers to
 yo click it.  (if you have Docker, you can run it straigh from the console; See [this](https://github.com/transient-haskell/axiom#how-to-install--run-fast)
 
 ```Haskell
-main= keep . initNode . onBrowser $ do 
+main= keep . initNode $ webFib
+
+webFib= onBrowser $ do
     local . render $  wlink () (h1 "hello fibonacci numbers")
 
     r <-  atRemote $ do
@@ -73,6 +77,12 @@ main= keep . initNode . onBrowser $ do
     local . render . rawHtml $ (h2 r)
     where
     fibs = 0 : 1 : zipWith (+) fibs (tail fibs) :: [Int]
+```
+
+This program combines both functionalities:
+
+```haskell
+main= keep . initNode $ inputNodes <|> webFib <|> distribStream
 ```
 
 Documentation
