@@ -45,6 +45,36 @@ The operators `<$>` `<*>` and `<>` express concurrency, the operator `<|>` expre
 
 For this purpose transient is an extensible effects monad with all major effects and primitives for parallelism, events, asynchronous IO, early termination, non-determinism logging and distributed computing. Since it is possible to extend it with more effects without adding monad transformers, the composability is assured.
 
+Motivating example
+==================
+This program, will stream "hello world"  from N nodes if you enter "fire" in the console
+
+```Haskell
+main= keep $ initNode $ inputNodes $ do
+      local $ choose "fire" "fire"
+      r <- clustered $ local  choose $ repeat "hello world"
+      localIO $ print r
+```
+Read the tutorial to know how to compile and invoke it.
+
+This program will present a link in the browser and stream fibonnacci numbers to the browser when
+yo click it.  (if you have Docker, you can run it straigh from the console; See [this](https://github.com/transient-haskell/axiom#how-to-install--run-fast)
+
+```Haskell
+main= keep . initNode . onBrowser $ do 
+    local . render $  wlink () (h1 "hello fibonacci numbers")
+
+    r <-  atRemote $ do
+                r <- local . threads 1 . choose $ take 10 fibs
+                localIO $ print r
+                localIO $ threadDelay 1000000
+                return r
+
+    local . render . rawHtml $ (h2 r)
+    where
+    fibs = 0 : 1 : zipWith (+) fibs (tail fibs) :: [Int]
+```
+
 Documentation
 =============
 
