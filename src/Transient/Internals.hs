@@ -354,15 +354,8 @@ instance Monad TransIO where
       Just k  -> runTrans (f k)
       Nothing -> return Nothing
 
-instance MonadIO TransIO where
-  -- liftIO mx = do
-  --   ex <- liftIO' $ (mx >>= return . Right) `catch`
-  --                   (\(e :: SomeException) -> return $ Left e)
-  --   case ex of
-  --     Left  e -> back e 
-  --     Right x -> return x
-  --   where 
-      liftIO x = Transient $ liftIO x >>= return . Just
+instance MonadIO TransIO where 
+  liftIO x = Transient $ liftIO x >>= return . Just
              
 
 instance Monoid a => Monoid (TransIO a) where
@@ -806,7 +799,7 @@ setData :: (MonadState EventF m, Typeable a) => a -> m ()
 setData x = modify $ \st -> st { mfData = M.insert t (unsafeCoerce x) (mfData st) }
   where t = typeOf x
 
--- | Accepts a function that takes the current value of the stored data type
+-- | Accepts a function which takes the current value of the stored data type
 -- and returns the modified value. If the function returns 'Nothing' the value
 -- is deleted otherwise updated.
 modifyData :: (MonadState EventF m, Typeable a) => (Maybe a -> Maybe a) -> m ()
@@ -1232,19 +1225,20 @@ inputf flag ident message mv cond= do
 input :: (Typeable a, Read a,Show a) =>  (a -> Bool) -> String -> TransIO a
 input= input' Nothing
 
+-- | `input` with a default value
 input' :: (Typeable a, Read a,Show a) => Maybe a -> (a -> Bool) -> String -> TransIO a
 input' mv cond prompt= do
   liftIO $ putStr prompt >> hFlush stdout
   inputf True "input" prompt mv cond
   
 
-rcb= unsafePerformIO $ newIORef M.empty :: IORef (M.Map String (String -> IO()))
+rcb= unsafePerformIO $ newIORef [] :: IORef [ (String,String -> IO())]
 
 addListener :: String -> (String ->  IO ()) -> IO ()
-addListener name cb= atomicModifyIORef rcb $ \cbs ->  (M.insert name cb  cbs,())
+addListener name cb= atomicModifyIORef rcb $ \cbs ->  ((name, cb):filter ((/=) name . fst) cbs,())
 
 delListener :: String -> IO ()
-delListener name= atomicModifyIORef rcb $ \cbs -> (M.delete  name cbs,())
+delListener name= atomicModifyIORef rcb $ \cbs -> (filter ((/=) name . fst) cbs,())
             
 
 
@@ -1252,6 +1246,8 @@ reads1 s=x where
       x= if typeOf(typeOfr x) == typeOf "" then unsafeCoerce[(s,"")] else readsPrec' 0 s
       typeOfr :: [(a,String)] ->  a
       typeOfr  = undefined
+
+read1 s= let [(x,"")]= reads1 s  in x
 
 inputLoop= do
     x   <- getLine 
@@ -1269,7 +1265,7 @@ processLine r = do
     where
     invoke x= do
        mbs <- readIORef rcb
-       mapM (\cb -> cb x)  $ M.elems mbs 
+       mapM (\cb -> cb x) $ map snd mbs 
     
     mapM' f []= return ()
     mapM' f (xss@(x:xs)) =do 
@@ -1286,7 +1282,7 @@ processLine r = do
             n <- atomicModifyIORef riterloop $ \n -> (n+1,n)
             if n==100
               then do
-                when (not $ null x) $ putStr x >> putStrLn ": can't read, skip"
+                when (not $ null x) $ hPutStr  stderr x >> hPutStrLn stderr ": can't read, skip"
                 writeIORef riterloop 0
                 writeIORef rconsumed False
                 mapM' f xs
@@ -1360,7 +1356,7 @@ keep mx = do
    forkIO $ do
 --       liftIO $ putMVar rexit  $ Right Nothing
        runTransient $ do
-           onException $ \(e :: SomeException ) -> liftIO $ putStr "keep block: " >> print e
+           onException $ \(e :: SomeException ) -> liftIO $ putStr  "keep block: " >> print e
            st <- get
 
            setData $ Exit rexit
@@ -1368,7 +1364,7 @@ keep mx = do
             <|> do
                    option "options" "show all options"
                    mbs <- liftIO $ readIORef rcb
-                   liftIO $ mapM_  (\c ->do putStr c; putStr "|") $ M.keys mbs
+                   liftIO $ mapM_  (\c ->do putStr c; putStr "|") $ map fst mbs
                    liftIO $ putStrLn ""
                    empty
             <|> do
@@ -1488,6 +1484,7 @@ onBack ac bac = registerBack (typeof bac) $ Transient $ do
      runTrans $ case mreason of
                   Nothing     -> ac
                   Just reason -> do
+
                       -- setState $ Backtrack mreason $ tail stack -- to avoid recursive call tot he same handler
                       bac reason
      where
@@ -1573,20 +1570,45 @@ back reason =  do
   goBackt (Backtrack b (stack@(first : bs)) )= do
         setData $ Backtrack (Just reason) stack
 
-        x <-  runClosure first                                 --  !> ("RUNCLOSURE",length stack)
-        return () !> "runclosure"
+        x <-  runClosure first                                   !> ("RUNCLOSURE",length stack)
         Backtrack back _ <- getData `onNothing`  return (backStateOf  reason)
-                                                                --  !> "END RUNCLOSURE"
+                                                                  !> "END RUNCLOSURE"
 
         case back of
-                 Nothing -> runContinuation first x                   --     !> "FORWARD EXEC"
+                 Nothing -> runContinuation first x                       !> "FORWARD EXEC"
                  justreason ->do
+
                         setData $ Backtrack justreason bs
-                        goBackt $ Backtrack justreason bs     -- !> ("BACK AGAIN",back)
+                        goBackt $ Backtrack justreason bs      !> ("BACK AGAIN",back)
                         empty      
 
 backStateOf :: (Show a, Typeable a) => a -> Backtrack a
 backStateOf reason= Backtrack (Nothing `asTypeOf` (Just reason)) []
+
+data BackPoint a = BackPoint (IORef [a -> TransIO()])
+
+-- | when an exception backtracking reach the backPoint it executes all the handlers registered for it.
+--
+-- Use case: suppose that when a connection fails, you need to stop a process.
+-- This process may not be directly involved in the connection. Perhaps it was initiated after the socket is being read
+-- so an exception will not backtrack trough the process, since it is downstream, not upstream. The process may
+-- be even unrelated to the connection, in other branch of the computation.
+--
+-- in this case you only need to creat a backpoint before stablishin the connection, and use `onExceptionPoint`
+-- to set a handler that will be called when the connection fail.
+backPoint :: (Typeable reason,Show reason) => TransIO (BackPoint reason)
+backPoint = do
+    point <- liftIO $ newIORef  []
+    return () `onBack` (\e -> do 
+              rs<-  liftIO $ readIORef point
+              mapM_ (\r -> r e) rs)
+
+    return $ BackPoint point 
+
+
+onBackPoint (BackPoint ref) handler= liftIO $ atomicModifyIORef ref $ \rs -> (handler:rs,()) 
+
+
 
 -- | 'back' for the default undo track; equivalent to @back ()@.
 --
@@ -1649,6 +1671,20 @@ checkFinalize v=
 onException :: Exception e => (e -> TransIO ()) -> TransIO ()
 onException exc= return () `onException'` exc
 
+-- | set an exception
+exceptionPoint :: Exception e => TransIO (BackPoint e)
+exceptionPoint = do
+    point <- liftIO $ newIORef  []
+    return () `onException'` (\e -> do 
+              rs<-  liftIO $ readIORef point
+              mapM_ (\r -> r e) rs)
+
+    return $ BackPoint point 
+  
+-- in conjunction with `backPoint` it set a handler that will be called when backtracking pass trough the point
+onExceptionPoint :: Exception e => BackPoint e -> (e -> TransIO()) -> TransIO ()
+onExceptionPoint= onBackPoint 
+
 
 onException' :: Exception e => TransIO a -> (e -> TransIO a) -> TransIO a
 onException' mx f= onAnyException mx $ \e ->
@@ -1667,7 +1703,6 @@ onException' mx f= onAnyException mx $ \e ->
           Nothing -> do
                 r <- runTrans   mx   
                 modify $ \s -> s{event= Just $ unsafeCoerce r}
-                return () !> "MX"
                 runCont st  
                 was <- getData `onNothing` return NoRemote
                 when (was /= WasRemote) $ setData WasParallel
@@ -1676,7 +1711,6 @@ onException' mx f= onAnyException mx $ \e ->
 
           Just r -> do
                 modify $ \s ->  s{event=Nothing}  
-                return () !> "JUSTTTTTTTTTTT"
                 return  $ unsafeCoerce r) st)
                    `catch` exceptBack st 
     put st'
@@ -1711,11 +1745,11 @@ continue = forward (undefined :: SomeException)   -- !> "CONTINUE"
 -- The semantic is the same than `catch` but the computation and the exception handler can be multirhreaded
 catcht :: Exception e => TransIO b -> (e -> TransIO b) -> TransIO b
 catcht mx exc= do
-    rpassed <- liftIO $ newIORef False
+    rpassed <- liftIO $ newIORef  False
     sandbox  $ do
-         cutExceptions
          r <- onException' mx (\e -> do
                  passed <- liftIO $ readIORef rpassed
+                 return () !> ("passed",passed)
                  if not passed then continue >> exc e else empty)
          liftIO $ writeIORef rpassed True
          return r

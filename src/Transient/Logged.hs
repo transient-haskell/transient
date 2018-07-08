@@ -138,7 +138,7 @@ maybeFromIDyn (IDyns s) = case reads s of
 fromIDyn :: Loggable a => IDynamic -> a
 fromIDyn (IDynamic x)=r where r= unsafeCoerce x     -- !> "coerce" ++ " to type "++ show (typeOf r)
 
-fromIDyn (IDyns s)=r `seq`r where r= read' s         -- !> "read " ++ s ++ " to type "++ show (typeOf r)
+fromIDyn (IDyns s)=r `seq`r where r= read' s        --  !> "read " ++ s ++ " to type "++ show (typeOf r)
 
 
 
@@ -161,14 +161,14 @@ logged mx = Transient $  do
        runTrans $
         case (recover ,rs)    of                     --   !> ("logged enter",recover,rs,reverse full) of
           (True, Var x: rs') -> do
-                return ()                                --  !> ("Var:", x)
+                return ()                                  !> ("Var:", x)
                 setData $ Log True rs' full (hash+ 10000000)
                 return $ fromIDyn x
                                                    
     
           (True, Exec:rs') -> do
                 setData $ Log True  rs' full (hash + 1000)
-                mx                                       -- !> "Exec"
+                mx                                        !> "Exec"
     
           (True, Wait:rs') -> do
                 setData $ Log True  rs' full (hash + 100000)          

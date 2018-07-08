@@ -1206,7 +1206,7 @@ registerBack  ac back = callCC $ \k -> do
            setData $  Backtrack b  ( (back,  k):   unsafeCoerce bs)
         Just (Backtrack b []) -> setData $ Backtrack b  [(back , k)]
         Nothing ->  do
-           setData $ Backtrack mwit  [  (back , k)] !> "NOTHING"
+           setData $ Backtrack mwit  [  (back , k)]    -- !> "NOTHING"
    ac
   
    where

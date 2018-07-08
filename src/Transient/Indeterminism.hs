@@ -126,9 +126,9 @@ collect' n t search= do
 
           where
           loop = do
-               mr <- takeMVar rv
-               (n',rs) <- readIORef results
-               case mr of
+                mr <- takeMVar rv
+                (n',rs) <- readIORef results
+                case mr of
                   Nothing -> return rs
                   Just r -> do
                      let n''= n' +1
@@ -139,7 +139,7 @@ collect' n t search= do
                      if (n > 0 && n'' >= n)
                        then  return (rs')
                        else loop
-              `catch` \(e :: BlockedIndefinitelyOnMVar) ->
+              `catch` \(e :: BlockedIndefinitelyOnMVar) -> 
                                    readIORef results >>= return . snd
 
 

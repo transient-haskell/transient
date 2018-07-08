@@ -39,7 +39,7 @@ main= do
            i <-  threads 0 $ choose [1..100]
            nelems  <- liftIO $ randomRIO (1, 10) :: TransIO Int
            nthreads <- liftIO $ randomRIO (1,nelems)
-           r <-   threads nthreads $ foldr (<>) mempty  $map genElem  [1..nelems]
+           r <-   threads nthreads $ foldr (<>) mempty  $ map genElem  [1..nelems]
            assert (r == sum[1..nelems]) $ return ()
 
        liftIO $ putStrLn "--------------checking  parallel execution, Alternative, events --------"
