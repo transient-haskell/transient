@@ -308,8 +308,8 @@ instance Applicative TransIO where
 
 
 
-         if was== WasRemote  || (not recovery && was == NoRemote  && isNothing k )
-             -- !>  ("was,recovery,isNothing=",was,recovery, isNothing k)
+         if was== WasRemote --  || (not recovery && was == NoRemote  && isNothing k )
+             --  !>  ("was,recovery,isNothing=",was,recovery, isNothing k)
 
          -- if the first operand was a remote request
          -- (so this node is not master and hasn't to execute the whole expression)

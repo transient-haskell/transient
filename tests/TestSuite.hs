@@ -13,7 +13,7 @@ import Transient.Backtrack
 import System.Exit
 import Data.Monoid
 import Control.Applicative
-import Control.Monad.IO.Class
+import Control.Monad.State
 import System.Random
 import Control.Concurrent
 import Control.Exception.Base
@@ -46,6 +46,7 @@ main= do
        ev <- newEVar
        r <-  collect 3 $ readEVar ev <|> ((choose [1..3] >>= writeEVar ev) >> stop)
        assert (sort r== [1,2,3]) $ return ()
+      
        liftIO $ print "SUCCESS"
        exit ()
 
