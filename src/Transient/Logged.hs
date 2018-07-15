@@ -161,18 +161,18 @@ logged mx = Transient $  do
        runTrans $
         case (recover ,rs)    of                     --   !> ("logged enter",recover,rs,reverse full) of
           (True, Var x: rs') -> do
-                return ()                                  !> ("Var:", x)
+                return ()                                --  !> ("Var:", x)
                 setData $ Log True rs' full (hash+ 10000000)
                 return $ fromIDyn x
                                                    
     
           (True, Exec:rs') -> do
                 setData $ Log True  rs' full (hash + 1000)
-                mx                                        !> "Exec"
+                mx                                     --   !> "Exec"
     
           (True, Wait:rs') -> do
                 setData $ Log True  rs' full (hash + 100000)          
-                empty                                   !> "Wait"
+                empty                                 --  !> "Wait"
     
           _ -> do
     --            let add= Exec: full

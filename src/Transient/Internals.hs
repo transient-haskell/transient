@@ -254,88 +254,31 @@ instance Functor TransIO where
 
 instance Applicative TransIO where
   pure a  = Transient . return $ Just a
+  
+  mf <*> mx = do 
+    r1 <- liftIO $ newIORef Nothing
+    r2 <- liftIO $ newIORef Nothing
+    fparallel r1 r2 <|>  xparallel r1 r2 
+    where
+    fparallel r1 r2= do 
+      f <- mf 
+      liftIO $ (writeIORef r1 $ Just f) 
+      mx <- liftIO (readIORef r2) 
+      case mx of 
+        Nothing -> empty 
+        Just x  -> return $ f x 
 
-  f <*> g = Transient $ do
-         rf <- liftIO $ newIORef (Nothing,[])
-         rg <- liftIO $ newIORef (Nothing,[])
-
-
-         fs <- getContinuations
-
-         let hasWait (_:Wait:_) = True
-             hasWait _          = False
-
-             appf k = Transient $  do
-                   Log rec _ full _ <- getData `onNothing` return (Log False [] [] 0)
-                   (liftIO $ writeIORef rf  (Just k,full))
-                               -- !> ( show $ unsafePerformIO myThreadId) ++"APPF"
-
-                   (x, full2)<- liftIO $ readIORef rg
-                   when (hasWait  full ) $
-                       -- (!> (hasWait full,"full",full, "\nfull2",full2)) $
-                        let full'= head full: full2
-                        in (setData $ Log rec full' full')
-                          -- !> ("result1",full')
-
-                   return $ Just k <*> x
-
-             appg x = Transient $  do
-                   Log rec _ full _ <- getData `onNothing` return (Log False [] [] 0)
-                   liftIO $ writeIORef rg (Just x, full)
-
-                        -- !> ( show $ unsafePerformIO myThreadId) ++ "APPG"
-
-                   (k,full1) <- liftIO $ readIORef rf
-                   when (hasWait  full) $
-
-                      -- (!> ("full", full, "\nfull1",full1)) $
-
-                        let full'= head full: full1
-                        in (setData $ Log rec full' full')
-                             -- !> ("result2",full')
-
-                   return $ k <*> Just x
-
-         setContinuation f appf fs
-
-         k <- runTrans f
-                --  !> ( show $ unsafePerformIO myThreadId)++ "RUN f"
-
-         was <- getData `onNothing` return NoRemote
-         when (was == WasParallel) $  setData NoRemote
-
-         Log recovery _ full _ <- getData `onNothing` return (Log False [] [] 0)
+    xparallel r1 r2 = do 
+      x <- mx 
+      liftIO $ (writeIORef r2 $ Just x)
+      mf <- liftIO (readIORef r1)
+      case mf of
+        Nothing -> empty 
+        Just f -> return $ f x
 
 
 
-         if was== WasRemote --  || (not recovery && was == NoRemote  && isNothing k )
-             --  !>  ("was,recovery,isNothing=",was,recovery, isNothing k)
 
-         -- if the first operand was a remote request
-         -- (so this node is not master and hasn't to execute the whole expression)
-         -- or it was not an asyncronous term (a normal term without async or parallel
-         -- like primitives) and is nothing
-           then  do
-             restoreStack fs
-             return Nothing
-           else do
-             when (isJust k) $ liftIO $ writeIORef rf  (k,full)
-                -- when necessary since it maybe WasParallel and Nothing
-
-             setContinuation g appg fs
-
-             x <- runTrans g
-                    -- !> ( show $ unsafePerformIO myThreadId) ++ "RUN g"
-
-             Log recovery _ full' _ <- getData `onNothing` return (Log False [] [] 0)
-             liftIO $ writeIORef rg  (x,full')
-             restoreStack fs
-             k'' <- if was== WasParallel
-                      then do
-                        (k',_) <- liftIO $ readIORef rf -- since k may have been updated by a parallel f
-                        return k'
-                      else return k
-             return $ k'' <*> x
 
 -- instance Monad (Cont r) where
 --     return a = Cont ($ a)
@@ -1570,16 +1513,16 @@ back reason =  do
   goBackt (Backtrack b (stack@(first : bs)) )= do
         setData $ Backtrack (Just reason) stack
 
-        x <-  runClosure first                                   !> ("RUNCLOSURE",length stack)
+        x <-  runClosure first                                 --  !> ("RUNCLOSURE",length stack)
         Backtrack back _ <- getData `onNothing`  return (backStateOf  reason)
-                                                                  !> "END RUNCLOSURE"
+                                                               --   !> "END RUNCLOSURE"
 
         case back of
-                 Nothing -> runContinuation first x                       !> "FORWARD EXEC"
+                 Nothing -> runContinuation first x                   --    !> "FORWARD EXEC"
                  justreason ->do
 
                         setData $ Backtrack justreason bs
-                        goBackt $ Backtrack justreason bs      !> ("BACK AGAIN",back)
+                        goBackt $ Backtrack justreason bs     -- !> ("BACK AGAIN",back)
                         empty      
 
 backStateOf :: (Show a, Typeable a) => a -> Backtrack a
