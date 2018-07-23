@@ -48,7 +48,7 @@ fromIDyn,maybeFromIDyn,toIDyn
 import Data.Typeable
 import Unsafe.Coerce
 import Transient.Base
-import Transient.Internals(Loggable,read')
+
 import Transient.Indeterminism(choose)
 import Transient.Internals -- (onNothing,reads1,IDynamic(..),Log(..),LogElem(..),RemoteStatus(..),StateIO)
 import Control.Applicative
@@ -161,7 +161,7 @@ logged mx = Transient $  do
        runTrans $
         case (recover ,rs)    of                     --   !> ("logged enter",recover,rs,reverse full) of
           (True, Var x: rs') -> do
-                return ()                                --  !> ("Var:", x)
+                return ()                                  !> ("Var:", x)
                 setData $ Log True rs' full (hash+ 10000000)
                 return $ fromIDyn x
                                                    

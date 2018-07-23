@@ -17,11 +17,8 @@
 {-# LANGUAGE FlexibleInstances         #-}
 {-# LANGUAGE MultiParamTypeClasses     #-}
 {-# LANGUAGE DeriveDataTypeable        #-}
-{-# LANGUAGE UndecidableInstances      #-}
-{-# LANGUAGE Rank2Types                #-}
 {-# LANGUAGE RecordWildCards           #-}
 {-# LANGUAGE CPP                       #-}
-{-# LANGUAGE InstanceSigs              #-}
 {-# LANGUAGE ConstraintKinds           #-}
 
 
@@ -327,13 +324,17 @@ readWithErr :: (Typeable a, Read a) => Int -> String -> IO [(a, String)]
 readWithErr n line =
   (v `seq` return [(v, left)])
      `catch` (\(_ :: SomeException) ->
-                error $ "read error trying to read type: \"" ++ show (typeOf v)
+                throw $ ParseError $ "read error trying to read type: \"" ++ show (typeOf v)
                      ++ "\" in:  " ++ " <" ++ show line ++ "> ")
   where (v, left):_ = readsPrec n line
 
+newtype ParseError= ParseError String deriving (Show)
+
+instance Exception ParseError
+
 read' s= case readsPrec' 0 s of
     [(x,"")] -> x
-    _  -> error $ "reading " ++ s
+    _  -> throw $ ParseError $ "reading " ++ s
     
 readsPrec' n = unsafePerformIO . readWithErr n
 
@@ -416,13 +417,13 @@ class AdditionalOperators m where
 
 instance AdditionalOperators TransIO where
 
-  (**>) :: TransIO a -> TransIO b -> TransIO b
+  --(**>) :: TransIO a -> TransIO b -> TransIO b
   (**>) x y =
     Transient $ do
       runTrans x
       runTrans y
 
-  (<***) :: TransIO a -> TransIO b -> TransIO a
+  --(<***) :: TransIO a -> TransIO b -> TransIO a
   (<***) ma mb =
     Transient $ do
       fs  <- getContinuations
@@ -432,7 +433,7 @@ instance AdditionalOperators TransIO where
       restoreStack fs
       return  a
 
-  (<**) :: TransIO a -> TransIO b -> TransIO a
+  --(<**) :: TransIO a -> TransIO b -> TransIO a
   (<**) ma mb =
     Transient $ do
       a <- runTrans ma
@@ -1479,10 +1480,9 @@ registerUndo f= registerBack ()  f
 -- action.
 --
 forward :: (Typeable b, Show b) => b -> TransIO ()
-forward reason= Transient $ do
+forward reason= noTrans $ do
     Backtrack _ stack <- getData `onNothing`  ( return $ backStateOf reason)
     setData $ Backtrack(Nothing `asTypeOf` Just reason)  stack
-    return $ Just ()
 
 -- | 'forward' for the default undo track; equivalent to @forward ()@.
 retry= forward ()
@@ -1498,27 +1498,28 @@ noFinish= continue
 -- are no more undo actions registered execution stops and a 'stop' action is
 -- returned.
 --
-back :: (Typeable b, Show b) => b -> TransientIO a
+back :: (Typeable b, Show b) => b -> TransIO a
 back reason =  do
+
   bs <- getData  `onNothing`  return (backStateOf  reason)           
-  goBackt  bs                                                  --  !>"GOBACK"
+  goBackt  bs                                                    --  !>"GOBACK"
 
   where
   runClosure :: EventF -> TransIO a
   runClosure EventF { xcomp = x } = unsafeCoerce  x
   runContinuation ::  EventF -> a -> TransIO b
-  runContinuation EventF { fcomp = fs } =  (unsafeCoerce $ compose $  fs)
+  runContinuation EventF { fcomp = fs } =  (unsafeCoerce $ compose fs)
 
-  goBackt (Backtrack _ [] )= empty                     
-  goBackt (Backtrack b (stack@(first : bs)) )= do
+  goBackt (Backtrack _ [] )= empty                 !> "EMPTYYYY"     
+  goBackt (Backtrack _ (stack@(first : bs)) )= do
         setData $ Backtrack (Just reason) stack
 
-        x <-  runClosure first                                 --  !> ("RUNCLOSURE",length stack)
+        x <-  runClosure first                                   !> ("RUNCLOSURE",length stack)
         Backtrack back _ <- getData `onNothing`  return (backStateOf  reason)
                                                                --   !> "END RUNCLOSURE"
 
         case back of
-                 Nothing -> runContinuation first x                   --    !> "FORWARD EXEC"
+                 Nothing    -> runContinuation first x         --   !> "FORWARD EXEC"
                  justreason ->do
 
                         setData $ Backtrack justreason bs
@@ -1704,5 +1705,5 @@ catcht mx exc= do
 
 -- | throw an exception in the Transient monad
 throwt :: Exception e => e -> TransIO a
-throwt= back . toException
+throwt =  back . toException 
 
