@@ -161,7 +161,7 @@ logged mx = Transient $  do
        runTrans $
         case (recover ,rs)    of                     --   !> ("logged enter",recover,rs,reverse full) of
           (True, Var x: rs') -> do
-                return ()                                  !> ("Var:", x)
+--                return ()                                  !> ("Var:", x)
                 setData $ Log True rs' full (hash+ 10000000)
                 return $ fromIDyn x
                                                    

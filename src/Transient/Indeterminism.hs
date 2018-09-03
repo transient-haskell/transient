@@ -1,4 +1,4 @@
------------------------------------------------------------------------------
+ -----------------------------------------------------------------------------
 --
 -- Module      :  Transient.Indeterminism
 -- Copyright   :
@@ -109,6 +109,7 @@ collect n = collect' n 0
 collect' :: Int -> Int -> TransIO a -> TransIO [a]
 collect' n t search= do
   addThreads 1
+
   rv <- liftIO $ newEmptyMVar     -- !> "NEWMVAR"
 
   results <- liftIO $ newIORef (0,[])
@@ -119,14 +120,15 @@ collect' n t search= do
         stop
 
       timer= do
-             when (t > 0) . async $ threadDelay t >>putMVar rv Nothing -- readIORef results  >>= return . snd
+             when (t > 0) . async $ threadDelay t >> putMVar rv Nothing 
              empty
 
-      monitor=  liftIO loop
+      monitor=  liftIO loop 
 
           where
           loop = do
                 mr <- takeMVar rv
+
                 (n',rs) <- readIORef results
                 case mr of
                   Nothing -> return rs
@@ -143,9 +145,8 @@ collect' n t search= do
                                    readIORef results >>= return . snd
 
 
-  r <- oneThread $  worker <|> timer <|> monitor
+  oneThread $  timer <|> worker <|> monitor
 
-  return r
 
 
 

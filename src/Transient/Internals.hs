@@ -255,7 +255,7 @@ instance Applicative TransIO where
   mf <*> mx = do
     r1 <- liftIO $ newIORef Nothing
     r2 <- liftIO $ newIORef Nothing
-    fparallel r1 r2 <|>  xparallel r1 r2
+    fparallel  r1 r2 <|>  xparallel r1 r2
     where
     fparallel r1 r2= do
       f <- mf
@@ -299,9 +299,11 @@ instance MonadIO TransIO where
 
 instance Monoid a => Monoid (TransIO a) where
   mempty      = return mempty
-#if !MIN_VERSION_base(4,10,0)
+
+#if !SEMIGROUP_IN_BASE
   mappend x y = mappend <$> x <*> y
 #else
+
 instance (Semigroup a) => Semigroup (TransIO a) where
   (<>) x y = (<>) <$> x <*> y
 #endif
@@ -525,6 +527,7 @@ threads n process = do
 --
 oneThread :: TransIO a -> TransIO a
 oneThread comp = do
+
   st    <-  get
   chs   <- liftIO $ newMVar []
   label <- liftIO $ newIORef (Alive, BS.pack "oneThread")
@@ -537,6 +540,7 @@ oneThread comp = do
   th  <- liftIO myThreadId
           -- !> ("FATHER:", threadId st)
   chs <- liftIO $ readMVar chs -- children st'
+
   liftIO $ mapM_ (killChildren1 th) chs
   return x
   where killChildren1 :: ThreadId  ->  EventF -> IO ()
@@ -797,25 +801,33 @@ delState = delData
 
 newtype Ref a = Ref (IORef a)
 
+
+
 -- | mutable state reference that can be updated (similar to STRef in the state monad)
 --
 -- Initialized the first time it is set.
-setRState:: Typeable a => a -> TransIO ()
+setRState:: (MonadIO m,MonadState EventF m, Typeable a) => a -> m ()
 setRState x= do
-    Ref ref <- getSData
+    Ref ref <- getData `onNothing` do
+                            ref <- Ref <$> liftIO (newIORef x)
+                            setData  ref
+                            return  ref
     liftIO $ atomicModifyIORefCAS ref $ const (x,())
-   <|> do
-    ref <- liftIO (newIORef x)
-    setData $ Ref ref
 
+getRData :: (MonadIO m, MonadState EventF m, Typeable a) => m (Maybe a)
+getRData= do
+    mref <- getData
+    case mref of
+     Just (Ref ref) -> Just <$> (liftIO $ readIORef ref)
+     Nothing -> return Nothing
+     
+     
 getRState :: Typeable a => TransIO a
-getRState= do
-    Ref ref <- getSData
-    liftIO $ readIORef ref
+getRState= Transient getRData
 
 delRState x= delState (undefined `asTypeOf` ref x)
-  where ref :: a -> IORef a
-        ref= undefined
+  where ref :: a -> Ref a
+        ref = undefined
 
 -- | Run an action, if it does not succeed, undo any state changes
 -- that it might have caused and allow aternative actions to run with the original state
@@ -1508,7 +1520,7 @@ noFinish= continue
 back :: (Typeable b, Show b) => b -> TransIO a
 back reason =  do
   bs <- getData  `onNothing`  return (backStateOf  reason)           
-  goBackt  bs                                                    --  !>"GOBACK"
+  goBackt  bs                                                      !>"GOBACK"
 
   where
   runClosure :: EventF -> TransIO a
@@ -1519,17 +1531,13 @@ back reason =  do
 
   goBackt (Backtrack _ [] )= empty
   goBackt (Backtrack b (stack@(first : bs)) )= do
-
         setData $ Backtrack (Just reason) stack
-
-        x <-  runClosure first                                   !> ("RUNCLOSURE",length stack)
+        x <-  runClosure first                          !> ("RUNCLOSURE",length stack)
         Backtrack back _ <- getData `onNothing`  return (backStateOf  reason)
-                                                               --   !> "END RUNCLOSURE"
 
         case back of
-                 Nothing    -> runContinuation first x         --   !> "FORWARD EXEC"
-                 justreason ->do
-
+                 Nothing    -> runContinuation first x            !> "FORWARD EXEC"
+                 justreason -> do
                         setData $ Backtrack justreason bs
                         goBackt $ Backtrack justreason bs     -- !> ("BACK AGAIN",back)
                         empty
@@ -1539,25 +1547,18 @@ backStateOf reason= Backtrack (Nothing `asTypeOf` (Just reason)) []
 
 data BackPoint a = BackPoint (IORef [a -> TransIO()])
 
--- | when an exception backtracking reach the backPoint it executes all the handlers registered for it.
---
--- Use case: suppose that when a connection fails, you need to stop a process.
--- This process may not be directly involved in the connection. Perhaps it was initiated after the socket is being read
--- so an exception will not backtrack trough the process, since it is downstream, not upstream. The process may
--- be even unrelated to the connection, in other branch of the computation.
---
--- in this case you only need to creat a backpoint before stablishin the connection, and use `onExceptionPoint`
--- to set a handler that will be called when the connection fail.
+-- | a backpoint is a location in the code where callbacks can be installed and will be called when the backtracing pass trough that point.
+-- Normally used for exceptions.
 backPoint :: (Typeable reason,Show reason) => TransIO (BackPoint reason)
 backPoint = do
     point <- liftIO $ newIORef  []
     return () `onBack` (\e -> do
-              rs<-  liftIO $ readIORef point
+              rs <- liftIO $ readIORef point
               mapM_ (\r -> r e) rs)
 
     return $ BackPoint point
 
-
+-- | install a callback in a backPoint
 onBackPoint (BackPoint ref) handler= liftIO $ atomicModifyIORef ref $ \rs -> (handler:rs,())
 
 
@@ -1623,7 +1624,18 @@ checkFinalize v=
 onException :: Exception e => (e -> TransIO ()) -> TransIO ()
 onException exc= return () `onException'` exc
 
--- | set an exception
+-- | set an exception point. Thi is a point in the backtracking in which exception handlers can be inserted with `onExceptionPoint`
+-- it is an specialization of `backPoint` for exceptions.
+--
+-- When an exception backtracking reach the backPoint it executes all the handlers registered for it.
+--
+-- Use case: suppose that when a connection fails, you need to stop a process.
+-- This process may not be directly involved in the connection. Perhaps it was initiated after the socket is being read
+-- so an exception will not backtrack trough the process, since it is downstream, not upstream. The process may
+-- be even unrelated to the connection, in other branch of the computation.
+--
+-- in this case you only need to create a `exceptionPoint` before stablishin the connection, and use `onExceptionPoint`
+-- to set a handler that will be called when the connection fail.
 exceptionPoint :: Exception e => TransIO (BackPoint e)
 exceptionPoint = do
     point <- liftIO $ newIORef  []
@@ -1633,27 +1645,36 @@ exceptionPoint = do
 
     return $ BackPoint point
 
+
+
 -- in conjunction with `backPoint` it set a handler that will be called when backtracking pass trough the point
 onExceptionPoint :: Exception e => BackPoint e -> (e -> TransIO()) -> TransIO ()
 onExceptionPoint= onBackPoint
 
 
-onException' :: Exception e => TransIO a -> (e -> TransIO a) -> TransIO a
-onException' mx f= onAnyException mx $ \e ->
-    case fromException e of
-       Nothing -> empty
-       Just e'  -> f e'
+onException' :: Exception e => TransIO a -> (e -> TransIO a) -> TransIO a 
+onException' mx f= onAnyException mx $ \e -> 
+            case fromException e of
+               Nothing -> do
+                  Backtrack r stack <- getData  `onNothing`  return (backStateOf  e)      
+                  setData $ Backtrack r $ tail stack
+                  back e
+                  empty
+               Just e' -> f e'
+
+
+   
   where
   onAnyException :: TransIO a -> (SomeException ->TransIO a) -> TransIO a
-  onAnyException mx f= ioexp f  `onBack` f
-  ioexp  f  = Transient $ do
+  onAnyException mx exc= ioexp  `onBack` exc
+ 
+  ioexp    = Transient $ do
     st <- get
-
-    (mx,st') <- liftIO $ (runStateT
+    (mr,st') <- liftIO $ (runStateT
       (do
         case event st of
           Nothing -> do
-                r <- runTrans   mx
+                r <- runTrans  ( mx  !> "ONEXCEPTION") 
                 modify $ \s -> s{event= Just $ unsafeCoerce r}
                 runCont st
                 was <- getData `onNothing` return NoRemote
@@ -1666,7 +1687,7 @@ onException' mx f= onAnyException mx $ \e ->
                 return  $ unsafeCoerce r) st)
                    `catch` exceptBack st
     put st'
-    return mx
+    return mr
 
 exceptBack st = \(e ::SomeException) -> do  -- recursive catch itself
                       runStateT ( runTrans $  back e ) st  !> "EXCEPTBACK"
@@ -1701,8 +1722,12 @@ catcht mx exc= do
     sandbox  $ do
          r <- onException' mx (\e -> do
                  passed <- liftIO $ readIORef rpassed
-                 return () !> ("passed",passed)
-                 if not passed then continue >> exc e else empty)
+                 if not passed then continue >> exc e else do
+                    Backtrack r stack <- getData  `onNothing`  return (backStateOf  e)      
+                    setData $ Backtrack r $ tail stack
+                    back e
+                    empty )
+                    
          liftIO $ writeIORef rpassed True
          return r
    where
