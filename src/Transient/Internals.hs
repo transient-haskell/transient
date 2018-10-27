@@ -44,6 +44,7 @@ import           Data.IORef
 import           System.Environment
 import           System.IO
 
+
 import qualified Data.ByteString.Char8 as BS
 import           Data.Typeable
 
@@ -166,6 +167,12 @@ runTransient t = do
 runTransState :: EventF -> TransIO x -> IO (Maybe x, EventF)
 runTransState st x = runStateT (runTrans x) st
 
+
+
+emptyIfNothing :: Maybe a -> TransIO a
+emptyIfNothing =  Transient  . return
+
+
 -- | Get the continuation context: closure, continuation, state, child threads etc
 getCont :: TransIO EventF
 getCont = Transient $ Just <$> get
@@ -248,41 +255,52 @@ instance Functor TransIO where
   fmap f mx = do
     x <- mx
     return $ f x
+    
 
 instance Applicative TransIO where
   pure a  = Transient . return $ Just a
 
+
   mf <*> mx = do
+    
     r1 <- liftIO $ newIORef Nothing
     r2 <- liftIO $ newIORef Nothing
-    fparallel  r1 r2 <|>  xparallel r1 r2
+    fparallel  r1 r2  <|>  xparallel r1 r2
     where
     fparallel r1 r2= do
-      f <- mf
-      liftIO $ (writeIORef r1 $ Just f)
-      mx <- liftIO (readIORef r2)
-      case mx of
-        Nothing -> empty
-        Just x  -> return $ f x
+      f <- mf 
 
+      r <- getState <|> return NoRemote
+      return () !> ("first",r)
+      if r == NoRemote then do
+           x <- mx !> "second serial"
+           return $ f x
+        else do
+
+          liftIO $ (writeIORef r1 $ Just f)
+          mx <- liftIO (readIORef r2)
+          case mx of
+            Nothing -> empty
+            Just x  -> return $ f x
+          
     xparallel r1 r2 = do
-      x <- mx
-      liftIO $ (writeIORef r2 $ Just x)
-      mf <- liftIO (readIORef r1)
-      case mf of
-        Nothing -> empty
-        Just f -> return $ f x
+
+      r <- getState <|> return NoRemote
+      return () !> ("SECOND par",r)
+      if r == WasParallel then do
+
+          x <- mx
+          liftIO $ (writeIORef r2 $ Just x)
+          mf <- liftIO (readIORef r1)
+          case mf of
+            Nothing -> empty
+            Just f -> return $ f x
+        else empty
 
 
-
-
-
--- instance Monad (Cont r) where
---     return a = Cont ($ a)
---     m >>= k  = Cont $ \c -> runCont m $ \a -> runCont (k a) c
-
--- instance MonadCont (Cont r) where
---     callCC f = Cont $ \c -> runCont (f (\a -> Cont $ \_ -> c a)) c
+-- | stop the current computation and does not execute any alternative computation
+fullStop :: TransIO stop
+fullStop= setData WasRemote >> stop
 
 instance Monad TransIO where
   return   = pure
@@ -872,6 +890,11 @@ data StreamData a =
     | SDone                 -- ^ No more tasks, we are done
     | SError SomeException  -- ^ An error occurred
     deriving (Typeable, Show,Read)
+    
+instance Functor StreamData where
+    fmap f (SMore a)= SMore (f a)
+    fmap f (SLast a)= SLast (f a)
+    fmap _ SDone= SDone
 
 -- | A task stream generator that produces an infinite stream of tasks by
 -- running an IO computation in a loop. A task is triggered carrying the output
@@ -931,13 +954,15 @@ sample action interval = do
 -- action returns a 'StreamData'. When it returns an 'SMore' or 'SLast' a new
 -- task is triggered with the result value. If the return value is 'SMore', the
 -- action is run again to generate the next task, otherwise task creation
--- stops.
+-- stop.
 --
 -- Unless the maximum number of threads (set with 'threads') has been reached,
 -- the task is generated in a new thread and the current thread returns a void
 -- task.
 parallel :: IO (StreamData b) -> TransIO (StreamData b)
 parallel ioaction = Transient $ do
+  was <- getData `onNothing` return NoRemote
+  when (was /= WasRemote) $ setData WasParallel
   cont <- get
           --  !> "PARALLEL"
   case event cont of
@@ -946,9 +971,9 @@ parallel ioaction = Transient $ do
       return $ unsafeCoerce j
     Nothing    -> do
       liftIO $ atomicModifyIORefCAS (labelth cont) $ \(_, lab) -> ((Parent, lab), ())
+
       liftIO $ loop cont ioaction
-      was <- getData `onNothing` return NoRemote
-      when (was /= WasRemote) $ setData WasParallel
+
 --            th <- liftIO myThreadId
 --            return () !> ("finish",th)
       return Nothing
@@ -1108,14 +1133,15 @@ react
   -> IO  response
   -> TransIO eventdata
 react setHandler iob= Transient $ do
+        was <- getData `onNothing` return NoRemote
+        when (was /= WasRemote) $ setData WasParallel
         cont <- get
         case event cont of
           Nothing -> do
             liftIO $ setHandler $ \dat ->do
               runStateT (runCont cont) cont{event= Just $ unsafeCoerce dat} `catch` exceptBack cont
               iob
-            was <- getData `onNothing` return NoRemote
-            when (was /= WasRemote) $ setData WasParallel
+
             return Nothing
 
           j@(Just _) -> do
@@ -1445,11 +1471,11 @@ onBack :: (Typeable b, Show b) => TransientIO a -> ( b -> TransientIO a) -> Tran
 onBack ac bac = registerBack (typeof bac) $ Transient $ do
      Backtrack mreason stack  <- getData `onNothing` (return $ backStateOf (typeof bac))
      runTrans $ case mreason of
-                  Nothing     -> ac
+                  Nothing     -> ac   !>  "ONBACK NOTHING"
                   Just reason -> do
 
                       -- setState $ Backtrack mreason $ tail stack -- to avoid recursive call tot he same handler
-                      bac reason
+                      bac reason   !> ("ONBACK JUST",reason)
      where
      typeof :: (b -> TransIO a) -> b
      typeof = undefined
@@ -1494,7 +1520,7 @@ registerUndo f= registerBack ()  f
 -- XXX Should we enforce retry of the same track which is being undone? If the
 -- user specifies a different track would it make sense?
 --
--- | For a given undo track id, stop executing more backtracking actions and
+-- | For a given undo track type, stop executing more backtracking actions and
 -- resume normal execution in the forward direction. Used inside an undo
 -- action.
 --
@@ -1511,11 +1537,10 @@ retry= forward ()
 --
 noFinish= continue
 
--- | Start the undo process for the given undo track id. Performs all the undo
--- actions registered till now in reverse order. An undo action can use
+-- | Start the undo process for a given undo track identifier type. Performs all the undo
+-- actions registered for that type in reverse order. An undo action can use
 -- 'forward' to stop the undo process and resume forward execution. If there
--- are no more undo actions registered execution stops and a 'stop' action is
--- returned.
+-- are no more undo actions registered, execution stop
 --
 back :: (Typeable b, Show b) => b -> TransIO a
 back reason =  do
@@ -1533,7 +1558,7 @@ back reason =  do
   goBackt (Backtrack b (stack@(first : bs)) )= do
         setData $ Backtrack (Just reason) stack
         x <-  runClosure first                          !> ("RUNCLOSURE",length stack)
-        Backtrack back _ <- getData `onNothing`  return (backStateOf  reason)
+        Backtrack back bs' <- getData `onNothing`  return (backStateOf  reason)
 
         case back of
                  Nothing    -> runContinuation first x            !> "FORWARD EXEC"
@@ -1653,8 +1678,10 @@ onExceptionPoint= onBackPoint
 
 
 onException' :: Exception e => TransIO a -> (e -> TransIO a) -> TransIO a 
-onException' mx f= onAnyException mx $ \e -> 
+onException' mx f= onAnyException mx $ \e -> do
+            return () !>  "EXCEPTION HANDLER EXEC" 
             case fromException e of
+
                Nothing -> do
                   Backtrack r stack <- getData  `onNothing`  return (backStateOf  e)      
                   setData $ Backtrack r $ tail stack
@@ -1670,11 +1697,12 @@ onException' mx f= onAnyException mx $ \e ->
  
   ioexp    = Transient $ do
     st <- get
+
     (mr,st') <- liftIO $ (runStateT
       (do
         case event st of
           Nothing -> do
-                r <- runTrans  ( mx  !> "ONEXCEPTION") 
+                r <- runTrans  mx
                 modify $ \s -> s{event= Just $ unsafeCoerce r}
                 runCont st
                 was <- getData `onNothing` return NoRemote
@@ -1693,17 +1721,7 @@ exceptBack st = \(e ::SomeException) -> do  -- recursive catch itself
                       runStateT ( runTrans $  back e ) st  !> "EXCEPTBACK"
                   `catch` exceptBack st
 
-  --   where
-  --  -- drop the current exception handler from the stack
-  --   stex st =
-  --       let list = mfData st
-  --           emptyback= backStateOf(undefined :: SomeException)
-  --           Backtrack b stack = case M.lookup (typeOf  emptyback) list of
-  --                             Just x  -> unsafeCoerce x
-  --                             Nothing -> emptyback
-
-  --       in st { mfData = M.insert (typeOf emptyback) (unsafeCoerce $ Backtrack b $ tail stack) (mfData st) }
-
+  
 -- | Delete all the exception handlers registered till now.
 cutExceptions :: TransIO ()
 cutExceptions= backCut  (undefined :: SomeException)
@@ -1737,6 +1755,18 @@ catcht mx exc= do
        <*** do setState exState
 
 -- | throw an exception in the Transient monad
+-- there is a difference between `throw` and `throwt` since the latter preserves the state, while the former does not.
+-- Any exception not thrown with `throwt`  does not preserve the state.
+--
+-- > main= keep  $ do
+-- >      onException $ \(e:: SomeException) -> do
+-- >                  v <- getState <|> return "hello"
+-- >                  liftIO $ print v
+-- >      setState "world"
+-- >      throw $ ErrorCall "asdasd"
+-- 
+-- the latter print "hello". If you use `throwt` instead, it prints "world"     
+     
 throwt :: Exception e => e -> TransIO a
 
 throwt =  back . toException 
