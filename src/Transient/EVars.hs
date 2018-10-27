@@ -54,7 +54,6 @@ readEVar :: EVar a -> TransIO a
 readEVar (EVar  ref1)=  do
      tchan <-  liftIO . atomically $ dupTChan ref1
      r <- parallel $ atomically $  readTChan tchan
-
      case r of
         SDone -> empty
         SMore x -> return x

@@ -13,7 +13,7 @@
 -----------------------------------------------------------------------------
 {-# LANGUAGE  ScopedTypeVariables, CPP #-}
 module Transient.Indeterminism (
-choose, choose', collect, collect', group, groupByTime
+choose,  choose', chooseStream, collect, collect', group, groupByTime
 ) where
 
 import Transient.Internals hiding (retry)
@@ -36,19 +36,23 @@ import Data.Atomics
 -- | Converts a list of pure values into a transient task set. You can use the
 -- 'threads' primitive to control the parallelism.
 --
-choose  :: Show a =>  [a] -> TransIO a
+choose  ::  [a] -> TransIO  a
 choose []= empty
-choose   xs = do
+choose   xs = chooseStream xs >>= checkFinalize  
+
+-- | transmit the end of stream
+chooseStream  ::  [a] -> TransIO (StreamData a)
+chooseStream []= empty
+chooseStream   xs = do
     evs <- liftIO $ newIORef xs
-    r <- parallel $ do
+    parallel $ do
            es <- atomicModifyIORefCAS evs $ \es -> let tes= tail es in (tes,es)
            case es  of
             [x]  -> x `seq` return $ SLast x
             x:_  -> x `seq` return $ SMore x
-    checkFinalize r
 
--- | Same as 'choose' except that the 'threads' combinator cannot be used,
--- instead the parent thread's limit applies.
+
+-- | Same as 'choose',  slower in some cases
 --
 choose' :: [a] -> TransIO a
 choose' xs = foldl (<|>) empty $ map (async . return) xs
