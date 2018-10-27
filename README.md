@@ -53,7 +53,7 @@ This program, will stream "hello world"  from N nodes if you enter "fire" in the
 main= keep $ initNode $ inputNodes <|> distribStream
 
 distribStream= do
-      local $ choose "fire" "fire"
+      local $ option "fire" "fire"
       r <- clustered $ local  choose $ repeat "hello world"
       localIO $ print r
 ```
