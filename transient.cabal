@@ -35,6 +35,7 @@ library
                      , mtl
                      , stm
                      , random
+                     , primitive < 0.6.4
     if impl(eta)
         build-depends:
             
@@ -54,7 +55,7 @@ library
     buildable: True
     default-language: Haskell2010
     hs-source-dirs: src .
-    
+    ghc-options:  -threaded -rtsopts 
     -- eta-options: -ddump-stg -ddump-to-file
 
     if flag(debug)
