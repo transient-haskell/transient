@@ -171,8 +171,9 @@ logged mx = Transient $  do
                 mx                                     --   !> "Exec"
     
           (True, Wait:rs') -> do
-                setData $ Log True  rs' full (hash + 100000)          
-                empty                                 --  !> "Wait"
+                setData $ Log True  rs' full (hash + 100000)
+                setData WasParallel
+                empty                                   !> "Wait"
     
           _ -> do
     --            let add= Exec: full
@@ -190,6 +191,7 @@ logged mx = Transient $  do
                 let add= Var (toIDyn r):  full
                 if recoverAfter && (not $ null lognew)        --  !> ("recoverAfter", recoverAfter)
                   then  do
+                    setData WasParallel
                     (setData $ Log True lognew (reverse lognew ++ add)  (hash + 10000000) )
                                                                           -- !> ("recover",reverse (reverse lognew ++add))
                   else if recoverAfter && (null lognew) then do 
