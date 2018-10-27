@@ -322,7 +322,7 @@ instance Monoid a => Monoid (TransIO a) where
   mappend  = (<>) 
   
 instance (Monoid a) => Semigroup (TransIO a) where
-  g(<>)=  mappendt
+  (<>)=  mappendt
 #else
   mappend= mappendt
 #endif
