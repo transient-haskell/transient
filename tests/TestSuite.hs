@@ -20,9 +20,9 @@ import Control.Exception.Base
 import Data.List
 
 
-instance Monoid Int where
-   mempty= 0
-   mappend = (+)
+--instance Monoid Int where
+--   mempty  = 0
+--   mappend = (+)
 
 main= do
    keep' $ do
@@ -39,7 +39,7 @@ main= do
            i <-  threads 0 $ choose [1..100]
            nelems  <- liftIO $ randomRIO (1, 10) :: TransIO Int
            nthreads <- liftIO $ randomRIO (1,nelems)
-           r <-   threads nthreads $ foldr (<>) mempty  $ map genElem  [1..nelems]
+           r <-   threads nthreads $ foldr (+) 0  $ map genElem  [1..nelems]
            assert (r == sum[1..nelems]) $ return ()
 
        liftIO $ putStrLn "--------------checking  parallel execution, Alternative, events --------"

@@ -318,13 +318,17 @@ instance MonadIO TransIO where
 instance Monoid a => Monoid (TransIO a) where
   mempty      = return mempty
 
-#if !SEMIGROUP_IN_BASE
-  mappend x y = mappend <$> x <*> y
+#if MIN_VERSION_base(4,11,0) 
+  mappend  = (<>) 
+  
+instance (Monoid a) => Semigroup (TransIO a) where
+  g(<>)=  mappendt
 #else
-
-instance (Semigroup a) => Semigroup (TransIO a) where
-  (<>) x y = (<>) <$> x <*> y
+  mappend= mappendt
 #endif
+
+mappendt x y = mappend <$> x <*> y
+
 
 instance Alternative TransIO where
     empty = Transient $ return  Nothing
