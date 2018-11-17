@@ -74,7 +74,7 @@ integer= do
 -- | read an Int
 int :: TransIO Int
 int= do 
-    s <- tTakeWhile isNumber
+    s <- tTakeWhile' isNumber
     if BS.null s then empty else return $ stoi 0 s
 
     where
@@ -169,7 +169,7 @@ tTakeWhile cond= -- parse (BS.span cond)
 tTakeWhile' :: (Char -> Bool) -> TransIO BS.ByteString
 tTakeWhile' cond= withData $ \s ->
    let (h,t)= BS.span cond s
-   in if BS.null h then  empty else return (h, if BS.null t then t else BS.tail t) 
+   in if BS.null h then  empty else return (h, if BS.null t then t else BS.tail t)  !> ("tTakeWhile'",h)
 
  
 just1 f x= let (h,t)= f x in (Just h,t)
@@ -181,7 +181,7 @@ tTake n=  withData $ \s ->  return $ BS.splitAt n s !> ("tTake",n)
 tDrop n= withData $ \s ->  return $ ((),BS.drop n s)
 
 -- | read a char
-anyChar= withData $ \s ->  return (BS.head s,BS.tail s)
+anyChar= withData $ \s -> if BS.null s then empty else return (BS.head s,BS.tail s)
 
 -- | verify that the next character is the one expected
 tChar c= anyChar >>= \x -> if x== c then return c else empty
@@ -212,7 +212,7 @@ withData parser= Transient $ do
    ParseContext readMore s <- getData `onNothing` error "parser: no context"
    
    let loop = unsafeInterleaveIO $ do
-           mr <-  readMore !> "readMOre"
+           mr <-  readMore 
            return () !> ("readMore",mr)
            case mr of 
              SMore r ->  (r <>) `liftM` loop
@@ -244,6 +244,7 @@ giveData= (noTrans $ do
 -- | True if the stream has finished
 isDone :: TransIO Bool
 isDone=  noTrans $ do 
+    return () !> "isDone"
     ParseContext readMore s <- getData `onNothing` error "parser: no context"
        :: StateIO (ParseContext BS.ByteString)  -- change to strict BS
     if not $ BS.null s then return False else do
