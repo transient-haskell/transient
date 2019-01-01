@@ -54,7 +54,7 @@ main= keep $ initNode $ inputNodes <|> distribStream
 
 distribStream= do
       local $ option "fire" "fire"
-      r <- clustered $ local  choose $ repeat "hello world"
+      r <- clustered . local . choose $ repeat "hello world"
       localIO $ print r
 ```
 Read the tutorial to know how to compile and invoke it.
