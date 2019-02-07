@@ -127,13 +127,13 @@ logAll log= liftIO $do
 #endif
 
 maybeFromIDyn :: Loggable a => IDynamic -> Maybe a
-maybeFromIDyn (IDynamic x)= r
+maybeFromIDyn (IDynamic x)=  r
    where
-   r= if typeOf (Just x) == typeOf r then Just $ unsafeCoerce x else Nothing 
+   r= if typeOf (Just x)  == typeOf r then Just $ unsafeCoerce x else Nothing 
 
-maybeFromIDyn (IDyns s) = case reads s of
-                            [] -> Nothing
-                            [(x,"")] -> Just x
+maybeFromIDyn (IDyns s) = case reads s  of
+                            [] -> Nothing 
+                            [(x,"")] -> Just x 
 
 fromIDyn :: Loggable a => IDynamic -> a
 fromIDyn (IDynamic x)=r where r= unsafeCoerce x     -- !> "coerce" ++ " to type "++ show (typeOf r)
@@ -161,32 +161,28 @@ logged mx = Transient $  do
        runTrans $
         case (recover ,rs)    of                     --   !> ("logged enter",recover,rs,reverse full) of
           (True, Var x: rs') -> do
---                return ()                                  !> ("Var:", x)
+                return ()                            --      !> ("Var:", x)
                 setData $ Log True rs' full (hash+ 10000000)
                 return $ fromIDyn x
                                                    
     
           (True, Exec:rs') -> do
                 setData $ Log True  rs' full (hash + 1000)
-                mx                                     --   !> "Exec"
+                mx                                    --    !> "Exec"
     
           (True, Wait:rs') -> do
                 setData $ Log True  rs' full (hash + 100000)
                 setData WasParallel
-                empty                                   !> "Wait"
+                empty                                 --  !> "Wait"
     
           _ -> do
-    --            let add= Exec: full
+
                 setData $ Log False (Exec : rs) (Exec: full)  (hash + 1000)     -- !> ("setLog False", Exec:rs)
     
-                r <-  mx <** ( do  -- when   p1 <|> p2, to avoid the re-execution of p1 at the
-                                    -- recovery when p1 is asynchronous
-                                r <- getSData <|> return NoRemote
-                                case r of
-                                          WasParallel ->
-                                               setData $ Log False (Wait: rs) (Wait: full)  (hash+ 100000) 
-                                          _ -> return ())
-    
+                r <-  mx <**        -- when   p1 <|> p2, to avoid the re-execution of p1 at the
+                                    -- recovery when p1 is asynchronous or return empty
+                                setData $ Log False (Wait: rs) (Wait: full)  (hash+ 100000)  
+
                 Log recoverAfter lognew _ _ <- getData `onNothing` return ( Log False  [][] 0)
                 let add= Var (toIDyn r):  full
                 if recoverAfter && (not $ null lognew)        --  !> ("recoverAfter", recoverAfter)
