@@ -78,9 +78,9 @@ group num proc =  do
 -- | Collect the results of a task set, grouping all results received within
 -- every time interval specified by the first parameter as `diffUTCTime`.
 --
-groupByTime :: Integer -> TransIO a -> TransIO [a]
 
-groupByTime time proc =  do
+{-
+groupByTime1 time proc =  do
     t  <- liftIO getCurrentTime
 
     v  <- liftIO $ newIORef (0,t,[])
@@ -95,7 +95,7 @@ groupByTime time proc =  do
     case mn of
       Nothing -> stop
       Just xs -> return xs
-
+-}
 
 -- | Collect the results of the first @n@ tasks.  Synchronizes concurrent tasks
 -- to collect the results safely and kills all the non-free threads before
@@ -152,6 +152,27 @@ collect' n t search= do
   oneThread $  timer <|> worker <|> monitor
 
 
+-- | insert `SDone` response everytime there is a timeout since the last response
+
+burst :: Int -> TransIO a -> TransIO (StreamData a)
+burst timeout comp= do
+     r <- oneThread comp 
+     return (SMore r) <|> (async (threadDelay timeout) >> return SDone)
+     
+groupByTime :: Monoid a => Int -> TransIO a -> TransIO a
+groupByTime timeout comp= do
+     v <- liftIO $ newIORef mempty 
+     gather v <|> run v 
+     where
+     run v =  do 
+        x <-  comp
+        liftIO $ atomicModifyIORefCAS v $ \xs -> (xs <> x,())
+        empty
+        
+     gather v= waitEvents $ do
+             threadDelay timeout 
+             atomicModifyIORefCAS v $ \xs -> (mempty , xs) 
 
 
-
+   
+ 
