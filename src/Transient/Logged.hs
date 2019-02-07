@@ -179,9 +179,9 @@ logged mx = Transient $  do
 
                 setData $ Log False (Exec : rs) (Exec: full)  (hash + 1000)     -- !> ("setLog False", Exec:rs)
     
-                r <-  mx <**        -- when   p1 <|> p2, to avoid the re-execution of p1 at the
+                r <-  mx <** do setData $ Log False (Wait: rs) (Wait: full)  (hash+ 100000)
+                                    -- when   p1 <|> p2, to avoid the re-execution of p1 at the
                                     -- recovery when p1 is asynchronous or return empty
-                                setData $ Log False (Wait: rs) (Wait: full)  (hash+ 100000)  
 
                 Log recoverAfter lognew _ _ <- getData `onNothing` return ( Log False  [][] 0)
                 let add= Var (toIDyn r):  full

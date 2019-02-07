@@ -40,22 +40,22 @@ string s=withData $ \str -> do
 
 -- | fast search for a token
 tDropUntilToken token= withData $ \str -> 
-    if BS.null str then empty else return $ drop2 str 
+    if BS.null str then empty else  drop2 str 
   where 
   drop2 str=
     if token `BS.isPrefixOf` str  !> (BS.take 2 str)
-          then  ((),BS.drop (BS.length token) str)
-          else  drop2 $ BS.tail str 
+          then  return ((),BS.drop (BS.length token) str)
+          else if not $ BS.null str then drop2 $ BS.tail str else empty
 
 tTakeUntilToken :: BS.ByteString -> TransIO BS.ByteString
-tTakeUntilToken token= withData $ \str -> return $ takeit mempty str
+tTakeUntilToken token= withData $ \str -> takeit mempty str
   where 
-  takeit :: BS.ByteString -> BS.ByteString -> ( BS.ByteString, BS.ByteString)
+  takeit :: BS.ByteString -> BS.ByteString -> TransIO ( BS.ByteString, BS.ByteString)
   takeit res str= 
-   if BS.null str then (res,str) else 
+   if BS.null str then return (res,str) else 
       if token `BS.isPrefixOf` str 
-          then  (res !> ("tTakeUntilString",res),BS.drop (BS.length token) str)
-          else   takeit ( BS.snoc res (BS.head str)) $ BS.tail str
+          then  return (res !> ("tTakeUntilString",res),BS.drop (BS.length token) str)
+          else  if not $ BS.null str then takeit ( BS.snoc res (BS.head str)) $ BS.tail str else empty
     
 -- | read an Integer
 integer :: TransIO Integer
