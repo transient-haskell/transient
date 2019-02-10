@@ -1232,7 +1232,7 @@ inputf flag ident  mv cond= do
 
     when flag $  liftIO $ delListener ident 
     c <- liftIO $ readIORef rconsumed
-    if  c then empty else do
+    if c then returnm mv else do
         if null str then do liftIO $ writeIORef rconsumed True; returnm mv  else do 
             let rr = read1 str 
         
