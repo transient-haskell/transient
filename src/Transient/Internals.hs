@@ -43,6 +43,8 @@ import           Data.List
 import           Data.IORef
 import           System.Environment
 import           System.IO
+import           System.IO.Error
+
 
 import           Data.String
 import qualified Data.ByteString.Char8 as BS
@@ -862,7 +864,7 @@ newtype Ref a = Ref (IORef a)
 
 
 -- | mutable state reference that can be updated (similar to STRef in the state monad)
---
+-- They are identified by his type.
 -- Initialized the first time it is set.
 setRState:: (MonadIO m,MonadState EventF m, Typeable a) => a -> m ()
 setRState x= do
@@ -1419,8 +1421,12 @@ keep mx = do
 --       liftIO $ putMVar rexit  $ Right Nothing
        runTransient $ do
            onException $ \(e :: SomeException ) -> liftIO $ putStr  "keep block: " >> print e
+           onException $ \(e :: IOException) -> do
+             when (ioeGetErrorString e ==  "resource busy") $ do
+                 liftIO $ do print e ; putStrLn "EXITING!!!";  putMVar rexit Nothing
+                 empty
+                 
            st <- get
-
            setData $ Exit rexit
            (abduce >> labelState (fromString "input") >> liftIO inputLoop >> empty)
             <|> do
@@ -1471,6 +1477,13 @@ keep' mx  = do
    rexit <- newEmptyMVar
    forkIO $ do
            runTransient $ do
+              onException $ \(e :: SomeException ) -> liftIO $ putStr  "keep block: " >> print e
+    
+              onException $ \(e :: IOException) -> do
+                 when (ioeGetErrorString e ==  "resource busy") $ do
+                     liftIO $ do  print e ; putStrLn "EXITING!!!"; putMVar rexit Nothing
+                     liftIO $ putMVar rexit Nothing
+                     empty
               setData $ Exit rexit
               mx
 
@@ -1490,7 +1503,7 @@ execCommandLine= do
            processLine  path
 
 
--- | Exit the main thread, and thus all the Transient threads (and the
+-- | Exit the main thread with a result, and thus all the Transient threads (and the
 -- application if there is no more code)
 exit :: Typeable a => a -> TransIO a
 exit x= do
