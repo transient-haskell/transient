@@ -57,7 +57,8 @@ import System.Directory
 import Control.Exception 
 import Control.Monad
 import Control.Concurrent.MVar
-
+import qualified Data.ByteString.Lazy.Char8 as BS
+import qualified Data.ByteString.Char8 as BSS
 
 #ifndef ghcjs_HOST_OS
 import System.Random
@@ -205,34 +206,45 @@ logged mx = Transient $  do
 
 received :: Loggable a => a -> TransIO ()
 received n=Transient $  do
+
    Log recover rs full hash <- getData `onNothing` return ( Log False  [][] 0)
-   case rs of
+   return () !> ("RECEIVED log, n", rs,n)
+
+   case rs of 
      [] -> return Nothing
      Var (IDyns s):t -> if s == show1 n
           then  do
+            return() !> "valid"
             setData $ Log recover t full hash
             return $ Just ()
           else return Nothing
      _  -> return Nothing
    where
-   show1 x= if typeOf x == typeOf "" then unsafeCoerce x else show x
+   show1 x= if typeOf x == typeOf "" then unsafeCoerce x 
+            else if typeOf x== typeOf (undefined :: BS.ByteString) then unsafeCoerce x
+            else if typeOf x== typeOf (undefined :: BSS.ByteString) then unsafeCoerce x
+            else show x
 
 param :: Loggable a => TransIO a
 param= res where
  res= Transient $  do
-   Log recover rs full hash<- getData `onNothing` return ( Log False  [][] 0)
+   Log recover rs full hash<- getData `onNothing` return ( Log False  [][] 0) 
+   return () !> ("PARAM",rs)
    case rs of
+
      [] -> return Nothing
      Var (IDynamic v):t ->do
+           return () !> ("IDyn", show v)
            setData $ Log recover t full hash
            return $ cast v
      Var (IDyns s):t -> do
+       return () !> ("IDyn",s)
        let mr = reads1  s `asTypeOf` type1 res
 
        case mr of
           [] -> return Nothing
           (v,r):_ -> do
-              setData $ Log recover t full
+              setData $ Log recover t full hash
               return $ Just v
      _ -> return Nothing
 
