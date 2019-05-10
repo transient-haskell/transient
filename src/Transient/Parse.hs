@@ -21,7 +21,6 @@ import qualified Data.ByteString.Lazy.Char8  as BS
 setParseStream ::  IO (StreamData BS.ByteString) -> TransIO ()
 
 setParseStream iox= do delData NoRemote; setState $ ParseContext iox ""
->>>>>>> 29940e02f616e8bdd742b64a63137eb0839685fe
 
 -- | set a string to be parsed
 setParseString :: BS.ByteString -> TransIO ()
