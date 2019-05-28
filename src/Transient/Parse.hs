@@ -206,10 +206,10 @@ withData parser= Transient $ do
 
            return () !> ("readMore",mr)
            case mr of 
-             SMore r ->  return r  <> loop 
+             SMore r ->  (r <>) `liftM` loop 
              SLast r ->  return r
              SDone -> return mempty  -- !> "withData SDONE" 
-   str <- liftIO $ return s <> loop
+   str <-  liftIO $ (s <> ) `liftM` loop                            -- liftIO $ return r <> loop  works in GHC 8.5 on 
    --if str == mempty then return Nothing else do
    mr <- runTrans $ parser str
    case mr of
@@ -287,4 +287,5 @@ p |- q =  do
  initp v=  abduce >> repeatIt
    where
    repeatIt= (do r <- p; liftIO  (putMVar v r !> "putMVar") ; empty) <|> repeatIt 
+
 

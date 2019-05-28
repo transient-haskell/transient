@@ -3,8 +3,8 @@
 -- Module      :  Base
 -- Copyright   :
 -- License     :  MIT
---
--- Maintainer  :  agocorona@gmail.com
+-- 
+-- Maintainer  :  agocoona@gmail.com
 -- Stability   :
 -- Portability :
 --

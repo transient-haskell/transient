@@ -17,8 +17,7 @@
 -- contains purely application level state, and is therefore independent of the
 -- underlying machine architecture. The saved logs can be sent across the wire
 -- to another machine and the computation can then be resumed on that machine.
--- We can also save the log to gather diagnostic information, especially in
--- 'finish' blocks.
+-- We can also save the log to gather diagnostic information.
 --
 -- The following example illustrates the APIs. In its first run 'suspend' saves
 -- the state in a directory named @logs@ and exits, in the second run it
@@ -208,7 +207,7 @@ received :: Loggable a => a -> TransIO ()
 received n=Transient $  do
 
    Log recover rs full hash <- getData `onNothing` return ( Log False  [][] 0)
-   return () !> ("RECEIVED log, n", rs,n)
+   return ("RECEIVED", rs)
 
    case rs of 
      [] -> return Nothing
@@ -228,26 +227,32 @@ received n=Transient $  do
 param :: Loggable a => TransIO a
 param= res where
  res= Transient $  do
+
    Log recover rs full hash<- getData `onNothing` return ( Log False  [][] 0) 
    return () !> ("PARAM",rs)
    case rs of
 
      [] -> return Nothing
      Var (IDynamic v):t ->do
-           return () !> ("IDyn", show v)
+           return () !> ("IDynnnnnnnnnnn", show v)
            setData $ Log recover t full hash
            return $ cast v
      Var (IDyns s):t -> do
        return () !> ("IDyn",s)
        let mr = reads1  s `asTypeOf` type1 res
-
        case mr of
           [] -> return Nothing
-          (v,r):_ -> do
+          ((v,r):_) -> do
               setData $ Log recover t full hash
               return $ Just v
      _ -> return Nothing
 
    where
+   
+
+   reads1 s=x where
+      x= if typeOf(typeOfr x) == typeOf "" then unsafeCoerce[(s,"")] else reads s
+      typeOfr :: [(a,String)] ->  a
+      typeOfr  = undefined
    type1 :: TransIO a -> [(a,String)]
    type1= error "type1: typelevel"
