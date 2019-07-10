@@ -1173,8 +1173,7 @@ killChildren childs  = do
 --
 
 react
-  :: Typeable eventdata
-  => ((eventdata ->  IO response) -> IO ())
+  :: ((eventdata ->  IO response) -> IO ())
   -> IO  response
   -> TransIO eventdata
 react setHandler iob= Transient $ do
