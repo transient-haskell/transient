@@ -38,7 +38,7 @@
 module Transient.Logged(
 Loggable, logged, received, param,
 #ifndef ghcjs_HOST_OS
- suspend, checkpoint, restore,
+ suspend, checkpoint, rerun, restore,
 #endif
 -- * low level
 fromIDyn,maybeFromIDyn,toIDyn
@@ -66,6 +66,15 @@ import System.Random
 
 
 #ifndef ghcjs_HOST_OS
+
+-- | Reads the saved logs from the @logs@ subdirectory of the current
+-- directory, restores the state of the computation from the logs, and runs the
+-- computation.  The log files are maintained. 
+-- It could be used for the initial configuration of a program.
+rerun :: TransIO a -> TransIO a
+rerun proc = restore' proc False
+
+#ifndef ghcjs_HOST_OS
 logs= "logs/"
 
 -- | Reads the saved logs from the @logs@ subdirectory of the current
@@ -73,20 +82,22 @@ logs= "logs/"
 -- computation.  The log files are removed after the state has been restored.
 --
 restore :: TransIO a -> TransIO a
-restore   proc= do
+restore   proc= restore' proc True
+
+restore' proc delete= do
      liftIO $ createDirectory logs  `catch` (\(e :: SomeException) -> return ())
      list <- liftIO $ getDirectoryContents logs
                  `catch` (\(e::SomeException) -> return [])
      if null list || length list== 2 then proc else do
 
          let list'= filter ((/=) '.' . head) list
-         file <- choose  list'       -- !> list'
+         file <- choose  list'      
 
          logstr <- liftIO $ readFile (logs++file)
          let log= length logstr `seq` read' logstr
 
-         log `seq` setData (Log True (reverse log) log)
-         liftIO $ remove $ logs ++ file
+         log `seq` setData (Log True (reverse log) log 0)
+         when delete $ liftIO $ remove $ logs ++ file
          proc
      where
      read'= fst . head . reads1
