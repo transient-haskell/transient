@@ -13,7 +13,7 @@
 -----------------------------------------------------------------------------
 {-# LANGUAGE  ScopedTypeVariables, CPP #-}
 module Transient.Indeterminism (
-choose,  choose', chooseStream, collect, collect', group, groupByTime
+choose,  choose', chooseStream, collect, collect', group, groupByTime, burst
 ) where
 
 import Transient.Internals hiding (retry)
@@ -21,16 +21,14 @@ import Transient.Internals hiding (retry)
 import Data.IORef
 import Control.Applicative
 import Data.Monoid
-import Control.Concurrent 
+import Control.Concurrent  
 import Data.Typeable
 import Control.Monad.State
 import GHC.Conc
 import Data.Time.Clock
 import Control.Exception 
 
-#ifndef ETA_VERSION
-import Data.Atomics
-#endif 
+
 
 
 -- | Converts a list of pure values into a transient task set. You can use the
@@ -46,7 +44,7 @@ chooseStream []= empty
 chooseStream   xs = do
     evs <- liftIO $ newIORef xs
     parallel $ do
-           es <- atomicModifyIORefCAS evs $ \es -> let tes= tail es in (tes,es)
+           es <- atomicModifyIORef evs $ \es -> let tes= tail es in (tes,es)
            case es  of
             [x]  -> x `seq` return $ SLast x
             x:_  -> x `seq` return $ SMore x
@@ -65,7 +63,7 @@ group num proc =  do
     v <- liftIO $ newIORef (0,[])
     x <- proc
 
-    mn <- liftIO $ atomicModifyIORefCAS v $ \(n,xs) ->
+    mn <- liftIO $ atomicModifyIORef v $ \(n,xs) ->
             let n'=n +1
             in  if n'== num
 
@@ -87,7 +85,7 @@ groupByTime1 time proc =  do
     
     x  <- proc
     t' <- liftIO getCurrentTime
-    mn <- liftIO $ atomicModifyIORefCAS v $ \(n,t,xs) -> let n'=n +1
+    mn <- liftIO $ atomicModifyIORef v $ \(n,t,xs) -> let n'=n +1
             in
             if diffUTCTime t' t < fromIntegral time
              then   ((n',t, x:xs),Nothing)
@@ -112,7 +110,7 @@ collect n = collect' n 0
 --
 collect' :: Int -> Int -> TransIO a -> TransIO [a]
 collect' n t search= do
-  addThreads 1
+
 
   rv <- liftIO $ newEmptyMVar     -- !> "NEWMVAR"
 
@@ -124,7 +122,9 @@ collect' n t search= do
         stop
 
       timer= do
-             when (t > 0) . async $ threadDelay t >> putMVar rv Nothing 
+             when (t > 0) $ do
+                addThreads 1
+                async $ threadDelay t >> putMVar rv Nothing 
              empty
 
       monitor=  liftIO loop 
@@ -137,7 +137,7 @@ collect' n t search= do
                 case mr of
                   Nothing -> return rs
                   Just r -> do
-                     let n''= n' +1
+                     let n''= n' + 1
                      let rs'= r:rs
                      writeIORef results  (n'',rs')
 
@@ -149,10 +149,10 @@ collect' n t search= do
                                    readIORef results >>= return . snd
 
 
-  oneThread $  timer <|> worker <|> monitor
+  oneThread $  timer <|> worker <|> monitor 
 
 
--- | insert `SDone` response everytime there is a timeout since the last response
+-- | insert `SDone` response every time there is a timeout since the last response
 
 burst :: Int -> TransIO a -> TransIO (StreamData a)
 burst timeout comp= do
@@ -166,12 +166,12 @@ groupByTime timeout comp= do
      where
      run v =  do 
         x <-  comp
-        liftIO $ atomicModifyIORefCAS v $ \xs -> (xs <> x,())
+        liftIO $ atomicModifyIORef v $ \xs -> (xs <> x,())
         empty
         
      gather v= waitEvents $ do
              threadDelay timeout 
-             atomicModifyIORefCAS v $ \xs -> (mempty , xs) 
+             atomicModifyIORef v $ \xs -> (mempty , xs) 
 
 
    

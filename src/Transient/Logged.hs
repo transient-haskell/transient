@@ -38,9 +38,9 @@
 {-# LANGUAGE  CPP, ExistentialQuantification, FlexibleInstances, ScopedTypeVariables, UndecidableInstances #-}
 module Transient.Logged(
 Loggable, logged, received, param,
-#ifndef ghcjs_HOST_OS
- suspend, checkpoint, restore,
-#endif
+
+ suspend, checkpoint, rerun, restore,
+
 -- * low level
 fromIDyn,maybeFromIDyn,toIDyn
 ) where
@@ -57,15 +57,26 @@ import System.Directory
 import Control.Exception 
 import Control.Monad
 import Control.Concurrent.MVar
-
+import qualified Data.ByteString.Lazy.Char8 as BS
+import qualified Data.ByteString.Char8 as BSS
 
 #ifndef ghcjs_HOST_OS
 import System.Random
-#endif
 
 
+-- | Reads the saved logs from the @logs@ subdirectory of the current
+-- directory, restores the state of the computation from the logs, and runs the
+-- computation.  The log files are maintained. 
+-- It could be used for the initial configuration of a program.
+rerun :: String -> TransIO a -> TransIO a
+rerun path proc = do  
+     liftIO $ do
+         r <- doesDirectoryExist path
+         when (not r) $ createDirectory  path  
+         setCurrentDirectory path
+     restore' proc False
 
-#ifndef ghcjs_HOST_OS
+
 logs= "logs/"
 
 -- | Reads the saved logs from the @logs@ subdirectory of the current
@@ -73,20 +84,22 @@ logs= "logs/"
 -- computation.  The log files are removed after the state has been restored.
 --
 restore :: TransIO a -> TransIO a
-restore   proc= do
+restore   proc= restore' proc True
+
+restore' proc delete= do
      liftIO $ createDirectory logs  `catch` (\(e :: SomeException) -> return ())
      list <- liftIO $ getDirectoryContents logs
                  `catch` (\(e::SomeException) -> return [])
      if null list || length list== 2 then proc else do
 
          let list'= filter ((/=) '.' . head) list
-         file <- choose  list'       -- !> list'
+         file <- choose  list'      
 
          logstr <- liftIO $ readFile (logs++file)
          let log= length logstr `seq` read' logstr
 
-         log `seq` setData (Log True (reverse log) log)
-         liftIO $ remove $ logs ++ file
+         log `seq` setData (Log True (reverse log) log 0)
+         when delete $ liftIO $ remove $ logs ++ file
          proc
      where
      read'= fst . head . reads1
@@ -123,7 +136,18 @@ logAll log= liftIO $do
         when (not logsExist) $ createDirectory logs
         writeFile newlogfile $ show log
       -- :: TransIO ()
+#else
+rerun :: TransIO a -> TransIO a
+rerun = const empty
 
+suspend :: TransIO ()
+suspend= empty
+
+checkpoint :: TransIO ()
+checkpoint= empty
+
+restore :: TransIO a -> TransIO a
+restore= const empty
 #endif
 
 maybeFromIDyn :: Loggable a => IDynamic -> Maybe a
@@ -189,15 +213,16 @@ logged mx = Transient $  do
                   then  do
                     setData WasParallel
                     (setData $ Log True lognew (reverse lognew ++ add)  (hash + 10000000) )
-                                                                          -- !> ("recover",reverse (reverse lognew ++add))
+                                                                          -- !> ("recover", reverse add,lognew)
                   else if recoverAfter && (null lognew) then do 
                        -- showClosure
                        setData $ Log False [] add  (hash + 10000000)      --  !> ("recover2",reverse add)
                   else do
                       -- showClosure
-                    (setData $ Log False (Var (toIDyn r):rs) add (hash +10000000))  --  !> ("restore", reverse $ (Var (toIDyn r):rs))
+                    (setData $ Log False (Var (toIDyn r):rs) add (hash +10000000))   -- !> ("restore", reverse $ (Var (toIDyn r):rs))
            
                 return  r
+
 
 
 
@@ -205,8 +230,11 @@ logged mx = Transient $  do
 
 received :: Loggable a => a -> TransIO ()
 received n=Transient $  do
+
    Log recover rs full hash <- getData `onNothing` return ( Log False  [][] 0)
-   case rs of
+   return () !> ("RECEIVED log, n", rs,n)
+
+   case rs of 
      [] -> return Nothing
      Var (IDyns s):t -> if s == show1 n
           then  do
@@ -215,24 +243,31 @@ received n=Transient $  do
           else return Nothing
      _  -> return Nothing
    where
-   show1 x= if typeOf x == typeOf "" then unsafeCoerce x else show x
+   show1 x= if typeOf x == typeOf "" then unsafeCoerce x 
+            else if typeOf x== typeOf (undefined :: BS.ByteString) then unsafeCoerce x
+            else if typeOf x== typeOf (undefined :: BSS.ByteString) then unsafeCoerce x
+            else show x
 
 param :: Loggable a => TransIO a
 param= res where
  res= Transient $  do
-   Log recover rs full hash<- getData `onNothing` return ( Log False  [][] 0)
+   Log recover rs full hash<- getData `onNothing` return ( Log False  [][] 0) 
+   return () !> ("PARAM",rs)
    case rs of
+
      [] -> return Nothing
      Var (IDynamic v):t ->do
+           return () !> ("IDyn", show v)
            setData $ Log recover t full hash
            return $ cast v
      Var (IDyns s):t -> do
+       return () !> ("IDyn",s)
        let mr = reads1  s `asTypeOf` type1 res
 
        case mr of
           [] -> return Nothing
           (v,r):_ -> do
-              setData $ Log recover t full
+              setData $ Log recover t full hash
               return $ Just v
      _ -> return Nothing
 

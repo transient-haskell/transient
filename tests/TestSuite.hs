@@ -6,10 +6,13 @@
 -- set -e && executable=`basename -s .hs ${1}` &&  docker run -it -v $(pwd):/work agocorona/transient:05-02-2017  bash -c "ghc /work/${1} && /work/${executable} ${2} ${3}"
 
 
-import Transient.Base
-import Transient.EVars
-import Transient.Indeterminism
-import Transient.Backtrack
+import qualified Prelude as Pr(return)
+import Prelude hiding ((>>=),(>>),return)
+
+import Transient.TypeLevel.Base
+import Transient.TypeLevel.EVars
+import Transient.TypeLevel.Indeterminism
+
 import System.Exit
 import Data.Monoid
 import Control.Applicative
@@ -26,7 +29,7 @@ import Data.List
 
 main= do
    keep' $ do
-       let genElem :: a -> TransIO a
+       let -- genElem :: a -> TransIO a
            genElem x= do
                 isasync <- liftIO randomIO
                 delay   <- liftIO $ randomRIO (1, 1000)
@@ -37,9 +40,9 @@ main= do
 
        collect 100 $ do
            i <-  threads 0 $ choose [1..100]
-           nelems  <- liftIO $ randomRIO (1, 10) :: TransIO Int
+           nelems   <- liftIO $ randomRIO (1, 10) -- :: TransIO Int
            nthreads <- liftIO $ randomRIO (1,nelems)
-           r <-   threads nthreads $ foldr (+) 0  $ map genElem  [1..nelems]
+           r <- threads nthreads $ foldr (+) 0  $ map genElem  [1..nelems]
            assert (r == sum[1..nelems]) $ return ()
 
        liftIO $ putStrLn "--------------checking  parallel execution, Alternative, events --------"

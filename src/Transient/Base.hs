@@ -250,6 +250,7 @@ TransIO, TransientIO
 
 -- * State management
 ,setData, getSData, getData, delData, modifyData, modifyData', try, setState, getState, delState, getRState,setRState, modifyState
+,labelState, findState, killState
 
 -- * Thread management
 , threads,addThreads, freeThreads, hookedThreads,oneThread, killChilds
@@ -260,7 +261,7 @@ TransIO, TransientIO
 ,onException, onException', cutExceptions, continue, catcht, throwt
 
 -- * Utilities
-,genId
+,genId, Loggable
 )
 
 where
