@@ -7,6 +7,7 @@ import Data.Typeable
 import Control.Applicative
 import Data.Char
 import Data.Monoid
+
 import System.IO.Unsafe
 import Control.Monad
 import Control.Monad.State
@@ -18,7 +19,8 @@ import qualified Data.ByteString.Lazy.Char8  as BS
 
 -- | set a stream of strings to be parsed
 setParseStream ::  IO (StreamData BS.ByteString) -> TransIO ()
-setParseStream iox= do do delData NoRemote; setState $ ParseContext iox ""
+setParseStream iox= do delData NoRemote; setState $ ParseContext iox ""
+
 
 -- | set a string to be parsed
 setParseString :: BS.ByteString -> TransIO ()
@@ -40,12 +42,14 @@ data ParseContext str = IsString str => ParseContext (IO  (StreamData str)) str 
 
 -- | succeed if read the string given as parameter
 string :: BS.ByteString -> TransIO BS.ByteString
-string s=withData $ \str -> do
+string s= withData $ \str -> do
     let len= BS.length s
         ret@(s',_) = BS.splitAt len str
-    if s == s' !>   ("parse string looked, found",s,s')
+
+    if s == s' -- !> ("parse string looked, found",s,s')
+
       then return ret
-      else empty !> "STRING EMPTY"
+      else empty -- !> "STRING EMPTY"
 
 -- | fast search for a token
 tDropUntilToken token= withData $ \str -> 
@@ -94,16 +98,10 @@ int= do
 
 -- | read many results with a parser (at least one) until a `end` parser succeed.
 
-
-manyTill p end  = (:) <$> p <*> scan
-      where
-      scan  = do{ end; return [] }
-            <|>
-              do{ x <- p; xs <- scan; return (x:xs) }
  
 
-
--- manyTill= chainManyTill (:)
+manyTill :: TransIO a -> TransIO b -> TransIO [a]
+manyTill= chainManyTill (:)
 
 chainManyTill op p end=  op <$> p <*> scan
       where
@@ -114,7 +112,7 @@ chainManyTill op p end=  op <$> p <*> scan
 between open close p
                     = do{ open; x <- p; close; return x }
 
-symbol x= do  string x
+symbol = string 
          
 parens p        = between (symbol "(") (symbol ")") p  !> "parens "
 braces p        = between (symbol "{") (symbol "}") p  !> "braces "
@@ -130,14 +128,8 @@ colon           = symbol ":"  !> "colon"
 
 sepBy p sep         = sepBy1 p sep <|> return []
 
-{- 
-sepBy1 p sep        = do{ x <- p
-                        ; xs <- many (sep >> p)
-                        ; return (x:xs)
-                        }
-                        !> "sepBy "
--}
-sepBy1 = chainSepBy1 (:)
+
+sepBy1 = chainSepBy1 (:) 
 
 
 chainSepBy chain p sep= chainSepBy1 chain p sep <|> return mempty
@@ -165,8 +157,10 @@ dropSpaces= withData $ \str -> return( (),BS.dropWhile isSpace str)
 dropTillEndOfLine= withData $ \str -> return ((),BS.dropWhile ( /= '\n') str) !> "dropTillEndOfLine"
 
 
+--manyTill anyChar (tChar '\n' <|> (isDonep >> return ' ') )
+
 parseString= do
-    dropSpaces
+    dropSpaces 
     tTakeWhile (not . isSpace)
 
 -- | take characters while they meet the condition
@@ -177,64 +171,53 @@ tTakeWhile cond= -- parse (BS.span cond)
    
 -- | take characters while they meet the condition and drop the next character
 tTakeWhile' :: (Char -> Bool) -> TransIO BS.ByteString
-tTakeWhile' cond= withData $ \s ->
+tTakeWhile' cond= withData $ \s -> do
    let (h,t)= BS.span cond s
-   in if BS.null h then  empty else return (h, if BS.null t then t else BS.tail t)  !> ("tTakeWhile'",h)
+   return () !> ("takewhile'",h,t)
+   if BS.null h then  empty else return (h, if BS.null t then t else BS.tail t) 
 
  
 just1 f x= let (h,t)= f x in (Just h,t)
 
 -- | take n characters 
-tTake n=  withData $ \s ->  return $ BS.splitAt n s !> ("tTake",n)
+tTake n= withData $ \s ->  return $ BS.splitAt n s -- !> ("tTake",n,BS.take n s)
 
 -- | drop n characters
 tDrop n= withData $ \s ->  return $ ((),BS.drop n s)
 
 -- | read a char
-anyChar= withData $ \s -> if BS.null s then empty else return (BS.head s,BS.tail s)
+anyChar= withData $ \s -> if BS.null s then empty else return (BS.head s,BS.tail s) -- !> ("anyChar",s)
 
 -- | verify that the next character is the one expected
-tChar c= anyChar >>= \x -> if x== c then return c else empty
+tChar c= withData $ \s -> if BS.null s || BS.head s /= c then empty else return (BS.head s,BS.tail s)  !> ("tChar", BS.head s) 
+   --  anyChar >>= \x -> if x == c then return c else empty !> ("tChar",x)
 
-{-
-tRead :: Read a => TransIO a
-tRead= withData $ \s -> do
-   let str= unsafeInterleaveIO $ return $ BS.unpack  $ takeWhile (/='\n') s
-   case readsPrec 0 $ str  of
-     []      -> empty
-     (v,t):_ -> return  (v,t)
 
--}
 
-    {-
-parse :: (BS.ByteString -> (b, BS.ByteString)) -> TransIO b
-parse split= withData $ \s ->
-     if s  == mempty  then empty 
-        else case split s of
-          Just r -> return r
-          _ -> empty 
 
--}
--- | bring the data of a parse context as a lazy byteString to a parser
--- and actualize the parse context with the result
+-- | bring the lazy byteString state to a parser
+-- and actualize the byteString state with the result
+-- The tuple that the parser should return should be :  (what it returns, what should remain to be parsed)
 withData :: (BS.ByteString -> TransIO (a,BS.ByteString)) -> TransIO a
 withData parser= Transient $ do
    ParseContext readMore s <- getData `onNothing` error "parser: no context"
    
    let loop = unsafeInterleaveIO $ do
            mr <-  readMore 
+
            return () !> ("readMore",mr)
            case mr of 
-             SMore r ->  (r <>) `liftM` loop
+             SMore r ->  (r <>) `liftM` loop 
              SLast r ->  return r
-             SDone -> return mempty
-   str <- liftIO $ (s <> ) `liftM` loop
+             SDone -> return mempty  -- !> "withData SDONE" 
+   str <-  liftIO $ (s <> ) `liftM` loop                            -- liftIO $ return r <> loop  works in GHC 8.5 on 
+   --if str == mempty then return Nothing else do
    mr <- runTrans $ parser str
    case mr of
-        Nothing -> return Nothing     -- !> "NOTHING"
-        Just (v,str') -> do
-              setData $ ParseContext readMore str'
-              return $ Just v
+            Nothing -> return Nothing     -- !> "NOTHING"
+            Just (v,str') -> do
+                  setData $ ParseContext readMore str'
+                  return $ Just v
 
 
 
@@ -265,7 +248,10 @@ isDone=  noTrans $ do
         SDone -> return True
 
 
-
+        
+        
+        
+        
 -- infixl 0 |-
 
 -- | Chain two parsers. The motivation is to parse a chunked HTTP response which contains
@@ -295,10 +281,11 @@ p |- q =  do
 
  where
  initq v= do
-   -- abduce
-   setParseStream (takeMVar v) 
-   q !> "init q"
+   --abduce
+   setParseStream (takeMVar v >>= \v -> (return v !> ("!- operator return",v)))  -- each time the parser need more data, takes the var
+   q 
    
  initp v=  abduce >> repeatIt
    where
    repeatIt= (do r <- p; liftIO  (putMVar v r !> "putMVar") ; empty) <|> repeatIt 
+

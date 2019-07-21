@@ -3,9 +3,9 @@
 -- Module      :  Base
 -- Copyright   :
 -- License     :  MIT
---
--- Maintainer  :  agocorona@gmail.com
--- Stability ftr  :
+-- 
+-- Maintainer  :  agocoona@gmail.com
+-- Stability   :
 -- Portability :
 --
 -- | See http://github.com/transient-haskell/transient 
@@ -977,9 +977,9 @@ async io = do
 -- squencing.
 sync :: TransIO a -> TransIO a
 sync x = do
-  setData WasRemote
-  r <- x
-  delData WasRemote
+  was <- getSData <|> return NoRemote
+  r <- x <** setData WasRemote
+  setData was
   return r
 
 -- | create task threads faster, but with no control: @spawn = freeThreads . waitEvents@
@@ -1188,8 +1188,7 @@ killChildren childs  = do
 -- >
 
 react
-  :: Typeable eventdata
-  => ((eventdata ->  IO response) -> IO ())
+  :: ((eventdata ->  IO response) -> IO ())
   -> IO  response
   -> TransIO eventdata
 react setHandler iob= Transient $ do

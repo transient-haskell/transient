@@ -9,9 +9,9 @@
 import qualified Prelude as Pr(return)
 import Prelude hiding ((>>=),(>>),return)
 
-import Transient.TypeLevel.Base
-import Transient.TypeLevel.EVars
-import Transient.TypeLevel.Indeterminism
+import Transient.Base
+import Transient.EVars
+import Transient.Indeterminism
 
 import System.Exit
 import Data.Monoid
