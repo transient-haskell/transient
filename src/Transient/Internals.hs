@@ -1,10 +1,10 @@
 ------------------------------------------------------------------------------
 --
--- Module      :  Base
+-- Module      :  Transient.Internals
 -- Copyright   :
 -- License     :  MIT
 -- 
--- Maintainer  :  agocoona@gmail.com
+-- Maintainer  :  agocorona@gmail.com
 -- Stability   :
 -- Portability :
 --
@@ -16,17 +16,19 @@
 {-# LANGUAGE ExistentialQuantification #-}
 {-# LANGUAGE FlexibleContexts          #-}
 {-# LANGUAGE FlexibleInstances         #-}
+{-# LANGUAGE UndecidableInstances      #-}
 {-# LANGUAGE MultiParamTypeClasses     #-}
 {-# LANGUAGE DeriveDataTypeable        #-}
 {-# LANGUAGE RecordWildCards           #-}
 {-# LANGUAGE ConstraintKinds           #-}
 
 
+
 module Transient.Internals where
 
 import           Control.Applicative
 import           Control.Monad.State
-import           Data.Dynamic
+--import           Data.Dynamic
 import qualified Data.Map               as M
 import           System.IO.Unsafe
 import           Unsafe.Coerce
@@ -50,7 +52,7 @@ import           Data.String
 import qualified Data.ByteString.Char8 as BS
 import qualified Data.ByteString.Lazy.Char8             as BSL
 import           Data.Typeable
-
+import           Control.Monad.Fail
 
 
 #ifdef DEBUG
@@ -78,7 +80,6 @@ tshow _ y= y
 
 
 type StateIO = StateT EventF IO
-
 
 
 newtype TransIO a = Transient { runTrans :: StateIO (Maybe a) }
@@ -121,8 +122,15 @@ data EventF = forall a b. EventF
 
   , labelth     :: IORef (LifeCycle, BS.ByteString)
     -- ^ Label the thread with its lifecycle state and a label string
+  , parseContext :: ParseContext
+  , remoteStatus :: RemoteStatus
   } deriving Typeable
 
+data ParseContext  = ParseContext (IO  (StreamData BSL.ByteString)) BSL.ByteString deriving Typeable
+
+-- | To define primitives for all the transient monads:  TransIO, Cloud and Widget
+class MonadState EventF m => TransMonad m
+instance  MonadState EventF m => TransMonad m
 
 
 instance MonadState EventF TransIO where
@@ -152,7 +160,9 @@ emptyEventF th label childs =
          , parent     = Nothing
          , children   = childs
          , maxThread  = Nothing
-         , labelth    = label }
+         , labelth    = label
+         , parseContext = ParseContext (return SDone) mempty
+         , remoteStatus = NoRemote}
 
 -- | Run a transient computation with a default initial state
 runTransient :: TransIO a -> IO (Maybe a, EventF)
@@ -236,7 +246,7 @@ withContinuation c mx = do
 
 -- | Restore the continuations to the provided ones.
 -- | NOTE: Events are also cleared out.
-restoreStack :: MonadState EventF m => [a -> TransIO a] -> m ()
+restoreStack :: TransMonad m => [a -> TransIO a] -> m ()
 restoreStack fs = modify $ \EventF {..} -> EventF { event = Nothing, fcomp = fs, .. }
 
 -- | Run a chain of continuations.
@@ -263,47 +273,37 @@ instance Applicative TransIO where
     
     r1 <- liftIO $ newIORef Nothing
     r2 <- liftIO $ newIORef Nothing
-    fparallel  r1 r2  <|>  xparallel r1 r2
+    fparallel r1 r2 <|> xparallel r1 r2
+    
     where
+    
     fparallel r1 r2= do
       f <- mf 
-
-      r <- getState <|> return NoRemote
-      --  return () !> ("first",r)
-      if r == NoRemote then do
-           x <- mx !> "second serial"
-           return $ f x
-        else do
-
-          liftIO $ (writeIORef r1 $ Just f)
-          mx <- liftIO (readIORef r2)
-          case mx of
+      liftIO $ (writeIORef r1 $ Just f)
+      mx <- liftIO (readIORef r2) 
+      case mx of
             Nothing -> empty
             Just x  -> return $ f x
           
     xparallel r1 r2 = do
-
-      r <- getState <|> return NoRemote
-      -- return () !> ("SECOND par",r)
-      if r == WasParallel then do
-          -- delData WasParallel
-          x <- mx
-          liftIO $ (writeIORef r2 $ Just x)
-          mf <- liftIO (readIORef r1)
-          case mf of
+      x <- mx 
+      liftIO $ (writeIORef r2 $ Just x)
+      mf <- liftIO (readIORef r1)
+      case mf of
             Nothing -> empty
             Just f -> return $ f x
-        else empty
+      
 
-
+data RemoteStatus   = WasRemote | WasParallel | NoRemote
+  deriving (Typeable, Eq, Show)
+  
 -- | stop the current computation and does not execute any alternative computation
 fullStop :: TransIO stop
-fullStop= setData WasRemote >> stop
+fullStop= do modify $ \s ->s{remoteStatus= WasRemote} ; stop
 
 instance Monad TransIO where
   return   = pure
   x >>= f  = Transient $ do
-    -- delData WasParallel
     setEventCont x f
     mk <- runTrans x
     resetEventCont mk
@@ -338,7 +338,7 @@ instance MonadPlus TransIO where
   mplus x y = Transient $ do
     mx <- runTrans x
 
-    was <- getData `onNothing` return NoRemote
+    was <- gets remoteStatus -- getData `onNothing` return NoRemote
     if was == WasRemote
 
       then return Nothing
@@ -346,6 +346,9 @@ instance MonadPlus TransIO where
             Nothing -> runTrans y
 
             justx -> return justx
+
+instance MonadFail TransIO where
+  fail _ = mzero
 
 readWithErr :: (Typeable a, Read a) => Int -> String -> IO [(a, String)]
 readWithErr n line =
@@ -371,44 +374,9 @@ read' s= case readsPrec' 0 s of
 
 readsPrec' n = unsafePerformIO . readWithErr n
 
--- | Constraint type synonym for a value that can be logged.
-type Loggable a = (Show a, Read a, Typeable a)
 
--- data Serializable a where
---   serialize :: a .ç-> BS.ByteString
---   deserialize :: BS.ByteString -> a
 
--- instance Serialize a => Serialie [a] where
---   serialize (x:xs)=
---      let s= serialize x
---          l= length s
---      in makeByteString (#(#l,s#),serialize xs #)
 
--- | Dynamic serializable data for logging.
-data IDynamic =
-    IDyns String
-  | forall a. Loggable a => IDynamic a
-
-instance Show IDynamic where
-  show (IDynamic x) = show (show x)
-  show (IDyns    s) = show s
-
-instance Read IDynamic where
-  readsPrec n str = map (\(x,s) -> (IDyns x,s)) $ readsPrec' n str
-
-type Recover        = Bool
-type CurrentPointer = [LogElem]
-type LogEntries     = [LogElem]
-type Hash           = Int
-
-data LogElem        =  Wait | Exec | Var IDynamic
-  deriving (Read, Show)
-
-data Log            = Log Recover CurrentPointer LogEntries Hash
-  deriving (Typeable, Show)
-
-data RemoteStatus   = WasRemote | WasParallel | NoRemote
-  deriving (Typeable, Eq, Show)
 
 -- | A synonym of 'empty' that can be used in a monadic expression. It stops
 -- the computation, which allows the next computation in an 'Alternative'
@@ -565,11 +533,11 @@ oneThread comp = do
   
   x   <-  comp
   th  <- liftIO myThreadId
-           !> ("FATHER:", threadId st)
+               -- !> ("FATHER:", threadId st)
   chs <- liftIO $ readMVar rchs
 
   liftIO $ mapM_ (killChildren1 th) chs
-                 !> ("KILLEVENT1 ", map threadId chs )
+               --  !> ("KILLEVENT1 ", map threadId chs )
   return x
   where 
   
@@ -583,12 +551,12 @@ oneThread comp = do
 
 
 -- | Add a label to the current passing threads so it can be printed by debugging calls like `showThreads`
-labelState :: (MonadIO m,MonadState EventF m) => BS.ByteString -> m ()
+labelState :: (MonadIO m,TransMonad m) => BS.ByteString -> m ()
 labelState l =  do
   st <- get
   liftIO $ atomicModifyIORef (labelth st) $ \(status,_) -> ((status,  l), ())
 
--- | kill a thread subtree with this label
+-- | kill the thread subtree labeled as such
 killState thid= do
       st <- findState match =<<  topState
       liftIO $ killBranch' st
@@ -622,7 +590,7 @@ showThreads st = liftIO $ withMVar printBlock $ const $ do
 
 -- | Return the state of the thread that initiated the transient computation
 -- topState :: TransIO EventF
-topState :: MonadState EventF m => m EventF
+topState :: TransMonad m => m EventF
 topState = do
   st <- get
   return $ toplevel st
@@ -772,7 +740,7 @@ killBranch' cont = do
 
 -- | Same as 'getSData' but with a more general type. If the data is found, a
 -- 'Just' value is returned. Otherwise, a 'Nothing' value is returned.
-getData :: (MonadState EventF m, Typeable a) => m (Maybe a)
+getData :: (TransMonad m, Typeable a) => m (Maybe a)
 getData = resp
   where resp = do
           list <- gets mfData
@@ -819,14 +787,14 @@ getState = getSData
 --      Person name age <- getSData
 --      liftIO $ print (name, age)
 -- @
-setData :: (MonadState EventF m, Typeable a) => a -> m ()
+setData :: (TransMonad m, Typeable a) => a -> m ()
 setData x = modify $ \st -> st { mfData = M.insert t (unsafeCoerce x) (mfData st) }
   where t = typeOf x
 
 -- | Accepts a function which takes the current value of the stored data type
 -- and returns the modified value. If the function returns 'Nothing' the value
 -- is deleted otherwise updated.
-modifyData :: (MonadState EventF m, Typeable a) => (Maybe a -> Maybe a) -> m ()
+modifyData :: (TransMonad m, Typeable a) => (Maybe a -> Maybe a) -> m ()
 modifyData f = modify $ \st -> st { mfData = M.alter alterf t (mfData st) }
   where typeResp :: (Maybe a -> b) -> a
         typeResp   = undefined
@@ -841,7 +809,7 @@ modifyData f = modify $ \st -> st { mfData = M.alter alterf t (mfData st) }
 --
 -- > runTransient $ do                   modifyData' (\h -> h ++ " world") "hello new" ;  r <- getSData ; liftIO $  putStrLn r   -- > "hello new"
 -- > runTransient $ do setData "hello" ; modifyData' (\h -> h ++ " world") "hello new" ;  r <- getSData ; liftIO $  putStrLn r   -- > "hello world"
-modifyData' :: (MonadState EventF m, Typeable a) => (a ->  a) ->  a -> m a
+modifyData' :: (TransMonad m, Typeable a) => (a ->  a) ->  a -> m a
 modifyData' f  v= do
   st <- get
   let (ma,nmap)=  M.insertLookupWithKey alterf t (unsafeCoerce v) (mfData st)
@@ -851,19 +819,19 @@ modifyData' f  v= do
         alterf  _ _ x = unsafeCoerce $ f $ unsafeCoerce x
 
 -- | Same as modifyData
-modifyState :: (MonadState EventF m, Typeable a) => (Maybe a -> Maybe a) -> m ()
+modifyState :: (TransMonad m, Typeable a) => (Maybe a -> Maybe a) -> m ()
 modifyState = modifyData
 
 -- | Same as 'setData'
-setState :: (MonadState EventF m, Typeable a) => a -> m ()
+setState :: (TransMonad m, Typeable a) => a -> m ()
 setState = setData
 
 -- | Delete the data item of the given type from the monad state.
-delData :: (MonadState EventF m, Typeable a) => a -> m ()
+delData :: (TransMonad m, Typeable a) => a -> m ()
 delData x = modify $ \st -> st { mfData = M.delete (typeOf x) (mfData st) }
 
 -- | Same as 'delData'
-delState :: (MonadState EventF m, Typeable a) => a -> m ()
+delState :: (TransMonad m, Typeable a) => a -> m ()
 delState = delData
 
 
@@ -876,7 +844,7 @@ newtype Ref a = Ref (IORef a)
 -- | mutable state reference that can be updated (similar to STRef in the state monad)
 -- They are identified by his type.
 -- Initialized the first time it is set.
-setRState:: (MonadIO m,MonadState EventF m, Typeable a) => a -> m ()
+setRState:: (MonadIO m,TransMonad m, Typeable a) => a -> m ()
 setRState x= do
     Ref ref <- getData `onNothing` do
                             ref <- Ref <$> liftIO (newIORef x)
@@ -884,7 +852,7 @@ setRState x= do
                             return  ref
     liftIO $ atomicModifyIORef ref $ const (x,())
 
-getRData :: (MonadIO m, MonadState EventF m, Typeable a) => m (Maybe a)
+getRData :: (MonadIO m, TransMonad m, Typeable a) => m (Maybe a)
 getRData= do
     mref <- getData
     case mref of
@@ -900,11 +868,11 @@ delRState x= delState (undefined `asTypeOf` ref x)
         ref = undefined
 
 -- | Run an action, if it does not succeed, undo any state changes
--- that it might have caused and allow aternative actions to run with the original state
+-- that it might have caused by the action and allow aternative actions to run with the original state
 try :: TransIO a -> TransIO a
 try mx = do
-  sd <- gets mfData
-  mx <|> (modify (\s -> s { mfData = sd }) >> empty)
+  s <- get
+  mx <|> (modify (const s) >> empty)
 
 -- | Executes the computation and reset the state either if it fails or not.
 sandbox :: TransIO a -> TransIO a
@@ -920,14 +888,14 @@ rglobalId= unsafePerformIO $ newIORef (0 :: Int)
 
 -- | Generator of identifiers that are unique within the current monadic
 -- sequence They are not unique in the whole program.
-genId :: MonadState EventF m => m Int
+genId :: TransMonad m => m Int
 genId = do
   st <- get
   let n = mfSequence st
   put st { mfSequence = n + 1 }
   return n
 
-getPrevId :: MonadState EventF m => m Int
+getPrevId :: TransMonad m => m Int
 getPrevId = gets mfSequence
 
 instance Read SomeException where
@@ -935,11 +903,11 @@ instance Read SomeException where
   readsPrec n str = [(SomeException $ ErrorCall s, r)]
     where [(s , r)] = readsPrec n str
 
--- | 'StreamData' represents a task in a task stream being generated.
+-- | 'StreamData' represents an result in an stream being generated.
 data StreamData a =
-      SMore a               -- ^ More tasks to come
-    | SLast a               -- ^ This is the last task
-    | SDone                 -- ^ No more tasks, we are done
+      SMore a               -- ^ More  to come
+    | SLast a               -- ^ This is the last one
+    | SDone                 -- ^ No more, we are done
     | SError SomeException  -- ^ An error occurred
     deriving (Typeable, Show,Read)
     
@@ -948,9 +916,9 @@ instance Functor StreamData where
     fmap f (SLast a)= SLast (f a)
     fmap _ SDone= SDone
 
--- | A task stream generator that produces an infinite stream of tasks by
--- running an IO computation in a loop. A task is triggered carrying the output
--- of the computation. See 'parallel' for notes on the return value.
+-- | A task stream generator that produces an infinite stream of results by
+-- running an IO computation in a loop, each  result may be processed in different threads (tasks)
+-- depending on the thread limits stablished with `threads`.
 waitEvents :: IO a -> TransIO a
 waitEvents io = do
   mr <- parallel (SMore <$> io)
@@ -961,9 +929,8 @@ waitEvents io = do
 -- | Run an IO computation asynchronously  carrying
 -- the result of the computation in a new thread when it completes.
 -- If there are no threads available, the async computation and his continuation is executed
--- before any alternative computation.
--- See 'parallel' for notes on
--- the return value.
+-- in the same thread before any alternative computation.
+
 async :: IO a -> TransIO a
 async io = do
   mr <- parallel (SLast <$> io)
@@ -971,30 +938,28 @@ async io = do
     SLast  x -> return x
     SError e -> back   e
 
--- | Force an async computation to run synchronously. It can be useful in an
--- 'Alternative' composition to run the alternative only after finishing a
--- computation.  Note that in Applicatives it might result in an undesired
--- squencing.
+-- | Avoid the execution of alternative computations when the first term is asynchronous
+--
+-- > sync (async  whatever) <|>  liftIO (print "hello") -- never print "hello"
 sync :: TransIO a -> TransIO a
 sync x = do
-  was <- getSData <|> return NoRemote
-  r <- x <** setData WasRemote
-  setData was
+  was <- gets remoteStatus -- getSData <|> return NoRemote
+  r <- x <** modify (\s ->s{remoteStatus= WasRemote}) -- setData WasRemote
+  modify $ \s -> s{remoteStatus= was}
   return r
 
--- | create task threads faster, but with no control: @spawn = freeThreads . waitEvents@
+-- | create task threads faster, but with no thread control: @spawn = freeThreads . waitEvents@
 spawn :: IO a -> TransIO a
 spawn = freeThreads . waitEvents
 
 -- | An stream generator that run an IO computation periodically at the specified time interval. The
 -- task carries the result of the computation.  A new result is generated only if
--- the output of the computation is different from the previous one.  See
--- 'parallel' for notes on the return value.
+-- the output of the computation is different from the previous one.  
 sample :: Eq a => IO a -> Int -> TransIO a
 sample action interval = do
   v    <- liftIO action
   prev <- liftIO $ newIORef v
-  waitEvents (loop action prev) <|> async (return v)
+  waitEvents (loop action prev) <|> return v
   where loop action prev = loop'
           where loop' = do
                   threadDelay interval
@@ -1003,6 +968,15 @@ sample action interval = do
                   if v /= v' then writeIORef prev v >> return v else loop'
 
 
+-- | Runs the rest of the computation in a new thread. Returns 'empty' to the current thread
+abduce = async $ return ()
+
+
+-- | fork an independent process. It is equivalent to forkIO. The thread created 
+-- is managed with the transient thread control primitives 
+fork :: TransIO () -> TransIO ()
+fork proc= (abduce >> proc >> empty) <|> return()
+ 
 
 -- | Run an IO action one or more times to generate a stream of tasks. The IO
 -- action returns a 'StreamData'. When it returns an 'SMore' or 'SLast' a new
@@ -1016,7 +990,7 @@ sample action interval = do
 -- task.
 parallel :: IO (StreamData b) -> TransIO (StreamData b)
 parallel ioaction = Transient $ do
-  was <- getData `onNothing` return NoRemote
+  was <- gets remoteStatus -- getData `onNothing` return NoRemote
   when (was /= WasRemote) $ setData WasParallel
   cont <- get
           --  !> "PARALLEL"
@@ -1192,7 +1166,7 @@ react
   -> IO  response
   -> TransIO eventdata
 react setHandler iob= Transient $ do
-        was <- getData `onNothing` return NoRemote
+        was <- gets remoteStatus -- getData `onNothing` return NoRemote
         when (was /= WasRemote) $ setData WasParallel
         cont <- get
         case event cont of
@@ -1207,8 +1181,6 @@ react setHandler iob= Transient $ do
             put cont{event=Nothing}
             return $ unsafeCoerce j
       
--- | Runs the rest of the computation in a new thread. Returns 'empty' to the current thread
-abduce = async $ return ()
 
 -- * Non-blocking keyboard input
 
@@ -1217,7 +1189,7 @@ abduce = async $ return ()
 
 -- | listen stdin and triggers a new task every time the input data
 -- matches the first parameter.  The value contained by the task is the matched
--- value i.e. the first argument itself. The second parameter is a message to the user for
+-- value i.e. the first argument itself. The second parameter is a message for
 -- the user. The label is displayed in the console when the option match.
 option :: (Typeable b, Show b, Read b, Eq b) =>
           b -> String  -> TransIO b
@@ -1239,8 +1211,10 @@ optionf flag ret message  = do
   -- abduce
   return ret
 
--- | inputf <remove after sucessful or not> <listener identifier>  <Maybe default value> <validation proc>
-inputf ::  Loggable a => Bool -> String -> Maybe a -> (a -> Bool) -> TransIO a
+-- | General asynchronous console input
+-- 
+-- inputf <remove input listener after sucessful or not> <listener identifier>  <Maybe default value> <validation proc>
+inputf ::  (Show a, Read a,Typeable a)  => Bool -> String -> Maybe a -> (a -> Bool) -> TransIO a
 inputf flag ident  mv cond= do
     str <- react (addListener ident) (return ())
 
@@ -1456,12 +1430,14 @@ keep mx = do
                    option "ps" "show threads"
                    liftIO $ showThreads st
                    empty
+                   {-
             <|> do
                    option "log" "inspect the log of a thread"
                    th <- input (const True)  "thread number>"
                    ml <- liftIO $ getStateFromThread th st
                    liftIO $ print $ fmap (\(Log _ _ log _) -> reverse log) ml
                    empty
+                   -}
             <|> do
                    option "end" "exit"
                    liftIO $ putStrLn "exiting..."
@@ -1599,13 +1575,13 @@ onUndo x y= onBack x (\() -> y)
 {-# NOINLINE registerUndo #-}
 registerBack :: (Typeable b, Show b) => b -> TransientIO a -> TransientIO a
 registerBack witness f  = Transient $ do
-   cont@(EventF _ x  _ _ _ _ _ _ _ _ _)  <- get
+   cont@(EventF _ x  _ _ _ _ _ _ _ _ _ _ _)  <- get
  -- if isJust (event cont) then return Nothing else do
    md <- getData `asTypeOf` (Just <$> return (backStateOf witness))
 
    case md of
-        Just (Backtrack b []) ->  setData $ Backtrack b  [cont]
-        Just (bss@(Backtrack b (bs@((EventF _ x'  _ _ _ _ _ _ _ _ _):_)))) ->
+        Just (Backtrack b []) ->  setData $ Backtrack b  [cont] 
+        Just (bss@(Backtrack b (bs@((EventF _ x'  _ _ _ _ _ _ _ _ _ _ _):_)))) ->
           when (isNothing b) $ do
                 addrx  <- addr x
                 addrx' <- addr x'         -- to avoid duplicate backtracking points
@@ -1810,7 +1786,7 @@ onException' mx f= onAnyException mx $ \e -> do
                 r <- runTrans  mx
                 modify $ \s -> s{event= Just $ unsafeCoerce r}
                 runCont st
-                was <- getData `onNothing` return NoRemote
+                was <- gets remoteStatus -- getData `onNothing` return NoRemote
                 when (was /= WasRemote) $ setData WasParallel
 
                 return Nothing

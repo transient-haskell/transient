@@ -1,4 +1,4 @@
-#!/usr/bin/env ./execthirdline.sh
+#!/usr/bin/env ./execthirdlinedocker.sh
 -- development
 -- set -e  && docker run -it -v /c/Users/magocoal/OneDrive/Haskell/devel:/devel agocorona/transient:05-02-2017  bash -c "runghc  -j2 -isrc -i/devel/transient/src /devel/transient/tests/$1 $2 $3 $4"
 

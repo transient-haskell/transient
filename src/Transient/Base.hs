@@ -244,9 +244,8 @@ TransIO, TransientIO
 ,option, input,input'
 
 -- * Task Creation
--- $taskgen
 , StreamData(..)
-,parallel, async, waitEvents, sample, spawn, react, abduce
+,parallel, async, waitEvents, sample, spawn, react, abduce, fork
 
 -- * State management
 ,setData, getSData, getData, delData, modifyData, modifyData', try, setState, getState, delState, getRState,setRState, modifyState
@@ -261,13 +260,15 @@ TransIO, TransientIO
 ,onException, onException', cutExceptions, continue, catcht, throwt
 
 -- * Utilities
-,genId, Loggable
+,genId
+,module Transient.Logged
 )
 
 where
 
 
 import    Transient.Internals
+import    Transient.Logged
 
 -- $taskgen
 --

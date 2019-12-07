@@ -39,7 +39,7 @@ data ParseContext str = IsString str => ParseContext (IO  (StreamData str)) str 
 
 -- | succeed if read the string given as parameter
 string :: BS.ByteString -> TransIO BS.ByteString
-string s=withData $ \str -> do
+string s=withGetParseString $ \str -> do
     let len= BS.length s
         ret@(s',_) = BS.splitAt len str
     if s == s' !> (s,s')
@@ -47,7 +47,7 @@ string s=withData $ \str -> do
       else empty !> "STRING EMPTY"
 
 -- | fast search for a token
-tDropUntilToken token= withData $ \str -> 
+tDropUntilToken token= withGetParseString $ \str -> 
     if BS.null str then empty else  drop2 str 
   where 
   drop2 str=
@@ -56,7 +56,7 @@ tDropUntilToken token= withData $ \str ->
           else if not $ BS.null str then drop2 $ BS.tail str else empty
 
 tTakeUntilToken :: BS.ByteString -> TransIO BS.ByteString
-tTakeUntilToken token= withData $ \str -> takeit mempty str
+tTakeUntilToken token= withGetParseString $ \str -> takeit mempty str
   where 
   takeit :: BS.ByteString -> BS.ByteString -> TransIO ( BS.ByteString, BS.ByteString)
   takeit res str= 
@@ -148,17 +148,17 @@ commaSep1 p     = sepBy1 p comma
 semiSep1 p      = sepBy1 p semi
 
 -- drop any character that match `Data.Char.isSpace`
-dropSpaces= withData $ \str -> return( (),BS.dropWhile isSpace str)
+dropSpaces= withGetParseString $ \str -> return( (),BS.dropWhile isSpace str)
 
 -- drop spaces until end of line. If detect an end of string it fails
-dropSpacesNoEOL= withData $ \str -> 
+dropSpacesNoEOL= withGetParseString $ \str -> 
          let str'= BS.dropWhile (\c -> isSpace c && c /= '\n') str
          in if BS.null str' 
             then empty 
             else if BS.head str' == '\n' then empty else return ((),str')
 
 
-dropTillEndOfLine= withData $ \str -> return ((),BS.dropWhile ( /= '\n') str)
+dropTillEndOfLine= withGetParseString $ \str -> return ((),BS.dropWhile ( /= '\n') str)
 
 -- manyTill anyChar (tChar '\n' <|> (isDonep >> return ' ') )
 
@@ -170,12 +170,12 @@ parseString= do
 -- | take characters while they meet the condition
 tTakeWhile :: (Char -> Bool) -> TransIO BS.ByteString
 tTakeWhile cond= 
-    withData $ \s -> return  $ BS.span cond s -- $ let r@(h,t)= (BS.span cond s  !> ("tTakeWhile",h)) in r
+    withGetParseString $ \s -> return  $ BS.span cond s -- $ let r@(h,t)= (BS.span cond s  !> ("tTakeWhile",h)) in r
    
    
 -- | take characters while they meet the condition and drop the next character
 tTakeWhile' :: (Char -> Bool) -> TransIO BS.ByteString
-tTakeWhile' cond= withData $ \s ->
+tTakeWhile' cond= withGetParseString $ \s ->
    let (h,t)= BS.span cond s
    in return (h, if BS.null t then t else BS.tail t)  !> ("tTakeWhile'",h)
 
@@ -183,16 +183,16 @@ tTakeWhile' cond= withData $ \s ->
 just1 f x= let (h,t)= f x in (Just h,t)
 
 -- | take n characters 
-tTake n=  withData $ \s ->  return $ BS.splitAt n s !> ("tTake",n)
+tTake n=  withGetParseString $ \s ->  return $ BS.splitAt n s !> ("tTake",n)
 
 -- | drop n characters
-tDrop n= withData $ \s ->  return $ ((),BS.drop n s)
+tDrop n= withGetParseString $ \s ->  return $ ((),BS.drop n s)
 
 -- | read a char
-anyChar= withData $ \s -> if BS.null s then empty else return (BS.head s,BS.tail s) -- !> ("anyChar",s)
+anyChar= withGetParseString $ \s -> if BS.null s then empty else return (BS.head s,BS.tail s) -- !> ("anyChar",s)
 
 -- | verify that the next character is the one expected
-tChar c= withData $ \s -> if BS.null s || BS.head s /= c then empty else return (BS.head s,BS.tail s)  !> ("tChar", BS.head s) 
+tChar c= withGetParseString $ \s -> if BS.null s || BS.head s /= c then empty else return (BS.head s,BS.tail s)  !> ("tChar", BS.head s) 
    --  anyChar >>= \x -> if x == c then return c else empty !> ("tChar",x)
 
 -- | parse an IP address
@@ -217,8 +217,8 @@ parseIP= do
 
 -- | bring the data of a parse context as a lazy byteString to a parser
 -- and actualize the parse context with the result
-withData :: (BS.ByteString -> TransIO (a,BS.ByteString)) -> TransIO a
-withData parser= Transient $ do
+withGetParseString :: (BS.ByteString -> TransIO (a,BS.ByteString)) -> TransIO a
+withGetParseString parser= Transient $ do
    ParseContext readMore s <- getData `onNothing` error "parser: no context"
    
    let loop = unsafeInterleaveIO $ do
@@ -254,7 +254,7 @@ giveData= (noTrans $ do
 
 -- | True if the stream has finished
 isDone :: TransIO Bool
-isDone= withData $ \s -> return $ if s==mempty then (True,s) else (False,s)
+isDone= withGetParseString $ \s -> return $ if s==mempty then (True,s) else (False,s)
 
 -- | return true if  the stream finished. else fails
 isDonep= isDone >>= \r -> if r== True then return True else empty 
