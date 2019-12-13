@@ -43,7 +43,7 @@ Loggable(..), logged, received, param, getLog, exec,wait, emptyLog,
  suspend, checkpoint, rerun, restore,
 #endif
 
-Log(..)
+Log(..),Builder(..), toLazyByteString, byteString, lazyByteString
 ) where
 
 import Data.Typeable
@@ -56,17 +56,45 @@ import Transient.Parse
 import Control.Applicative
 import Control.Monad.State
 import System.Directory
-import Control.Exception 
+import Control.Exception
 import Control.Monad
 import Control.Concurrent.MVar
 import qualified Data.ByteString.Lazy.Char8 as BS
 import qualified Data.ByteString.Char8 as BSS
-import Data.ByteString.Builder
 import Data.Maybe (fromJust)
 import System.IO.Unsafe
 
 #ifndef ghcjs_HOST_OS
+import Data.ByteString.Builder
+
 import System.Random
+#else
+import Data.JSString hiding (empty)
+#endif
+
+
+
+#ifndef ghcjs_HOST_OS
+pack= BSS.pack
+
+#else
+
+newtype Builder= Builder(JSString -> JSString)
+instance Monoid Builder where
+   mappend (Builder fx) (Builder fy)= Builder $ \next -> fx (fy next)
+   mempty= Builder id
+
+instance Semigroup Builder where
+    (<>)= mappend
+
+byteString :: JSString -> Builder
+byteString ss= Builder $ \s -> ss <> s
+lazyByteString = byteString
+
+
+toLazyByteString :: Builder -> JSString
+toLazyByteString (Builder b)=  b  mempty
+
 #endif
 
 exec=  byteString "Exec/"
@@ -74,23 +102,23 @@ wait=  byteString "Wait/"
 
 class (Show a, Read a,Typeable a) => Loggable a where
     serialize :: a -> Builder
-    serialize = byteString .   BSS.pack . show
-     
+    serialize = byteString .   pack . show
+
     deserializePure :: BS.ByteString -> Maybe(a, BS.ByteString)
     deserializePure s= r
-      where 
+      where
       r= case reads $ BS.unpack s   of -- !> ("deserialize",typeOf $ typeOf1 r,s) of
            []       -> Nothing  !> "Nothing"
            (r,t): _ -> return (r, BS.pack t)
-           
+
       typeOf1 :: Maybe(a, BS.ByteString) -> a
       typeOf1= undefined
-      
+
     deserialize ::  TransIO a
-    deserialize = x 
-       where 
+    deserialize = x
+       where
        x=  withGetParseString $ \s -> case deserializePure s of
-                    Nothing ->   empty 
+                    Nothing ->   empty
                     Just x -> return x
 
 
@@ -107,13 +135,13 @@ data Log    = Log{ recover :: Bool, buildLog :: Builder, fulLog :: Builder, leng
 
 -- | Reads the saved logs from the @logs@ subdirectory of the current
 -- directory, restores the state of the computation from the logs, and runs the
--- computation.  The log files are maintained. 
+-- computation.  The log files are maintained.
 -- It could be used for the initial configuration of a program.
 rerun :: String -> TransIO a -> TransIO a
-rerun path proc = do  
+rerun path proc = do
      liftIO $ do
          r <- doesDirectoryExist path
-         when (not r) $ createDirectory  path  
+         when (not r) $ createDirectory  path
          setCurrentDirectory path
      restore' proc False
 
@@ -135,11 +163,11 @@ restore' proc delete= do
      if null list || length list== 2 then proc else do
 
          let list'= filter ((/=) '.' . head) list
-         file <- choose  list'      
+         file <- choose  list'
 
          log <- liftIO $ BS.readFile (logs++file)
 
-         let logb= lazyByteString  log 
+         let logb= lazyByteString  log
          setData Log{recover= True,buildLog= logb,fulLog= logb,lengthFull= 0, hashClosure= 0}
          when delete $ liftIO $ remove $ logs ++ file
          proc
@@ -159,17 +187,17 @@ restore' proc delete= do
 --
 suspend :: Typeable a =>  a -> TransIO a
 suspend  x= do
-   log <- getLog 
-   if (recover log) then return x else do 
+   log <- getLog
+   if (recover log) then return x else do
         logAll  $ fulLog log
         exit x
-        
+
 
 -- | Saves the accumulated logs of the current computation, like 'suspend', but
 -- does not exit.
 checkpoint :: TransIO ()
 checkpoint = do
-   log <- getLog 
+   log <- getLog
    if (recover log) then return () else logAll  $ fulLog log
 
 
@@ -214,26 +242,26 @@ emptyLog= Log False mempty mempty 0 0
 logged :: Loggable a => TransIO a -> TransIO a
 logged mx =   do
         log <- getLog
-        
+
         -- setParseString $ toLazyByteString  $ buildLog log
 
         let full= fulLog log
         rest <- giveParseString
         -- let rest=  toLazyByteString $ buildLog  log
 
-        if recover log 
+        if recover log
            then
-                  if not $ BS.null rest -- rest <= 1)  
+                  if not $ BS.null rest -- rest <= 1)
                     then recoverIt log -- exec1 log <|> wait1 log <|> value log
                     else do
                       setData log{buildLog=mempty}
                       notRecover full log
-    
+
            else notRecover full log
     where
     notRecover full log= do
 
-        let rs  = buildLog log -- giveParseString >>= return . lazyByteString 
+        let rs  = buildLog log -- giveParseString >>= return . lazyByteString
         -- return () !> ("BUILDLOG", toLazyByteString rs)
         setData $ Log False (rs <> exec) (full <> exec) (lengthFull log +1)  (hashClosure log + 1000)     -- !> ("setLog False", Exec:rs)
 
@@ -241,14 +269,14 @@ logged mx =   do
                             -- when   p1 <|> p2, to avoid the re-execution of p1 at the
                             -- recovery when p1 is asynchronous or return empty
 
-        log' <- getLog     -- Log recoverAfter lognew len _ <- getLog 
-        
-        
+        log' <- getLog     -- Log recoverAfter lognew len _ <- getLog
+
+
         let len= lengthFull log'
             add= full <> serialize r <> byteString "/"   -- Var (toIDyn r):  full
             recoverAfter= recover log'
             lognew= buildLog log'
-            
+
         rest <- giveParseString
         if recoverAfter && not (BS.null rest)        --  !> ("recoverAfter", recoverAfter)
           then  do
@@ -256,24 +284,24 @@ logged mx =   do
             setData $ log'{recover= True, fulLog=  lognew <> add,  lengthFull= lengthFull log+ len,hashClosure= hashClosure log + 10000000}
                                                       !> ("recover",  toLazyByteString $ lognew <> add)
 
-          else 
+          else
 
             setData $ Log{recover= False, buildLog=rs <> serialize r  <> byteString "/", fulLog= add,lengthFull= len+1, hashClosure=hashClosure log +10000000}
-                -- Log False (Var (toIDyn r):rs) add (hashClosure +10000000))   
+                -- Log False (Var (toIDyn r):rs) add (hashClosure +10000000))
                          --  !> ("restore",  toLazyByteString $serialize r <> rs)
-           
-   
+
+
         return  r
 
     recoverIt log= do
-        s <- giveParseString 
+        s <- giveParseString
         case BS.splitAt 5 s of
-          ("Exec/",r) -> do 
+          ("Exec/",r) -> do
             setData $ log{ -- recover= True,  --  buildLog=  rs',
             lengthFull= lengthFull log +1, hashClosure= hashClosure log + 1000}
-            setParseString r                     --   !> "Exec" 
+            setParseString r                     --   !> "Exec"
             mx
-              
+
           ("Wait/",r) -> do
             setData $ log{ -- recover= True, --  buildLog=  rs',
             lengthFull= lengthFull log +1, hashClosure= hashClosure log + 100000}
@@ -282,24 +310,24 @@ logged mx =   do
             empty                                --   !> "Wait"
 
           _ -> value log
-              
-    value log= r 
-      where 
+
+    value log= r
+      where
       typeOfr :: TransIO a -> a
       typeOfr x= undefined
-      r= do        
+      r= do
             -- return() !> "logged value"
             x <- deserialize  <|> do
                    psr <- giveParseString
                    error  (show("error parsing",psr,"to",typeOf $ typeOfr r))
             -- rs'  <- giveParseString >>= return . lazyByteString
             tChar '/'
-            
+
             setData $ log{recover= True -- , buildLog= rs'
                          ,lengthFull= lengthFull log +1,hashClosure= hashClosure log + 10000000}
             return x
-            
-    
+
+
 
 
 
@@ -315,14 +343,14 @@ param = r where
   r=  do
        let t = typeOf $ type1 r
        (Transient.Internals.try $ tTakeWhile (/= '/') >>= liftIO . print >> empty) <|> return ()
-       if      t == typeOf (undefined :: String)     then return . unsafeCoerce . BS.unpack =<< tTakeWhile' (/= '/') 
+       if      t == typeOf (undefined :: String)     then return . unsafeCoerce . BS.unpack =<< tTakeWhile' (/= '/')
        else if t == typeOf (undefined :: BS.ByteString) then return . unsafeCoerce =<< tTakeWhile' (/= '/')
        else if t == typeOf (undefined :: BSS.ByteString)  then return . unsafeCoerce . BS.toStrict =<< tTakeWhile' (/= '/')
-       else deserialize <* tChar '/' 
-           
+       else deserialize <* tChar '/'
+
 
        where
        type1  :: TransIO x ->  x
        type1 = undefined
 
-     
+

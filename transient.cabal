@@ -22,14 +22,23 @@ flag debug
   manual:       True
 
 library
-    -- Note: `stack sdist/upload` will add missing bounds (via "pvp-bounds: both") in `build-depends`
-    -- support GHC 7.10.3 and later; lower bounds below denote GHC 7.10.3's bundled versions
+    if impl(ghcjs >=0.1)
+        build-depends:
+            -- ghcjs-base should be installed with
+            -- > git clone https://github.com/ghcjs/ghcjs-base
+            -- > cd ghcjs-base
+            -- > cabal install --ghcjs --constraint 'primitive < 0.6.4'
+            ghcjs-base -any,
+            ghcjs-prim -any,
+            random -any,
+            old-time
+
     build-depends:     base          >= 4.8.0  &&  < 5
-                     , containers    >= 0.5.6
-                     , transformers  >= 0.4.2
-                     , time          >= 1.5
-                     , directory     >= 1.2.2
-                     , bytestring    >= 0.10.6
+                        , containers    >= 0.5.6
+                        , transformers  >= 0.4.2
+                        , time          >= 1.5
+                        , directory     >= 1.2.2
+                        , bytestring    >= 0.10.6
 
 
                      -- libraries not bundled w/ GHC
@@ -46,8 +55,8 @@ library
                      Transient.Internals
                      Transient.Logged
                      Transient.Parse
-                     
-                   
+
+
 
     exposed: True
     buildable: True
