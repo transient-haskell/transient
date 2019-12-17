@@ -24,16 +24,10 @@ flag debug
 library
     if impl(ghcjs >=0.1)
         build-depends:
-            -- ghcjs-base should be installed with
-            -- > git clone https://github.com/ghcjs/ghcjs-base
-            -- > cd ghcjs-base
-            -- > cabal install --ghcjs --constraint 'primitive < 0.6.4'
-            ghcjs-base -any,
-            ghcjs-prim -any,
-            random -any,
-            old-time
+            ghcjs-base -any
 
-    build-depends:     base          >= 4.8.0  &&  < 5
+
+    build-depends:      base          >= 4.8.0  &&  < 5
                         , containers    >= 0.5.6
                         , transformers  >= 0.4.2
                         , time          >= 1.5
@@ -45,7 +39,6 @@ library
                      , mtl
                      , stm
                      , random
-                     , primitive < 0.6.4
 
 
     exposed-modules: Transient.Backtrack
