@@ -22,9 +22,9 @@ flag debug
   manual:       True
 
 library
-    if impl(ghcjs >=0.1)
-        build-depends:
-            ghcjs-base -any
+--    if impl(ghcjs >=0.1)
+--        build-depends:
+--            ghcjs-base -any
 
 
     build-depends:      base          >= 4.8.0  &&  < 5

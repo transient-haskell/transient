@@ -64,21 +64,21 @@ import qualified Data.ByteString.Char8 as BSS
 import Data.Maybe (fromJust)
 import System.IO.Unsafe
 
-#ifndef ghcjs_HOST_OS
+-- #ifndef ghcjs_HOST_OS
 import Data.ByteString.Builder
 
 import System.Random
-#else
-import Data.JSString hiding (empty)
-#endif
+-- #else
+--import Data.JSString hiding (empty)
+-- #endif
 
 
 
-#ifndef ghcjs_HOST_OS
-pack= BSS.pack
+-- #ifndef ghcjs_HOST_OS
+-- pack= BSS.pack
 
-#else
-
+-- #else
+{-
 newtype Builder= Builder(JSString -> JSString)
 instance Monoid Builder where
    mappend (Builder fx) (Builder fy)= Builder $ \next -> fx (fy next)
@@ -94,20 +94,20 @@ lazyByteString = byteString
 
 toLazyByteString :: Builder -> JSString
 toLazyByteString (Builder b)=  b  mempty
-
-#endif
+-}
+-- #endif
 
 exec=  byteString "Exec/"
 wait=  byteString "Wait/"
 
 class (Show a, Read a,Typeable a) => Loggable a where
     serialize :: a -> Builder
-    serialize = byteString .   pack . show
+    serialize = byteString .   BSS.pack . show
 
     deserializePure :: BS.ByteString -> Maybe(a, BS.ByteString)
     deserializePure s= r
       where
-      r= case reads $ BS.unpack s   of -- !> ("deserialize",typeOf $ typeOf1 r,s) of
+      r= case reads $ BS.unpack s   of -- `traceShow` ("deserialize",typeOf $ typeOf1 r,s) of
            []       -> Nothing  !> "Nothing"
            (r,t): _ -> return (r, BS.pack t)
 
