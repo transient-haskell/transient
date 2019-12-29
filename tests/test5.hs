@@ -79,18 +79,28 @@ tmask proc = do
         (mr,_) <- liftIO $ mask_ $ runTransient proc
         if isJust mr then return $ fromJust mr else empty
 
+---------------------------------------------------------
 
-withResource f= do
-        print "open resource"
-        mv <- newMVar "hello"
-        r <- takeMVar mv
+
+withResource adquire release f= do
+        r <- adquire
         f r
-        print "close resource"
-        putMVar mv r
-        
-main= keep $ do
-        collect 1 $ do
-                r <- react withResource (return ()) 
-                liftIO $ print r  
-        liftIO $ print "world"
+        release r
 
+resource adquire release = react  (withResource adquire release) (return ())
+
+useResources= collect 1
+
+main= keep $ killer2 <|> job1 
+
+job1= do
+        useResources $ do
+                r <- resource adquire release
+                labelState "JOB"
+
+                liftIO $ threadDelay 10000000
+                liftIO $ print r 
+        liftIO $ print "world"
+        where 
+        adquire= do print "adquire" >> return "Resource"
+        release _ =  print "release" 
