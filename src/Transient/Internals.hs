@@ -23,7 +23,6 @@
 {-# LANGUAGE ConstraintKinds           #-}
 
 
-
 module Transient.Internals where
 
 import           Control.Applicative
@@ -543,11 +542,13 @@ oneThread comp = do
   
   killChildren1 :: ThreadId  ->  EventF -> IO ()
   killChildren1 th state = do
+      forkIO $ do
           ths' <- modifyMVar (children state) $ \ths -> do
                     let (inn, ths')=  partition (\st -> threadId st == th) ths
                     return (inn, ths')
           mapM_ (killChildren1  th) ths'
           mapM_ (killThread . threadId) ths'
+      return()
 
 
 -- | Add a label to the current passing threads so it can be printed by debugging calls like `showThreads`
@@ -556,7 +557,16 @@ labelState l =  do
   st <- get
   liftIO $ atomicModifyIORef (labelth st) $ \(status,_) -> ((status,  l), ())
 
--- | kill the thread subtree labeled as such
+-- | return the threadId associated with an state (you can see all of them with the console option 'ps')
+threadState thid= do   
+  st <- findState match =<<  topState
+  return $ threadId st :: TransIO ThreadId
+  where
+  match st= do
+     (_,lab) <-liftIO $ readIORef $ labelth st
+     return $ if lab == thid then True else False
+
+-- | kill the thread subtree labeled as such (you can see all of them with the console option 'ps')
 killState thid= do
       st <- findState match =<<  topState
       liftIO $ killBranch' st
@@ -728,14 +738,15 @@ killBranch = noTrans $ do
 -- | Kill the childs and the thread of an state
 killBranch' :: EventF -> IO ()
 killBranch' cont = do
-  killChildren $ children cont
-  let thisth  = threadId  cont
-      mparent = parent    cont
-  when (isJust mparent) $
-    modifyMVar_ (children $ fromJust mparent) $ \sts ->
-      return $ filter (\st -> threadId st /= thisth) sts
-  killThread $ thisth !> ("kill this thread:",thisth)
-
+  forkIO $ do
+    killChildren $ children cont
+    let thisth  = threadId  cont
+        mparent = parent    cont
+    when (isJust mparent) $
+      modifyMVar_ (children $ fromJust mparent) $ \sts ->
+        return $ filter (\st -> threadId st /= thisth) sts
+    killThread $ thisth !> ("kill this thread:",thisth)
+  return ()
 -- * Extensible State: Session Data Management
 
 -- | Same as 'getSData' but with a more general type. If the data is found, a
@@ -993,7 +1004,7 @@ parallel ioaction = Transient $ do
   was <- gets remoteStatus -- getData `onNothing` return NoRemote
   when (was /= WasRemote) $ setData WasParallel
   cont <- get
-          --  !> "PARALLEL"
+          --  !>  "PARALLEL"
   case event cont of
     j@(Just _) -> do
       put cont { event = Nothing }
@@ -1003,8 +1014,6 @@ parallel ioaction = Transient $ do
 
       liftIO $ loop cont ioaction
 
---            th <- liftIO myThreadId
---            return () !> ("finish",th)
       return Nothing
 
 -- | Execute the IO action and the continuation
@@ -1013,7 +1022,7 @@ loop parentc rec = forkMaybe parentc $ \cont -> do
   -- Execute the IO computation and then the closure-continuation
   liftIO $ atomicModifyIORef (labelth cont) $ const ((Listener,BS.pack "wait"),())
   let loop'=   do
-         mdat <- rec `catch` \(e :: SomeException) -> return $ SError e
+         mdat <- rec  `catch` \(e :: SomeException) -> return $ SError e
          case mdat of
              se@(SError _)  -> setworker cont >> iocont  se    cont
              SDone          -> setworker cont >> iocont  SDone cont
@@ -1060,19 +1069,18 @@ loop parentc rec = forkMaybe parentc $ \cont -> do
 
          proc cont')
          $ \me -> do
-
            case  me of
-            Left e -> exceptBack cont e >> return ()    -- !> "exceptBack 2"
+              Left e -> exceptBack cont e >> return ()    -- !> "exceptBack 2"
 
 
 
-            _ -> do
-             case maxThread cont of
-               Just sem -> signalQSemB sem      -- !> "freed thread"
+              _ -> return ()
+           case maxThread cont of
+               Just sem -> signalQSemB sem              -- !> "freed thread"
                Nothing -> return ()
-             when(not $ freeTh parent  )  $ do -- if was not a free thread
+           when(not $ freeTh parent  )  $ do -- if was not a free thread
 
-                 th <- myThreadId
+                 th <- myThreadId   !> "not free thread terminated"
                  (can,label) <- atomicModifyIORef (labelth cont) $ \(l@(status,label)) ->
                     ((if status== Alive then Dead else status, label),l)
                  when (can /= Parent ) $ free th parent
@@ -1082,7 +1090,7 @@ loop parentc rec = forkMaybe parentc $ \cont -> do
 
 
   forkFinally1 :: IO a -> (Either SomeException a -> IO ()) -> IO ThreadId
-  forkFinally1 action and_then =
+  forkFinally1 action and_then = 
        mask $ \restore ->  forkIO $ Control.Exception.try (restore action) >>= and_then
 
 free th env= do
@@ -1131,15 +1139,11 @@ hangThread parentProc child =  do
 
 -- | kill  all the child threads associated with the continuation context
 killChildren childs  = do
-
-
+        forkIO $ do
            ths <- modifyMVar childs $ \ths -> return ([],ths)
-
            mapM_ (killChildren . children) ths
-
-
-           mapM_ (killThread . threadId) ths   !> ("Kill children", map threadId ths )
-
+           mapM_ (killThread . threadId) ths  >> return ()  !> ("Kill children", map threadId ths )
+        return ()
 
 
 
