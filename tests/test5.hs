@@ -97,10 +97,10 @@ job1= do
         useResources $ do
                 r <- resource adquire release
                 labelState "JOB"
-
                 liftIO $ threadDelay 10000000
                 liftIO $ print r 
+
         liftIO $ print "world"
         where 
-        adquire= do print "adquire" >> return "Resource"
+        adquire = do print "adquire" >> return "Resource"
         release _ =  print "release" 
