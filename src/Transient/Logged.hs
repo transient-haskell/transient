@@ -66,7 +66,7 @@ import System.IO.Unsafe
 
 -- #ifndef ghcjs_HOST_OS
 import Data.ByteString.Builder
-
+import Data.Monoid
 import System.Random
 -- #else
 --import Data.JSString hiding (empty)

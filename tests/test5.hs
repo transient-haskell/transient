@@ -52,9 +52,10 @@ loop xs msg = do
         Main.loop (tail xs) msg
 
 killer = do
+        abduce
         liftIO $ threadDelay 1000000
         th <- threadState "JOB"
-        liftIO $ throwTo th  $ ErrorCall "hello"
+        liftIO $ throwTo th  $ ErrorCall "sent async exception to JOB"
 
 
 killer2 = do
@@ -66,7 +67,7 @@ killer2 = do
           liftIO $ print ("KILLER", e,th)
           empty
 
-    liftIO $ threadDelay 5000000
+    liftIO $ threadDelay 1000000
     st <- getCont
 
     liftIO $ killChildren $ children $ fromJust $ parent  st
@@ -83,24 +84,35 @@ tmask proc = do
 
 
 withResource adquire release f= do
-        r <- adquire
+
+        r <- mask_ adquire
         f r
         release r
 
-resource adquire release = react  (withResource adquire release) (return ())
+resource adquire release = react  (bracket adquire release) (return ())
 
 useResources= collect 1
 
-main= keep $ killer2 <|> job1 
+main= keep $  killer2 <|> job1
 
 job1= do
+
         useResources $ do
+                onException $ \(e :: SomeException) ->  do 
+                        th <- liftIO myThreadId
+                        liftIO $ print ("JOB", e,th)  
+                        empty
                 r <- resource adquire release
-                labelState "JOB"
+                --labelState "JOB"
+                liftIO $ print "after adquire"
                 liftIO $ threadDelay 10000000
-                liftIO $ print r 
+                liftIO $ print (r  :: String)
 
         liftIO $ print "world"
         where 
-        adquire = do print "adquire" >> return "Resource"
+        adquire = do 
+                print "adquire" 
+                liftIO $ print (sum [0..10000000 :: Int]) 
+                --threadDelay 5000000
+                return "Resource"
         release _ =  print "release" 
