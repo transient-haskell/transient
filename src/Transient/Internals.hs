@@ -1151,18 +1151,20 @@ killChildren childs  = do
 -- | capture a callback handler so that the execution of the current computation continues 
 -- whenever an event occurs. The effect is called "de-inversion of control"
 --
--- The first parameter is a callback. The second parameter is a value to be
+-- The first parameter is a callback setter. The second parameter is a value to be
 -- returned to the callback; if the callback expects no return value it
--- can just be @return ()@. The callback expects a setter function taking the
--- @eventdata@ as an argument and returning a value to the callback; this
--- function is supplied by 'react'.
+-- can just be @return ()@. The callback setter expects a function taking the
+-- @eventdata@ as an argument and returning a value; this
+-- function is the continuation, which is supplied by 'react'.
 --
 -- Callbacks from foreign code can be wrapped into such a handler and hooked
 -- into the transient monad using 'react'. Every time the callback is called it
 -- continues the execution on the current transient computation.
 --
 -- >     
--- >   event <- react  onEvent $ return ()
+-- >  do
+-- >     event <- react  onEvent $ return ()
+-- >     ....
 -- >
 
 react

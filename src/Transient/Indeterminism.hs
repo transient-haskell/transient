@@ -73,27 +73,9 @@ group num proc =  do
       Nothing -> stop
       Just xs -> return xs
 
--- | Collect the results of a task set, grouping all results received within
--- every time interval specified by the first parameter as `diffUTCTime`.
---
 
-{-
-groupByTime1 time proc =  do
-    t  <- liftIO getCurrentTime
 
-    v  <- liftIO $ newIORef (0,t,[])
-    
-    x  <- proc
-    t' <- liftIO getCurrentTime
-    mn <- liftIO $ atomicModifyIORef v $ \(n,t,xs) -> let n'=n +1
-            in
-            if diffUTCTime t' t < fromIntegral time
-             then   ((n',t, x:xs),Nothing)
-             else   ((0 ,t',[]), Just $ x:xs)
-    case mn of
-      Nothing -> stop
-      Just xs -> return xs
--}
+
 
 -- | Collect the results of the first @n@ tasks.  Synchronizes concurrent tasks
 -- to collect the results safely and kills all the non-free threads before
@@ -158,7 +140,9 @@ burst :: Int -> TransIO a -> TransIO (StreamData a)
 burst timeout comp= do
      r <- oneThread comp 
      return (SMore r) <|> (async (threadDelay timeout) >> return SDone)
-     
+
+-- | Collect the results of a task set, grouping all results received within
+-- every time interval specified by the first parameter as `diffUTCTime`. 
 groupByTime :: Monoid a => Int -> TransIO a -> TransIO a
 groupByTime timeout comp= do
      v <- liftIO $ newIORef mempty 

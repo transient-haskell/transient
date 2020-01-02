@@ -1,6 +1,6 @@
 #!/usr/bin/env execthirdlinedocker.sh
 --  info: use sed -i 's/\r//g' file if report "/usr/bin/env: ‘execthirdlinedocker.sh\r’: No such file or directory"
--- LIB="/projects" && runghc     -i${LIB}/transient/src -i${LIB}/transient-universe/src -i${LIB}/axiom/src   $1 ${2} ${3}
+-- LIB="/projects" && runghc  -DDEBUG   -i${LIB}/transient/src -i${LIB}/transient-universe/src -i${LIB}/axiom/src   $1 ${2} ${3}
 
 {-# LANGUAGE ScopedTypeVariables, OverloadedStrings #-}
 module Main where
@@ -26,8 +26,10 @@ import Data.Typeable
 import Data.IORef
 import Data.List((\\))
 
-
-
+import Transient.Logged
+import Transient.Move
+import Data.Aeson
+import Transient.Parse
 
 
 
@@ -89,30 +91,37 @@ withResource adquire release f= do
         f r
         release r
 
-resource adquire release = react  (bracket adquire release) (return ())
+tbracket adquire release = react  (bracket adquire release) (return ())
 
-useResources= collect 1
+useResources rs= collect 1  rs  -- <|>  liftIO (forever (threadDelay maxBound) )
 
-main= keep $  killer2 <|> job1
+main2=  keep $    job1
 
 job1= do
-
-        useResources $ do
-                onException $ \(e :: SomeException) ->  do 
+        onException $ \(e :: SomeException) ->  do 
                         th <- liftIO myThreadId
                         liftIO $ print ("JOB", e,th)  
                         empty
-                r <- resource adquire release
+        w <- useResources $ do
+                r <- tbracket adquire release
                 --labelState "JOB"
-                liftIO $ print "after adquire"
-                liftIO $ threadDelay 10000000
-                liftIO $ print (r  :: String)
+                i <- choose[1,2]
+                liftIO $ print "after adquire, managing resource"
+                return $ r ++ " processed " ++ show i
 
-        liftIO $ print "world"
+        liftIO $ print w
         where 
         adquire = do 
                 print "adquire" 
-                liftIO $ print (sum [0..10000000 :: Int]) 
-                --threadDelay 5000000
                 return "Resource"
         release _ =  print "release" 
+
+
+main= keep $ do
+        setParseString "{\"hello\" : \"world\"}"
+        r <- braces $ chainMany mappend  string 
+        liftIO $ print r
+        where
+        string=  do 
+                d <- isDone 
+                if d then empty !> "empty" else tTakeWhile (\c -> c /= '}' && c /= ']' )
