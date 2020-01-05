@@ -30,7 +30,7 @@ import Data.List
 main= do
    keep' $ do
        let -- genElem :: a -> TransIO a
-           genElem x= do
+           genElem x= do  -- generates synchronous and asynchronous results with various delays
                 isasync <- liftIO randomIO
                 delay   <- liftIO $ randomRIO (1, 1000)
                 liftIO $ threadDelay delay
@@ -38,11 +38,11 @@ main= do
 
        liftIO $ putStrLn "--Testing thread control + Monoid + Applicative + async + indetermism---"
 
-       collect 100 $ do
-           i <-  threads 0 $ choose [1..100]
-           nelems   <- liftIO $ randomRIO (1, 10) -- :: TransIO Int
-           nthreads <- liftIO $ randomRIO (1,nelems)
-           r <- threads nthreads $ foldr (+) 0  $ map genElem  [1..nelems]
+       collect 100 $ do                                                    -- gather the result of 100 iterations
+           i <-  threads 0 $ choose [1..100]                               -- test 100 times. 'loop' for 100 times
+           nelems   <- liftIO $ randomRIO (1, 10)                          -- :: TransIO Int
+           nthreads <- liftIO $ randomRIO (1,nelems)                       -- different numbers of threads
+           r <- threads nthreads $ foldr (+) 0  $ map genElem  [1..nelems] -- sum sync and async results using applicative
            assert (r == sum[1..nelems]) $ return ()
 
        liftIO $ putStrLn "--------------checking  parallel execution, Alternative, events --------"

@@ -197,7 +197,7 @@ tTake n= withGetParseString $ \s ->  return $ BS.splitAt n s -- !> ("tTake",n,BS
 tDrop n= withGetParseString $ \s ->  return $ ((),BS.drop n s)
 
 -- | read a char
-anyChar= withGetParseString $ \s -> if BS.null s then empty else return (BS.head s,BS.tail s) -- !> ("anyChar",s)
+anyChar= withGetParseString $ \s -> if BS.null s then empty else return (BS.head s ,BS.tail s ) -- !> ("anyChar",s)
 
 -- | verify that the next character is the one expected
 tChar c= withGetParseString $ \s -> if BS.null s || BS.head s /= c then empty else return (BS.head s,BS.tail s)  -- !> ("tChar", BS.head s) 
@@ -209,10 +209,10 @@ tChar c= withGetParseString $ \s -> if BS.null s || BS.head s /= c then empty el
 -- | bring the lazy byteString state to a parser
 -- and actualize the byteString state with the result
 -- The tuple that the parser should return should be :  (what it returns, what should remain to be parsed)
-withGetParseString ::  (BS.ByteString -> TransIO (a,BS.ByteString)) -> TransIO a
+withGetParseString :: Show a =>  (BS.ByteString -> TransIO (a,BS.ByteString)) -> TransIO a
 withGetParseString parser= Transient $ do
    ParseContext readMore s <- gets parseContext -- getData `onNothing` error "parser: no context"
-   -- return () !> ("withGetParseString parsing", BS.take 4 s)   
+   return () !> ("withGetParseString parsing")   
    let loop = unsafeInterleaveIO $ do
            mr <-  readMore 
 
@@ -227,8 +227,9 @@ withGetParseString parser= Transient $ do
    --if str == mempty then return Nothing else do
    mr <- runTrans $ parser str
    case mr of
-            Nothing -> return Nothing     -- !> "NOTHING"
+            Nothing -> return Nothing    --  !> "NOTHING"
             Just (v,str') -> do
+                  return () !> (v,str') 
                   modify $ \s-> s{parseContext= ParseContext readMore str'}
                   return $ Just v
 

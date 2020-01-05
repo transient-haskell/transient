@@ -268,30 +268,41 @@ instance Functor TransIO where
 instance Applicative TransIO where
   pure a  = Transient . return $ Just a
 
-  mf <*> mx = do
+  mf <*> mx = do -- do f <- mf; x <- mx ; return $ f x
     
     r1 <- liftIO $ newIORef Nothing
     r2 <- liftIO $ newIORef Nothing
     fparallel r1 r2 <|> xparallel r1 r2
     
     where
-    
+
     fparallel r1 r2= do
       f <- mf 
       liftIO $ (writeIORef r1 $ Just f)
-      mx <- liftIO (readIORef r2) 
-      case mx of
-            Nothing -> empty
+      mr <- liftIO (readIORef r2) 
+      case mr of
+            Nothing -> empty 
             Just x  -> return $ f x
           
     xparallel r1 r2 = do
-      x <- mx 
-      liftIO $ (writeIORef r2 $ Just x)
-      mf <- liftIO (readIORef r1)
-      case mf of
-            Nothing -> empty
-            Just f -> return $ f x
-      
+      mr <- liftIO (readIORef r1)
+      case mr of
+            Nothing -> do
+
+              p <- gets remoteStatus
+              if p== NoRemote then empty else do
+                       x <- mx
+                       liftIO $ (writeIORef r2 $ Just x)
+                       empty
+
+              
+            Just f -> do
+              x <- mx
+              liftIO $ (writeIORef r2 $ Just x)
+              return $ f x
+
+
+     
 
 data RemoteStatus   = WasRemote | WasParallel | NoRemote
   deriving (Typeable, Eq, Show)

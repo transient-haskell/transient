@@ -118,8 +118,8 @@ job1= do
 
 
 main= keep $ do
-        setParseString "{\"hello\" : \"world\"}"
-        r <- braces $ chainMany mappend  string 
+        setParseString "hello  world"
+        r <- chainMany mappend  string 
         liftIO $ print r
         where
         string=  do 
