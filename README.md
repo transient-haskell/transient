@@ -7,6 +7,7 @@
 [![Build Status](https://api.travis-ci.org/transient-haskell/transient.png?branch=master)](https://travis-ci.org/transient-haskell/transient)
 [![Gitter](https://badges.gitter.im/theam/haskell-do.svg)](https://gitter.im/Transient-Transient-Universe-HPlay/Lobby?utm_source=share-link&utm_medium=link&utm_campaign=share-link)
 
+ [![Simple Haskell](http://simplehaskell.org/badges/badge.svg)](http://simplehaskell.org)
 [![Donate](https://www.paypalobjects.com/en_US/i/btn/btn_donate_LG.gif)](https://agocorona.github.io/donation.html)
 
 NOTE: distributed computing and web primitives Are in [transient-universe](https://github.com/transient-haskell/transient-universe) and [axiom](https://github.com/transient-haskell/axiom). Some examples at [transient-examples](https://github.com/transient-haskell/transient-examples) 
