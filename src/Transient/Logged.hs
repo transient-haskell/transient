@@ -51,7 +51,7 @@ import Unsafe.Coerce
 import Transient.Internals
 
 import Transient.Indeterminism(choose)
-import Transient.Internals -- (onNothing,reads1,IDynamic(..),Log(..),LogElem(..),RemoteStatus(..),StateIO)
+import Transient.Internals -- (onNothing,reads1,IDynamic(..),Log(..),LogElem(..),execMode(..),StateIO)
 import Transient.Parse
 import Control.Applicative
 import Control.Monad.State
@@ -280,7 +280,7 @@ logged mx =   do
         rest <- giveParseString
         if recoverAfter && not (BS.null rest)        --  !> ("recoverAfter", recoverAfter)
           then  do
-            modify $ \s -> s{remoteStatus= WasParallel}  --setData WasParallel
+            modify $ \s -> s{execMode= Parallel}  --setData Parallel
             setData $ log'{recover= True, fulLog=  lognew <> add,  lengthFull= lengthFull log+ len,hashClosure= hashClosure log + 10000000}
                                                       !> ("recover",  toLazyByteString $ lognew <> add)
 
@@ -306,7 +306,7 @@ logged mx =   do
             setData $ log{ -- recover= True, --  buildLog=  rs',
             lengthFull= lengthFull log +1, hashClosure= hashClosure log + 100000}
             setParseString r
-            modify $ \s -> s{remoteStatus= WasParallel}  --setData WasParallel
+            modify $ \s -> s{execMode= Parallel}  --setData Parallel
             empty                                --   !> "Wait"
 
           _ -> value log

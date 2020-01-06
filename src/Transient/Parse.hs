@@ -19,12 +19,12 @@ import qualified Data.ByteString.Lazy.Char8  as BS
 
 -- | set a stream of strings to be parsed
 setParseStream :: TransMonad m =>  IO (StreamData BS.ByteString) -> m ()
-setParseStream iox= {-do delData NoRemote;-} modify $ \s -> s{parseContext= ParseContext iox ""} -- setState $ ParseContext iox ""
+setParseStream iox=  modify $ \s -> s{execMode=Serial,parseContext= ParseContext iox ""} -- setState $ ParseContext iox ""
 
 
 -- | set a string to be parsed
 setParseString :: TransMonad m => BS.ByteString -> m ()
-setParseString x = {-do delData NoRemote;-} modify $ \s -> s{parseContext= ParseContext (return SDone) x} --  setState $ ParseContext (return SDone) x 
+setParseString x = modify $ \s -> s{execMode=Serial,parseContext= ParseContext (return SDone) x} --  setState $ ParseContext (return SDone) x 
 
 
 withParseString ::  BS.ByteString -> TransIO a -> TransIO a
@@ -46,9 +46,9 @@ string s= withGetParseString $ \str -> do
     let len= BS.length s
         ret@(s',_) = BS.splitAt len str
 
-    if s == s'   -- !> ("parse string looked, found",s,s')
+    if s == s'    !> ("parse string looked, found",s,s')
 
-      then return ret
+      then return ret 
       else empty -- !> "STRING EMPTY"
 
 -- | fast search for a token
@@ -177,7 +177,11 @@ parseString= do
 -- | take characters while they meet the condition
 tTakeWhile :: (Char -> Bool) -> TransIO BS.ByteString
 tTakeWhile cond= -- parse (BS.span cond)
-    withGetParseString $ \s -> return $ BS.span cond s   -- !> ("tTakeWhile", BS.takeWhile cond s)
+    withGetParseString $ \s -> do 
+      let ret@(h,t)= BS.span cond s
+      return () !> ("takewhile'",h,t)
+      if BS.null h then empty else return ret
+      
    
    
 -- | take characters while they meet the condition and drop the next character
@@ -185,7 +189,7 @@ tTakeWhile' :: (Char -> Bool) -> TransIO BS.ByteString
 tTakeWhile' cond= withGetParseString $ \s -> do
    let (h,t)= BS.span cond s
    return () !> ("takewhile'",h,t)
-   return (h, if BS.null t then t else BS.tail t) 
+   if BS.null h then empty else return (h, if BS.null t then t else BS.tail t) 
 
  
 just1 f x= let (h,t)= f x in (Just h,t)
@@ -212,7 +216,7 @@ tChar c= withGetParseString $ \s -> if BS.null s || BS.head s /= c then empty el
 withGetParseString :: Show a =>  (BS.ByteString -> TransIO (a,BS.ByteString)) -> TransIO a
 withGetParseString parser= Transient $ do
    ParseContext readMore s <- gets parseContext -- getData `onNothing` error "parser: no context"
-   return () !> ("withGetParseString parsing")   
+   -- return () !> ("withGetParseString parsing") 
    let loop = unsafeInterleaveIO $ do
            mr <-  readMore 
 
@@ -225,13 +229,14 @@ withGetParseString parser= Transient $ do
 
    -- liftIO $ return r <> loop  works in GHC 8.5 on 
    --if str == mempty then return Nothing else do
-   mr <- runTrans $ parser str
-   case mr of
-            Nothing -> return Nothing    --  !> "NOTHING"
-            Just (v,str') -> do
-                  return () !> (v,str') 
-                  modify $ \s-> s{parseContext= ParseContext readMore str'}
-                  return $ Just v
+   if BS.null str then return Nothing else do
+      mr <- runTrans $ parser str
+      case mr of
+                Nothing -> return Nothing    --  !> "NOTHING"
+                Just (v,str') -> do
+                      return () !> (v,str') 
+                      modify $ \s-> s{parseContext= ParseContext readMore str'}
+                      return $ Just v
 
 
 

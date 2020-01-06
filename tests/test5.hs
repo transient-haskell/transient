@@ -30,7 +30,7 @@ import Transient.Logged
 import Transient.Move
 import Data.Aeson
 import Transient.Parse
-
+import qualified Data.ByteString.Lazy.Char8 as BS 
 
 
 -- async exceptions
@@ -105,7 +105,7 @@ job1= do
         w <- useResources $ do
                 r <- tbracket adquire release
                 --labelState "JOB"
-                i <- choose[1,2]
+                i <-  choose[1,2]
                 liftIO $ print "after adquire, managing resource"
                 return $ r ++ " processed " ++ show i
 
@@ -118,10 +118,13 @@ job1= do
 
 
 main= keep $ do
-        setParseString "hello  world"
-        r <- chainMany mappend  string 
-        liftIO $ print r
+        setParseString "{\"hello\":  \"world\"}"
+        r <- deserialize 
+        liftIO $ print ("value=",r :: Value)
         where
         string=  do 
                 d <- isDone 
                 if d then empty !> "empty" else tTakeWhile (\c -> c /= '}' && c /= ']' )
+
+
+

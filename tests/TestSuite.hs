@@ -40,8 +40,8 @@ main= do
 
        collect 100 $ do                                                    -- gather the result of 100 iterations
            i <-  threads 0 $ choose [1..100]                               -- test 100 times. 'loop' for 100 times
-           nelems   <- liftIO $ randomRIO (1, 10)                          -- :: TransIO Int
-           nthreads <- liftIO $ randomRIO (1,nelems)                       -- different numbers of threads
+           nelems   <- liftIO $ randomRIO (1, 100)                          -- :: TransIO Int
+           nthreads <- liftIO $ randomRIO (0,nelems)                       -- different numbers of threads
            r <- threads nthreads $ foldr (+) 0  $ map genElem  [1..nelems] -- sum sync and async results using applicative
            assert (r == sum[1..nelems]) $ return ()
 

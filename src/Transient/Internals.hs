@@ -95,8 +95,7 @@ data LifeCycle = Alive | Parent | Listener | Dead
 -- | EventF describes the context of a TransientIO computation:
 data EventF = forall a b. EventF
   { event       :: Maybe SData
-    -- ^ Not yet consumed result (event) from the last asynchronous run of the
-    -- computation
+    -- ^ Not yet consumed result (event) from the last asynchronous computation
 
   , xcomp       :: TransIO a
   , fcomp       :: [b -> TransIO b]
@@ -122,7 +121,7 @@ data EventF = forall a b. EventF
   , labelth     :: IORef (LifeCycle, BS.ByteString)
     -- ^ Label the thread with its lifecycle state and a label string
   , parseContext :: ParseContext
-  , remoteStatus :: RemoteStatus
+  , execMode :: ExecMode
   } deriving Typeable
 
 data ParseContext  = ParseContext (IO  (StreamData BSL.ByteString)) BSL.ByteString deriving Typeable
@@ -161,7 +160,7 @@ emptyEventF th label childs =
          , maxThread  = Nothing
          , labelth    = label
          , parseContext = ParseContext (return SDone) mempty
-         , remoteStatus = NoRemote}
+         , execMode = Serial}
 
 -- | Run a transient computation with a default initial state
 runTransient :: TransIO a -> IO (Maybe a, EventF)
@@ -285,15 +284,21 @@ instance Applicative TransIO where
             Just x  -> return $ f x
           
     xparallel r1 r2 = do
+      
       mr <- liftIO (readIORef r1)
       case mr of
             Nothing -> do
 
-              p <- gets remoteStatus
-              if p== NoRemote then empty else do
+              p <- gets execMode
+              
+              if p== Serial then empty else do
                        x <- mx
                        liftIO $ (writeIORef r2 $ Just x)
-                       empty
+                       
+                       mr <- liftIO (readIORef r1)
+                       case mr of
+                         Nothing -> empty 
+                         Just f  -> return $ f x
 
               
             Just f -> do
@@ -304,12 +309,12 @@ instance Applicative TransIO where
 
      
 
-data RemoteStatus   = WasRemote | WasParallel | NoRemote
+data ExecMode = Remote | Parallel | Serial
   deriving (Typeable, Eq, Show)
   
 -- | stop the current computation and does not execute any alternative computation
 fullStop :: TransIO stop
-fullStop= do modify $ \s ->s{remoteStatus= WasRemote} ; stop
+fullStop= do modify $ \s ->s{execMode= Remote} ; stop
 
 instance Monad TransIO where
   return   = pure
@@ -348,8 +353,8 @@ instance MonadPlus TransIO where
   mplus x y = Transient $ do
     mx <- runTrans x
 
-    was <- gets remoteStatus -- getData `onNothing` return NoRemote
-    if was == WasRemote
+    was <- gets execMode -- getData `onNothing` return Serial
+    if was == Remote
 
       then return Nothing
       else case mx of
@@ -960,14 +965,14 @@ async io = do
     SLast  x -> return x
     SError e -> back   e
 
--- | Avoid the execution of alternative computations when the first term is asynchronous
+-- | Avoid the execution of alternative computations when the computation is asynchronous
 --
 -- > sync (async  whatever) <|>  liftIO (print "hello") -- never print "hello"
 sync :: TransIO a -> TransIO a
 sync x = do
-  was <- gets remoteStatus -- getSData <|> return NoRemote
-  r <- x <** modify (\s ->s{remoteStatus= WasRemote}) -- setData WasRemote
-  modify $ \s -> s{remoteStatus= was}
+  was <- gets execMode -- getSData <|> return Serial
+  r <- x <** modify (\s ->s{execMode= Remote}) -- setData Remote
+  modify $ \s -> s{execMode= was}
   return r
 
 -- | create task threads faster, but with no thread control: @spawn = freeThreads . waitEvents@
@@ -1012,8 +1017,9 @@ fork proc= (abduce >> proc >> empty) <|> return()
 -- task.
 parallel :: IO (StreamData b) -> TransIO (StreamData b)
 parallel ioaction = Transient $ do
-  was <- gets remoteStatus -- getData `onNothing` return NoRemote
-  when (was /= WasRemote) $ setData WasParallel
+  --was <- gets execMode -- getData `onNothing` return Serial
+  --when (was /= Remote) $ modify $ \s -> s{execMode= Parallel}
+  modify $ \s -> s{execMode=let rs= execMode s in if rs /= Remote then Parallel else rs}
   cont <- get
           --  !>  "PARALLEL"
   case event cont of
@@ -1091,7 +1097,7 @@ loop parentc rec = forkMaybe parentc $ \cont -> do
                Nothing -> return ()
            when(not $ freeTh parent  )  $ do -- if was not a free thread
 
-                 th <- myThreadId   !> "not free thread terminated"
+                 th <- myThreadId  
                  (can,label) <- atomicModifyIORef (labelth cont) $ \(l@(status,label)) ->
                     ((if status== Alive then Dead else status, label),l)
                  when (can /= Parent ) $ free th parent
@@ -1183,8 +1189,10 @@ react
   -> IO  response
   -> TransIO eventdata
 react setHandler iob= Transient $ do
-        was <- gets remoteStatus -- getData `onNothing` return NoRemote
-        when (was /= WasRemote) $ setData WasParallel
+      --  was <- gets execMode -- getData `onNothing` return Serial
+      --  when (was /= Remote) $ modify $ \s -> s{execMode= Parallel}
+        modify $ \s -> s{execMode=let rs= execMode s in if rs /= Remote then Parallel else rs}
+
         cont <- get
         case event cont of
           Nothing -> do
@@ -1803,8 +1811,9 @@ onException' mx f= onAnyException mx $ \e -> do
                 r <- runTrans  mx
                 modify $ \s -> s{event= Just $ unsafeCoerce r}
                 runCont st
-                was <- gets remoteStatus -- getData `onNothing` return NoRemote
-                when (was /= WasRemote) $ setData WasParallel
+              --  was <- gets execMode -- getData `onNothing` return Serial
+              --  when (was /= Remote) $ modify $ \s -> s{execMode= Parallel}
+                modify $ \s -> s{execMode=let rs= execMode s in if rs /= Remote then Parallel else rs}
 
                 return Nothing
 
