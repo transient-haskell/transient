@@ -1,6 +1,6 @@
 #!/usr/bin/env execthirdlinedocker.sh
 --  info: use sed -i 's/\r//g' file if report "/usr/bin/env: ‘execthirdlinedocker.sh\r’: No such file or directory"
--- LIB="/projects" && runghc  -DDEBUG   -i${LIB}/transient/src -i${LIB}/transient-universe/src -i${LIB}/axiom/src   $1 ${2} ${3}
+-- LIB="./" && runghc  -DDEBUG   -i${LIB}/transient/src -i${LIB}/transient-universe/src -i${LIB}/axiom/src   $1 ${2} ${3}
 
 {-# LANGUAGE ScopedTypeVariables, OverloadedStrings #-}
 module Main where
@@ -93,7 +93,7 @@ withResource adquire release f= do
 
 tbracket adquire release = react  (bracket adquire release) (return ())
 
-useResources rs= collect 1  rs  -- <|>  liftIO (forever (threadDelay maxBound) )
+useResources rs= collect 2  rs  -- <|>  liftIO (forever (threadDelay maxBound) )
 
 main2=  keep $    job1
 
@@ -102,12 +102,12 @@ job1= do
                         th <- liftIO myThreadId
                         liftIO $ print ("JOB", e,th)  
                         empty
-        w <- useResources $ do
-                r <- tbracket adquire release
+        r <- tbracket adquire release
                 --labelState "JOB"
-                i <-  choose[1,2]
-                liftIO $ print "after adquire, managing resource"
-                return $ r ++ " processed " ++ show i
+        w <- useResources $ do
+                  i <-  choose[1,2]
+                  liftIO $ print "after adquire, managing resource"
+                  return $ r ++ " processed " ++ show i
 
         liftIO $ print w
         where 
@@ -118,8 +118,8 @@ job1= do
 
 
 main= keep $ do
-        setParseString "{\"hello\":  \"world\"}"
-        r <- deserialize 
+        setParseString "{\"username\":\"xyz\",\"password\":\"xyz\"}"
+        r <- param 
         liftIO $ print ("value=",r :: Value)
         where
         string=  do 

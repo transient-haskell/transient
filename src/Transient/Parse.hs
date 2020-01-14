@@ -174,12 +174,12 @@ parseString= do
     dropSpaces 
     tTakeWhile (not . isSpace)
 
--- | take characters while they meet the condition
+-- | take characters while they meet the condition. if no char matches, it returns empty
 tTakeWhile :: (Char -> Bool) -> TransIO BS.ByteString
 tTakeWhile cond= -- parse (BS.span cond)
     withGetParseString $ \s -> do 
       let ret@(h,t)= BS.span cond s
-      return () !> ("takewhile'",h,t)
+      --return () !> ("takewhile'",h,t)
       if BS.null h then empty else return ret
       
    
@@ -216,7 +216,7 @@ tChar c= withGetParseString $ \s -> if BS.null s || BS.head s /= c then empty el
 withGetParseString :: Show a =>  (BS.ByteString -> TransIO (a,BS.ByteString)) -> TransIO a
 withGetParseString parser= Transient $ do
    ParseContext readMore s <- gets parseContext -- getData `onNothing` error "parser: no context"
-   -- return () !> ("withGetParseString parsing") 
+   return () !> ("withGetParseString parsing", BS.take 4 s) 
    let loop = unsafeInterleaveIO $ do
            mr <-  readMore 
 
@@ -234,7 +234,7 @@ withGetParseString parser= Transient $ do
       case mr of
                 Nothing -> return Nothing    --  !> "NOTHING"
                 Just (v,str') -> do
-                      return () !> (v,str') 
+                      --return () !> (v,str') 
                       modify $ \s-> s{parseContext= ParseContext readMore str'}
                       return $ Just v
 

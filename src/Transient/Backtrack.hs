@@ -59,13 +59,5 @@ onFinish, onFinish', finish, noFinish, initFinish
 
 import Transient.Internals
 
-import Data.Typeable
-import Control.Applicative
-import Control.Monad.State
-import Unsafe.Coerce
-import System.Mem.StableName
-import Control.Exception
-import Control.Concurrent.STM hiding (retry)
-import Data.Maybe
 
 -- Code moved to Internals in order to manage exceptions in spawned threads.

@@ -245,7 +245,7 @@ TransIO, TransientIO
 
 -- * Task Creation
 , StreamData(..)
-,parallel, async, waitEvents, sample, spawn, react, abduce, fork
+,parallel, async, waitEvents, sample, spawn, react, abduce, fork,sync
 
 -- * State management
 ,setData, getSData, getData, delData, modifyData, modifyData', try, setState, getState, delState, getRState,setRState, modifyState
@@ -269,30 +269,3 @@ where
 
 import    Transient.Internals
 import    Transient.Logged
-
--- $taskgen
---
--- These primitives are used to create asynchronous and concurrent tasks from
--- an IO action.
---
-
--- $exceptions
---
--- Exception handlers are implemented using the backtracking mechanism.
--- (see 'Transient.Backtrack.back'). Several exception handlers can be
--- installed using 'onException'; handlers are run in reverse order when an
--- exception is raised. The following example prints "3" and then "2".
---
--- @
--- {-\# LANGUAGE ScopedTypeVariables #-}
--- import Transient.Base (keep, onException, cutExceptions)
--- import Control.Monad.IO.Class (liftIO)
--- import Control.Exception (ErrorCall)
---
--- main = keep $ do
---     onException $ \\(e:: ErrorCall) -> liftIO $ putStrLn "1"
---     cutExceptions
---     onException $ \\(e:: ErrorCall) -> liftIO $ putStrLn "2"
---     onException $ \\(e:: ErrorCall) -> liftIO $ putStrLn "3"
---     liftIO $ error "Raised ErrorCall exception" >> return ()
--- @

@@ -105,7 +105,7 @@ class (Show a, Read a,Typeable a) => Loggable a where
     serialize = byteString .   BSS.pack . show
 
     deserializePure :: BS.ByteString -> Maybe(a, BS.ByteString)
-    deserializePure s= r
+    deserializePure s = r
       where
       r= case reads $ BS.unpack s   of -- `traceShow` ("deserialize",typeOf $ typeOf1 r,s) of
            []       -> Nothing  !> "Nothing"
@@ -342,11 +342,12 @@ param :: (Loggable a, Typeable a) => TransIO a
 param = r where
   r=  do
        let t = typeOf $ type1 r
-       (Transient.Internals.try $ tTakeWhile (/= '/') >>= liftIO . print >> empty) <|> return ()
+       (Transient.Internals.try $ tChar '/'  >> return ())<|> return () --maybe there is a '/' to drop
+       --(Transient.Internals.try $ tTakeWhile (/= '/') >>= liftIO . print >> empty) <|> return ()
        if      t == typeOf (undefined :: String)     then return . unsafeCoerce . BS.unpack =<< tTakeWhile' (/= '/')
        else if t == typeOf (undefined :: BS.ByteString) then return . unsafeCoerce =<< tTakeWhile' (/= '/')
        else if t == typeOf (undefined :: BSS.ByteString)  then return . unsafeCoerce . BS.toStrict =<< tTakeWhile' (/= '/')
-       else deserialize <* tChar '/'
+       else deserialize  -- <* tChar '/'
 
 
        where
