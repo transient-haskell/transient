@@ -97,8 +97,8 @@ toLazyByteString (Builder b)=  b  mempty
 -}
 -- #endif
 
-exec=  byteString "Exec/"
-wait=  byteString "Wait/"
+exec=  byteString "e/"
+wait=  byteString "w/"
 
 class (Show a, Read a,Typeable a) => Loggable a where
     serialize :: a -> Builder
@@ -295,14 +295,14 @@ logged mx =   do
 
     recoverIt log= do
         s <- giveParseString
-        case BS.splitAt 5 s of
-          ("Exec/",r) -> do
+        case BS.splitAt 2 s of
+          ("e/",r) -> do
             setData $ log{ -- recover= True,  --  buildLog=  rs',
             lengthFull= lengthFull log +1, hashClosure= hashClosure log + 1000}
             setParseString r                     --   !> "Exec"
             mx
 
-          ("Wait/",r) -> do
+          ("w/",r) -> do
             setData $ log{ -- recover= True, --  buildLog=  rs',
             lengthFull= lengthFull log +1, hashClosure= hashClosure log + 100000}
             setParseString r
