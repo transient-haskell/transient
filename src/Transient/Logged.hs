@@ -43,7 +43,7 @@ Loggable(..), logged, received, param, getLog, exec,wait, emptyLog,
  suspend, checkpoint, rerun, restore,
 #endif
 
-Log(..),Builder(..), toLazyByteString, byteString, lazyByteString
+Log(..), toLazyByteString, byteString, lazyByteString
 ) where
 
 import Data.Typeable
@@ -51,19 +51,16 @@ import Unsafe.Coerce
 import Transient.Internals
 
 import Transient.Indeterminism(choose)
-import Transient.Internals -- (onNothing,reads1,IDynamic(..),Log(..),LogElem(..),execMode(..),StateIO)
+--import Transient.Internals -- (onNothing,reads1,IDynamic(..),Log(..),LogElem(..),execMode(..),StateIO)
 import Transient.Parse
 import Control.Applicative
 import Control.Monad.State
 import System.Directory
 import Control.Exception
-import Control.Monad
-import Control.Concurrent.MVar
+--import Control.Monad
 import qualified Data.ByteString.Lazy.Char8 as BS
 import qualified Data.ByteString.Char8 as BSS
-import Data.Maybe (fromJust)
-import System.IO.Unsafe
-
+import qualified Data.Map as M
 -- #ifndef ghcjs_HOST_OS
 import Data.ByteString.Builder
 import Data.Monoid
@@ -121,6 +118,64 @@ class (Show a, Read a,Typeable a) => Loggable a where
                     Nothing ->   empty
                     Just x -> return x
 
+instance Loggable ()
+
+instance Loggable Bool where 
+  serialize b= if b then "t" else "f"
+  deserialize = withGetParseString $ \s -> 
+     if (BS.head $ BS.tail s) /= '/'   
+        then empty 
+        else
+            let h= BS.head s
+                tail=  BS.tail s
+            in if h== 't' then return (True,tail)  else if h== 'f' then return (False, tail) else empty 
+
+instance Loggable Int
+
+instance (Typeable a, Loggable a) => Loggable[a]  
+--    serialize x= if typeOf x= typeOf (undefined :: String) then BS.pack x else BS.pack $ show x
+--    deserialize= let [(s,r)]= 
+
+
+
+
+instance Loggable Char
+instance Loggable Float
+instance Loggable Double
+instance Loggable a => Loggable (Maybe a)
+instance (Loggable a,Loggable b) => Loggable (a,b)
+instance (Loggable a,Loggable b, Loggable c) => Loggable (a,b,c)
+instance (Loggable a,Loggable b, Loggable c,Loggable d) => Loggable (a,b,c,d)
+
+instance (Loggable a, Loggable b) => Loggable (Either a b)
+-- #ifdef ghcjs_HOST_OS
+
+
+-- intDec i= Builder $ \s -> pack (show i) <> s
+-- int64Dec i=  Builder $ \s -> pack (show i) <> s
+
+-- #endif
+instance (Loggable k, Ord k, Loggable a) => Loggable (M.Map k a)  where
+  serialize v= intDec (M.size v) <> M.foldlWithKey' (\s k x ->  s <> "/" <> serialize k <> "/" <> serialize x ) mempty v
+  deserialize= do
+      len <- int
+      list <- replicateM len $
+                 (,) <$> (tChar '/' *> deserialize)
+                     <*> (tChar '/' *> deserialize)
+      return $ M.fromList list
+
+#ifndef ghcjs_HOST_OS
+instance Loggable BS.ByteString where
+        serialize str =  lazyByteString str
+        deserialize= tTakeWhile (/= '/')
+#endif
+
+#ifndef ghcjs_HOST_OS
+instance Loggable BSS.ByteString where
+        serialize str =  byteString str
+        deserialize = tTakeWhile (/= '/') >>= return . BS.toStrict
+#endif
+instance Loggable SomeException
 
 
 
@@ -169,6 +224,7 @@ restore' proc delete= do
 
          let logb= lazyByteString  log
          setData Log{recover= True,buildLog= logb,fulLog= logb,lengthFull= 0, hashClosure= 0}
+         setParseString log
          when delete $ liftIO $ remove $ logs ++ file
          proc
      where
@@ -222,54 +278,50 @@ restore= const empty
 
 #endif
 
-
-
-
--- | Run the computation, write its result in a log in the parent computation
--- and return the result. If the log already contains the result of this
--- computation ('restore'd from previous saved state) then that result is used
--- instead of running the computation again.
---
--- 'logged' can be used for computations inside a 'logged' computation. Once
--- the parent computation is finished its internal (subcomputation) logs are
--- discarded.
---
 getLog :: TransMonad m =>  m Log
 getLog= getData `onNothing` return emptyLog
 
 emptyLog= Log False mempty mempty 0 0
 
+
+-- | Run the computation, write its result in a log in the state
+-- and return the result. If the log already contains the result of this
+-- computation ('restore'd from previous saved state) then that result is used
+-- instead of running the computation again.
+--
+-- 'logged' can be used for computations inside a nother 'logged' computation. Once
+-- the parent computation is finished its internal (subcomputation) logs are
+-- discarded.
+--
+
+
 logged :: Loggable a => TransIO a -> TransIO a
 logged mx =   do
         log <- getLog
 
-        -- setParseString $ toLazyByteString  $ buildLog log
-
         let full= fulLog log
         rest <- giveParseString
-        -- let rest=  toLazyByteString $ buildLog  log
 
-        if recover log
+        if recover log                  -- !> ("recover",recover log)
            then
                   if not $ BS.null rest -- rest <= 1)
-                    then recoverIt log -- exec1 log <|> wait1 log <|> value log
+                    then recoverIt log   -- !> "RECOVER"  -- exec1 log <|> wait1 log <|> value log
                     else do
                       setData log{buildLog=mempty}
-                      notRecover full log
+                      notRecover full log  !>  "NOTRECOVER"
 
            else notRecover full log
     where
     notRecover full log= do
 
-        let rs  = buildLog log -- giveParseString >>= return . lazyByteString
-        -- return () !> ("BUILDLOG", toLazyByteString rs)
+        let rs  = buildLog log 
         setData $ Log False (rs <> exec) (full <> exec) (lengthFull log +1)  (hashClosure log + 1000)     -- !> ("setLog False", Exec:rs)
 
         r <-  mx <** do setData $ Log False ( rs <>  wait) (full <> wait) (lengthFull log +1) (hashClosure log + 100000)
                             -- when   p1 <|> p2, to avoid the re-execution of p1 at the
                             -- recovery when p1 is asynchronous or return empty
 
-        log' <- getLog     -- Log recoverAfter lognew len _ <- getLog
+        log' <- getLog     
 
 
         let len= lengthFull log'
@@ -278,17 +330,16 @@ logged mx =   do
             lognew= buildLog log'
 
         rest <- giveParseString
-        if recoverAfter && not (BS.null rest)        --  !> ("recoverAfter", recoverAfter)
+        if recoverAfter && not (BS.null rest) 
           then  do
-            modify $ \s -> s{execMode= Parallel}  --setData Parallel
+            modify $ \s -> s{execMode= Parallel}   
             setData $ log'{recover= True, fulLog=  lognew <> add,  lengthFull= lengthFull log+ len,hashClosure= hashClosure log + 10000000}
-                                                      !> ("recover",  toLazyByteString $ lognew <> add)
+                                                    --  !> ("recover",  toLazyByteString $ lognew <> add)
 
           else
 
             setData $ Log{recover= False, buildLog=rs <> serialize r  <> byteString "/", fulLog= add,lengthFull= len+1, hashClosure=hashClosure log +10000000}
-                -- Log False (Var (toIDyn r):rs) add (hashClosure +10000000))
-                         --  !> ("restore",  toLazyByteString $serialize r <> rs)
+               
 
 
         return  r
@@ -297,13 +348,13 @@ logged mx =   do
         s <- giveParseString
         case BS.splitAt 2 s of
           ("e/",r) -> do
-            setData $ log{ -- recover= True,  --  buildLog=  rs',
+            setData $ log{ 
             lengthFull= lengthFull log +1, hashClosure= hashClosure log + 1000}
             setParseString r                     --   !> "Exec"
             mx
 
           ("w/",r) -> do
-            setData $ log{ -- recover= True, --  buildLog=  rs',
+            setData $ log{ 
             lengthFull= lengthFull log +1, hashClosure= hashClosure log + 100000}
             setParseString r
             modify $ \s -> s{execMode= Parallel}  --setData Parallel
@@ -314,16 +365,16 @@ logged mx =   do
     value log= r
       where
       typeOfr :: TransIO a -> a
-      typeOfr x= undefined
+      typeOfr _= undefined
       r= do
             -- return() !> "logged value"
-            x <- deserialize  <|> do
+            x <- deserialize <|> do
                    psr <- giveParseString
                    error  (show("error parsing",psr,"to",typeOf $ typeOfr r))
-            -- rs'  <- giveParseString >>= return . lazyByteString
+                  
             tChar '/'
 
-            setData $ log{recover= True -- , buildLog= rs'
+            setData $ log{recover= True -- , = rs'
                          ,lengthFull= lengthFull log +1,hashClosure= hashClosure log + 10000000}
             return x
 

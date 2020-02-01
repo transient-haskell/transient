@@ -22,12 +22,9 @@ import Data.IORef
 import Control.Applicative
 import Data.Monoid
 import Control.Concurrent  
-import Data.Typeable
 import Control.Monad.State
-import GHC.Conc
-import Data.Time.Clock
 import Control.Exception 
-
+import qualified Data.ByteString.Char8 as BS
 
 
 
@@ -72,9 +69,6 @@ group num proc =  do
     case mn of
       Nothing -> stop
       Just xs -> return xs
-
-
-
 
 
 -- | Collect the results of the first @n@ tasks.  Synchronizes concurrent tasks
@@ -123,11 +117,10 @@ collect' n t search= do
                      let rs'= r:rs
                      writeIORef results  (n'',rs')
 
-                     t' <-  getCurrentTime
                      if (n > 0 && n'' >= n)
                        then  return (rs')
                        else loop
-              `catch` \(e :: BlockedIndefinitelyOnMVar) -> 
+              `catch` \(_ :: BlockedIndefinitelyOnMVar) -> 
                                    readIORef results >>= return . snd
 
 
@@ -158,5 +151,4 @@ groupByTime timeout comp= do
              atomicModifyIORef v $ \xs -> (mempty , xs) 
 
 
-   
  

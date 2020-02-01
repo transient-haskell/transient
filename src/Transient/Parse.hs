@@ -216,7 +216,7 @@ tChar c= withGetParseString $ \s -> if BS.null s || BS.head s /= c then empty el
 withGetParseString :: Show a =>  (BS.ByteString -> TransIO (a,BS.ByteString)) -> TransIO a
 withGetParseString parser= Transient $ do
    ParseContext readMore s <- gets parseContext -- getData `onNothing` error "parser: no context"
-   return () !> ("withGetParseString parsing", BS.take 4 s) 
+   -- return () !> ("withGetParseString parsing", BS.take 4 s) 
    let loop = unsafeInterleaveIO $ do
            mr <-  readMore 
 
