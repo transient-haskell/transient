@@ -1231,7 +1231,7 @@ optionf :: (Typeable b, Show b, Read b, Eq b) =>
 optionf flag ret message  = do
   let sret= if typeOf ret == typeOf "" then unsafeCoerce ret else show ret
   liftIO $ putStrLn $ "Enter  "++sret++"\t\tto: " ++ message
-  inputf flag sret  Nothing ( == sret)
+  inputf flag sret message Nothing ( == sret)
   liftIO $ putStr "\noption: " >> putStrLn sret
   -- abduce
   return ret
@@ -1239,11 +1239,11 @@ optionf flag ret message  = do
 -- | General asynchronous console input
 -- 
 -- inputf <remove input listener after sucessful or not> <listener identifier>  <Maybe default value> <validation proc>
-inputf ::  (Show a, Read a,Typeable a)  => Bool -> String -> Maybe a -> (a -> Bool) -> TransIO a
-inputf flag ident  mv cond= do
-    str <- react (addListener ident) (return ())
+inputf ::  (Show a, Read a,Typeable a)  => Bool -> String -> String -> Maybe a -> (a -> Bool) -> TransIO a
+inputf flag ident message mv cond= do
+    str <- react (addConsoleAction ident message) (return ())
 
-    when flag $  liftIO $ delListener ident 
+    when flag $  liftIO $ delConsoleAction ident 
     c <- liftIO $ readIORef rconsumed
     if c then returnm mv else do
         if null str then do liftIO $ writeIORef rconsumed True; returnm mv  else do 
@@ -1286,20 +1286,23 @@ input= input' Nothing
 input' :: (Typeable a, Read a,Show a) => Maybe a -> (a -> Bool) -> String -> TransIO a
 input' mv cond prompt= do  
   liftIO $ putStr prompt >> hFlush stdout 
-  inputf True "input"  mv cond
+  inputf True "input" prompt  mv cond
   
 
 
 
 
-rcb= unsafePerformIO $ newIORef [] :: IORef [ (String,String -> IO())]
+rcb= unsafePerformIO $ newIORef [] :: IORef [ (String,String,String -> IO())]
 
-addListener :: String -> (String ->  IO ()) -> IO ()
-addListener name cb= atomicModifyIORef rcb $ \cbs ->  (filter ((/=) name . fst) cbs ++ [(name, cb)],())
+addConsoleAction :: String -> String -> (String ->  IO ()) -> IO ()
+addConsoleAction name message cb= atomicModifyIORef rcb $ \cbs ->  ((name,message, cb) : filter ((/=) name . fst) cbs ,())
+ where
+ fst (x,_,_)= x
 
-delListener :: String -> IO ()
-delListener name= atomicModifyIORef rcb $ \cbs -> (filter ((/=) name . fst) cbs,())
-
+delConsoleAction :: String -> IO ()
+delConsoleAction name= atomicModifyIORef rcb $ \cbs -> (filter ((/=) name . fst) cbs,())
+ where
+ fst (x,_,_)= x
 
 
 reads1 s=x where
@@ -1343,7 +1346,7 @@ processLine r = do
     where
     invokeParsers x= do
        mbs <- readIORef rcb
-       mapM_ (\cb -> cb x) $ map snd mbs
+       mapM_ (\cb -> cb x) $ map (\(_,_,p)-> p) mbs
        
     mapM' f []= return ()
     mapM' f (xss@(x:xs)) =do
@@ -1448,7 +1451,13 @@ keep mx = do
             <|> do
                    option "options" "show all options"
                    mbs <- liftIO $ readIORef rcb
-                   liftIO $ mapM_  (\c ->do putStr c; putStr "|") $ map fst mbs
+
+                   liftIO $ mapM_  (\c ->do putStr c; putStr "|") $ map (\(fst,_,_) -> fst)mbs
+
+                   d <- input' (Just "n") (\x -> x=="y" || x =="n" || x=="Y" || x=="N") "\nDetails? N/y "
+                   when  (d == "y") $
+                       let line (x,y,_)= do putStr x; putStr "\t\t"; putStrLn y
+                       in liftIO $ mapM_ line  mbs
                    liftIO $ putStrLn ""
                    empty
             <|> do
