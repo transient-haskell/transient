@@ -95,10 +95,10 @@ My video sessions in [livecoding.tv](https://www.livecoding.tv/agocorona/videos/
 
 The articles are more technical:
 
-- [Philosophy, async, parallelism, thread control, events, Session state](https://www.fpcomplete.com/user/agocorona/EDSL-for-hard-working-IT-programmers?show=tutorials)
-- [Backtracking and undoing IO transactions](https://www.fpcomplete.com/user/agocorona/the-hardworking-programmer-ii-practical-backtracking-to-undo-actions?show=tutorials)
-- [Non-deterministic list like processing, multithreading](https://www.fpcomplete.com/user/agocorona/beautiful-parallel-non-determinism-transient-effects-iii?show=tutorials)
-- [Distributed computing](https://www.fpcomplete.com/user/agocorona/moving-haskell-processes-between-nodes-transient-effects-iv?show=tutorials)
+- [Philosophy, async, parallelism, thread control, events, Session state](https://www.schoolofhaskell.com/user/agocorona/EDSL-for-hard-working-IT-programmers)
+- [Backtracking and undoing IO transactions](https://www.schoolofhaskell.com/user/agocorona/the-hardworking-programmer-ii-practical-backtracking-to-undo-actions)
+- [Non-deterministic list like processing, multithreading](https://www.schoolofhaskell.com/user/agocorona/beautiful-parallel-non-determinism-transient-effects-iii)
+- [Distributed computing](https://www.schoolofhaskell.com/user/agocorona/moving-haskell-processes-between-nodes-transient-effects-iv)
 - [Publish-Subscribe variables](https://www.schoolofhaskell.com/user/agocorona/publish-subscribe-variables-transient-effects-v)
 - [Distributed streaming, map-reduce](https://www.schoolofhaskell.com/user/agocorona/estimation-of-using-distributed-computing-streaming-transient-effects-vi-1)
 
